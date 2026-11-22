@@ -117,6 +117,14 @@ const confirmReply = (): BlockCheckReply => ({
 });
 const confirmation = () => screen.getByRole("region", { name: "Confirm edit" });
 const escape = () => fireEvent.keyDown(document, { key: "Escape" });
+const gbcBody = () => structuredClone(bodies.gbc) as typeof bodies.gbc & { sheet: { tilePalettes?: string[] } };
+const usageMaps = (count: number) => Array.from({ length: count }, (_, index) => ({ map: `Map${index}`, interior: 1, border: 0, block0AsBorder: 0 }));
+async function confirmationItems(count: number) {
+  const session = makeSession({ usage: { files: [], tilesets: ["A"], sharedGrids: [], maps: usageMaps(count) }, confirm: true, warnings: [] });
+  await mount("gbc", bodies.gbc, session);
+  await submit(session);
+  return within(confirmation()).getAllByRole("listitem").map(item => item.textContent);
+}
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
@@ -663,6 +671,35 @@ describe("BlockEditorDialog", () => {
     expect((await submit(session)).request.draft.palettes).toEqual([{ square: 5, palName: "GRAY", scope: "local" }]);
   });
 
+  it("shows the placed tile's sheet palette instead of the loaded square's", async () => {
+    const body = gbcBody();
+    body.sheet.tileIds = body.sheet.tileIds.map((_, index) => index === 0 ? 7 : 0x10 + index);
+    body.sheet.tilePalettes = Array.from({ length: 64 }, (_, index) => index === 7 ? "RED" : "GRAY");
+    await mount("gbc", body);
+    expect(select("Palette").value).toBe("GRAY");
+    pick(0);
+    fireEvent.click(square(0));
+    expect(select("Palette").value).toBe("RED");
+    expect(screen.queryByRole("dialog", { name: "Palette scope" })).toBeNull();
+  });
+
+  it("falls back to the loaded block palette when the sheet has no name", async () => {
+    const blank = gbcBody();
+    blank.sheet.tileIds = blank.sheet.tileIds.map((_, index) => index === 0 ? 7 : 0x10 + index);
+    blank.sheet.tilePalettes = Array.from({ length: 64 }, () => "");
+    const host = await mount("gbc", blank);
+    pick(0);
+    fireEvent.click(square(0));
+    expect(select("Palette").value).toBe("GRAY");
+    host.unmount();
+    const missing = gbcBody();
+    missing.sheet.tileIds = missing.sheet.tileIds.map((_, index) => index === 0 ? 7 : 0x10 + index);
+    await mount("gbc", missing);
+    pick(0);
+    fireEvent.click(square(0));
+    expect(select("Palette").value).toBe("GRAY");
+  });
+
   it("edits GBA top-layer Y flip and layer type", async () => {
     const { session } = await mount("gba");
     fireEvent.click(screen.getByRole("tab", { name: "Top" }));
@@ -723,6 +760,29 @@ describe("BlockEditorDialog", () => {
     const region = within(confirmation());
     expect(region.getAllByRole("listitem").map(item => item.textContent)).toEqual(["X: 3 interior, 1 border", "Other: 2 interior, 0 border", "B0: 0 interior, 2 border"]);
     expect(region.getByText("Used 3 times on this map (+ border), 4 times on 2 other maps; 3 maps affected")).toBeTruthy();
+  });
+
+  it("caps the confirmation map list at eight and counts the rest", async () => {
+    expect(await confirmationItems(10)).toEqual([
+      "Map0: 1 interior, 0 border", "Map1: 1 interior, 0 border", "Map2: 1 interior, 0 border", "Map3: 1 interior, 0 border",
+      "Map4: 1 interior, 0 border", "Map5: 1 interior, 0 border", "Map6: 1 interior, 0 border", "Map7: 1 interior, 0 border",
+      "and 2 more",
+    ]);
+  });
+
+  it("shows no more line with exactly eight confirmation maps", async () => {
+    expect(await confirmationItems(8)).toEqual([
+      "Map0: 1 interior, 0 border", "Map1: 1 interior, 0 border", "Map2: 1 interior, 0 border", "Map3: 1 interior, 0 border",
+      "Map4: 1 interior, 0 border", "Map5: 1 interior, 0 border", "Map6: 1 interior, 0 border", "Map7: 1 interior, 0 border",
+    ]);
+  });
+
+  it("counts one remaining confirmation map with nine", async () => {
+    expect(await confirmationItems(9)).toEqual([
+      "Map0: 1 interior, 0 border", "Map1: 1 interior, 0 border", "Map2: 1 interior, 0 border", "Map3: 1 interior, 0 border",
+      "Map4: 1 interior, 0 border", "Map5: 1 interior, 0 border", "Map6: 1 interior, 0 border", "Map7: 1 interior, 0 border",
+      "and 1 more",
+    ]);
   });
 
   it("returns focus to the panel when Apply disappears", async () => {

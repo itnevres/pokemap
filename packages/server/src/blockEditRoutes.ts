@@ -21,7 +21,7 @@ import { parseBlocks } from "@pokemap/core/src/load/blocks.js";
 import { encodePng } from "@pokemap/cli/src/png.js";
 import type { createEditSessionStore } from "./editSessions.js";
 import type { createGbcEditSessionStore } from "./gbcEditSessions.js";
-import { ownedTilesetPaths, stageTilesetPlan, type BlockEditStore, type OwnershipEntry } from "./blockEditOwnership.js";
+import { ownedTilesetPaths, requireTilesetOwnership, stageTilesetPlan, type BlockEditStore, type OwnershipEntry } from "./blockEditOwnership.js";
 import { decodeMapName, parseTimeParam } from "./gbcRoutes.js";
 import { readBody } from "./index.js";
 
@@ -180,7 +180,16 @@ function routes(deps: CommonDeps, read: (name: string, url: URL, version: number
             else send(409, { error, code: "STALE" });
             return;
           }
-          if (check) { send(200, { usage: plan.usage, confirm: plan.confirm, warnings: plan.warnings }); return; }
+          if (check) {
+            try { requireTilesetOwnership(store.entries(), name, plan.edits.map(edit => edit.path)); }
+            catch (error) {
+              if (!(error instanceof BlockEditRefusal) || error.code !== "NOT_OWNER") throw error;
+              send(200, { usage: null, confirm: false, warnings: [], refusal: { code: error.code, error: `${name}: ${error.message}` } });
+              return;
+            }
+            send(200, { usage: plan.usage, confirm: plan.confirm, warnings: plan.warnings });
+            return;
+          }
           if (plan.edits.length || plan.placement) {
             const labelId = mode === "saveAsNew" ? plan.newBlockId! : id;
             const label = `${mode === "saveAsNew" ? "New" : "Edit"} block $${labelId.toString(16).toUpperCase().padStart(2, "0")}`;
@@ -347,7 +356,8 @@ export function createGbcBlockEditRoutes(
     return { ...target, revision: plan.revision,
       block: { tiles: draft.tiles, collision: draft.collision, tilePalettes: draft.tiles.map(tile => palNames.get(c.ts.palMap[tile]?.pal ?? -1) ?? "") },
       sheet: { url: `/api/block-sheet/${encodeURIComponent(name)}.png?tv=${version}&time=${time(url)}`,
-        tileCount: c.ts.tiles.length, tileIds: c.tileIds, reservedTiles: [...loadGbcReservedTiles(project.root)].sort((a, b) => a - b) },
+        tileCount: c.ts.tiles.length, tileIds: c.tileIds, reservedTiles: [...loadGbcReservedTiles(project.root)].sort((a, b) => a - b),
+        tilePalettes: c.ts.palMap.map(entry => palNames.get(entry?.pal ?? -1) ?? "") },
       options: { collision: collisionOptions.map(entry => entry.name), palettes: paletteOptions.map(entry => entry.name) },
       usage: plan.usage, owner: owner(store.entries(), plan), limits: { nextId: nextId(() => planGbcBlockEdit(project, { ...req, mode: "saveAsNew" }, deps.overlay(), stagedGrids)), cap: 256 } };
   }, (name, url) => {
