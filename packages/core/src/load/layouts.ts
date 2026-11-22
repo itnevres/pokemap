@@ -1,5 +1,6 @@
 import type { FieldmapConstants } from "../config/fieldmap.js";
-import type { Layout, LayoutVersion, Split } from "../model/types.js";
+import { insideRoot } from "../config/paths.js";
+import type { BrokenPath, Layout, LayoutVersion, Split } from "../model/types.js";
 
 export function parseLayouts(text: string): { tableLabel: string; layouts: Layout[] } {
   const raw = JSON.parse(text) as {
@@ -8,19 +9,36 @@ export function parseLayouts(text: string): { tableLabel: string; layouts: Layou
   };
   return {
     tableLabel: raw.layouts_table_label,
-    layouts: raw.layouts.map((l) => ({
-      id: String(l.id),
-      name: String(l.name),
-      width: Number(l.width),
-      height: Number(l.height),
-      borderWidth: l.border_width === undefined ? 2 : Number(l.border_width),
-      borderHeight: l.border_height === undefined ? 2 : Number(l.border_height),
-      primaryTileset: String(l.primary_tileset),
-      secondaryTileset: String(l.secondary_tileset),
-      borderFilepath: String(l.border_filepath),
-      blockdataFilepath: String(l.blockdata_filepath),
-      layoutVersion: l.layout_version as LayoutVersion | undefined,
-    })),
+    layouts: raw.layouts.map((l) => {
+      const id = String(l.id);
+      const brokenPaths: BrokenPath[] = [];
+      for (const key of ["border_filepath", "blockdata_filepath"] as const) {
+        const path = String(l[key]);
+        if (!insideRoot(path)) {
+          brokenPaths.push({
+            file: "data/layouts/layouts.json",
+            key,
+            path,
+            message: `layout ${id}: ${key} "${path}" leaves the project.`,
+            fix: `Change ${key} of layout ${id} in data/layouts/layouts.json to a path inside the project.`,
+          });
+        }
+      }
+      return {
+        id,
+        name: String(l.name),
+        width: Number(l.width),
+        height: Number(l.height),
+        borderWidth: l.border_width === undefined ? 2 : Number(l.border_width),
+        borderHeight: l.border_height === undefined ? 2 : Number(l.border_height),
+        primaryTileset: String(l.primary_tileset),
+        secondaryTileset: String(l.secondary_tileset),
+        borderFilepath: String(l.border_filepath),
+        blockdataFilepath: String(l.blockdata_filepath),
+        layoutVersion: l.layout_version as LayoutVersion | undefined,
+        ...(brokenPaths.length ? { brokenPaths } : {}),
+      };
+    }),
   };
 }
 

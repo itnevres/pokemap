@@ -10,6 +10,15 @@ export interface Split {
   pals: number;
 }
 
+/** A decomp-sourced path that leaves the project (D25). The owning layout or tileset cannot be rendered, edited or saved until it is fixed. */
+export interface BrokenPath {
+  file: string;
+  key: string;
+  path: string;
+  message: string;
+  fix: string;
+}
+
 export interface Layout {
   id: string;
   name: string;
@@ -22,6 +31,7 @@ export interface Layout {
   borderFilepath: string;
   blockdataFilepath: string;
   layoutVersion?: LayoutVersion;
+  brokenPaths?: BrokenPath[];
 }
 
 export interface RGB {

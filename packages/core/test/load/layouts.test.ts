@@ -101,7 +101,7 @@ describe("parseLayouts: paths that leave the project (D25)", () => {
     expect(layouts[0]!.blockdataFilepath).toBe("data/layouts/A/map.bin");
   });
 
-  for (const bad of ["../../outside.bin", "/abs/outside.bin", "C:/outside.bin", "C:\outside.bin", "..\..\outside.bin", "data/../../outside.bin"]) {
+  for (const bad of ["../../outside.bin", "/abs/outside.bin", "C:/outside.bin", "C:\\outside.bin", "..\\..\\outside.bin", "data/../../outside.bin"]) {
     it(`marks blockdata_filepath ${JSON.stringify(bad)} broken without throwing`, () => {
       const { layouts } = parseLayouts(layoutsJson({ blockdata_filepath: bad }));
       const broken = layouts[0]!.brokenPaths!;

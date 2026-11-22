@@ -142,7 +142,7 @@ describe("parseTilesetPaths: paths that leave the project (D25)", () => {
       [{ a: "/abs/attr.bin" }, "/abs/attr.bin"],
       [{ t: "../../x/tiles.4bpp.lz" }, "../../x"],
       [{ p: "C:/x/00.gbapal" }, "C:/x/00.gbapal"],
-      [{ p: "..\x\00.gbapal" }, "..\x\00.gbapal"],
+      [{ p: "..\\x\\00.gbapal" }, "..\\x\\00.gbapal"],
     ];
     for (const [over, needle] of cases) {
       const t = parse(over);

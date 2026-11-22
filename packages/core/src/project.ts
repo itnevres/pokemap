@@ -163,6 +163,9 @@ export function openProject(root: string): Project {
     let t = tilesetCache.get(symbol);
     if (!t) {
       const tp = getTilesetPaths(symbol);
+      if (tp.brokenPaths?.length) {
+        throw new Error(tp.brokenPaths.map(({ message, fix }) => `${message} ${fix}`).join("\n"));
+      }
       t = loadTileset(paths, tp, profile, readTilesetFile);
       tilesetCache.set(symbol, t);
     }

@@ -1,3 +1,6 @@
+import { insideRoot } from "../config/paths.js";
+import type { BrokenPath } from "../model/types.js";
+
 export interface TilesetPaths {
   symbol: string;
   /** The directory of `.metatiles` and `.metatileAttributes` ONLY. The art and
@@ -12,6 +15,7 @@ export interface TilesetPaths {
   tilesPng: string;
   /** .gbapal paths as INCBINed; the .pal sibling is the committed source (I3). */
   palettes: string[];
+  brokenPaths?: BrokenPath[];
 }
 
 /**
@@ -80,6 +84,25 @@ export function parseTilesetPaths(
 
     const dirOf = (p: string) => p.slice(0, p.lastIndexOf("/"));
     const dir = dirOf(metatilesBin);
+    const tilesPng = `${tilesBin ? dirOf(tilesBin) : dir}/tiles.png`;
+    const brokenPaths: BrokenPath[] = [];
+    const resolvedPaths: [string, string][] = [
+      [".metatiles", metatilesBin],
+      [".metatileAttributes", attributesBin],
+      [".tiles", tilesPng],
+      ...palettes.map((path): [string, string] => [".palettes", path]),
+    ];
+    for (const [key, path] of resolvedPaths) {
+      if (!insideRoot(path)) {
+        brokenPaths.push({
+          file: "src/data/tilesets/headers.h",
+          key,
+          path,
+          message: `tileset ${symbol}: ${key} path "${path}" leaves the project.`,
+          fix: `Change the INCBIN path behind ${key} of ${symbol} so it points inside the project.`,
+        });
+      }
+    }
     out.set(symbol, {
       symbol, dir,
       isSecondary: /\.isSecondary\s*=\s*TRUE/.test(body),
@@ -87,8 +110,9 @@ export function parseTilesetPaths(
       // From `.tiles`, not from `dir`. They differ for 15 tilesets, and eight
       // of those have a tiles.png at the wrong path too, so getting this wrong
       // renders another tileset's art with no error at all.
-      tilesPng: `${tilesBin ? dirOf(tilesBin) : dir}/tiles.png`,
+      tilesPng,
       palettes,
+      ...(brokenPaths.length ? { brokenPaths } : {}),
     });
   }
   return out;

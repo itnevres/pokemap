@@ -39,12 +39,12 @@ describe("projectPaths", () => {
 
 describe("insideRoot", () => {
   it("accepts project-relative paths that stay inside", () => {
-    for (const p of ["data/layouts/Route101/map.bin", "data/../data/x.bin", "./a/b.bin", "a\b\c.bin", "a/b/../c.bin"]) {
+    for (const p of ["data/layouts/Route101/map.bin", "data/../data/x.bin", "./a/b.bin", "a\\b\\c.bin", "a/b/../c.bin"]) {
       expect(insideRoot(p), p).toBe(true);
     }
   });
   it("rejects climbs, absolute paths, drive letters, UNC and backslash variants", () => {
-    for (const p of ["../../outside.bin", "..", "data/../../x.bin", "a/../..", "/etc/passwd", "//host/share/x", "C:/x.bin", "C:\x.bin", "c:x.bin", "..\..\x.bin", "data\..\..\x.bin"]) {
+    for (const p of ["../../outside.bin", "..", "data/../../x.bin", "a/../..", "/etc/passwd", "//host/share/x", "C:/x.bin", "C:\\x.bin", "c:x.bin", "..\\..\\x.bin", "data\\..\\..\\x.bin"]) {
       expect(insideRoot(p), p).toBe(false);
     }
   });
