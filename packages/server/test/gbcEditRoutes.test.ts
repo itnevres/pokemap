@@ -7,7 +7,8 @@ import { createGbcProjectHandler } from "../src/gbcRoutes.js";
 import type { ProjectHandler } from "../src/index.js";
 import { openGbcProject } from "@pokemap/core/src/gbc/project.js";
 import { loadGbcMapEvents } from "@pokemap/core/src/gbc/load/events.js";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { canonicalTilesetPath } from "@pokemap/core/src/blockEdit/canonicalTilesetPath.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { encodePng } from "@pokemap/cli/src/png.js";
@@ -158,6 +159,38 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
     expect(shifted.blocks).toEqual(e3);
     expect(shifted.blocks).not.toEqual(e2);
     await post(`${NBT}/discard`);
+  });
+
+  // Q3: a missing metatiles file is a refusal naming the file (409 BAD_VALUE), not a statSync ENOENT (500).
+  it("3b. pencil, rect and bucket on a map whose metatiles file is missing answer 409 BAD_VALUE; shift still answers 200", async () => {
+    await post(`${NBT}/discard`);
+    const proj = openGbcProject(tmp);
+    const map = proj.maps.find(m => m.name === "NewBarkTown")!;
+    const rel = canonicalTilesetPath(proj.tileset(map.tileset).metatilesPath);
+    const file = join(tmp, rel);
+    const bytes = readFileSync(file);
+    const refused: [string, unknown][] = [
+      ["pencil", { tool: "pencil", targets: [{ x: 0, y: 0 }], stamp: stamp1(24), origin: { x: 0, y: 0 } }],
+      ["rect", { tool: "rect", x0: 0, y0: 0, x1: 1, y1: 1, stamp: stamp1(24), origin: { x: 0, y: 0 } }],
+      ["bucket", { tool: "bucket", x: 0, y: 0, replacement: { metatileId: 24 } }],
+    ];
+    try {
+      const before = (await session(await post(`${NBT}/paint/begin`))).blocks;
+      rmSync(file);
+      for (const [tool, body] of refused) {
+        const r = await post(`${NBT}/paint/apply`, body);
+        const answer = (await r.json()) as { error: string; code?: string };
+        expect(r.status, `${tool}: ${JSON.stringify(answer)}`).toBe(409);
+        expect(answer.code, tool).toBe("BAD_VALUE");
+        expect(answer.error, tool).toContain(rel);
+      }
+      // shift names no ids, so it never reads the file; end reports the session's blocks.
+      expect((await post(`${NBT}/paint/apply`, { tool: "shift", dx: 0, dy: 0 })).status).toBe(200);
+      expect((await session(await post(`${NBT}/paint/end`))).blocks, "refused applies left the blocks unchanged").toEqual(before);
+    } finally {
+      writeFileSync(file, bytes);
+      await post(`${NBT}/discard`);
+    }
   });
 
   describe("4. malformed input is a 400/404, never a 500", () => {

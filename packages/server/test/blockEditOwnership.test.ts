@@ -15,14 +15,15 @@
  */
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { beforeAll, afterAll, beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { openProject, type Project } from "@pokemap/core/src/project.js";
 import { openGbcProject, type GbcProject } from "@pokemap/core/src/gbc/project.js";
 import { canonicalTilesetPath } from "@pokemap/core/src/blockEdit/canonicalTilesetPath.js";
 import { BlockEditRefusal, type TilesetFileEdit } from "@pokemap/core/src/blockEdit/types.js";
-import { ownedTilesetPaths, requireTilesetOwnership, refuseUnsavedBlockRefs, stageTilesetPlan, type BlockEditPlan } from "../src/blockEditOwnership.js";
+import { ownedTilesetPaths, requireTilesetOwnership, refuseUnsavedBlockRefs, savedMetatileCount, stageTilesetPlan, type BlockEditPlan } from "../src/blockEditOwnership.js";
 import { createProjectHandler } from "../src/index.js";
 import { createGbcProjectHandler } from "../src/gbcRoutes.js";
 import * as editSessions from "../src/editSessions.js";
@@ -1252,4 +1253,38 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC block-edit ownership (Pla
     }
   });
 
+});
+
+// Q3: the saved metatile count read from disk; a missing file is a refusal, not a raw ENOENT.
+describe("savedMetatileCount (Q3)", () => {
+  let dir: string;
+  beforeAll(() => { dir = mkdtempSync(join(tmpdir(), "pokemap-savedcount-")); });
+  afterAll(() => { rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); });
+
+  it("returns floor(size / 16) of the file under the root", () => {
+    writeFileSync(join(dir, "exact.bin"), Buffer.alloc(48));
+    writeFileSync(join(dir, "ragged.bin"), Buffer.alloc(50));
+    writeFileSync(join(dir, "empty.bin"), Buffer.alloc(0));
+    expect(savedMetatileCount(dir, "exact.bin")).toBe(3);
+    expect(savedMetatileCount(dir, "ragged.bin")).toBe(3);
+    expect(savedMetatileCount(dir, "empty.bin")).toBe(0);
+  });
+
+  it("a missing file throws BlockEditRefusal BAD_VALUE naming the path", () => {
+    const refusal = expectRefusal(() => savedMetatileCount(dir, "data/tilesets/gone/metatiles.bin"), "BAD_VALUE");
+    expect(refusal.message).toContain("data/tilesets/gone/metatiles.bin");
+  });
+
+  it("a path under a regular file (ENOTDIR on POSIX, ENOENT on Windows) counts as missing", () => {
+    writeFileSync(join(dir, "plain.bin"), Buffer.alloc(16));
+    const refusal = expectRefusal(() => savedMetatileCount(dir, "plain.bin/metatiles.bin"), "BAD_VALUE");
+    expect(refusal.message).toContain("plain.bin/metatiles.bin");
+  });
+
+  it("rethrows an error that is not a missing file (a NUL byte in the path is rejected portably)", () => {
+    let thrown: unknown;
+    try { savedMetatileCount(dir, `bad${String.fromCharCode(0)}.bin`); } catch (error) { thrown = error; }
+    expect(thrown).toBeInstanceOf(Error);
+    expect(thrown).not.toBeInstanceOf(BlockEditRefusal);
+  });
 });
