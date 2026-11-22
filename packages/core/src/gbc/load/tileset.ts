@@ -6,6 +6,7 @@ import { norm } from "../../config/paths.js";
 import { codeLines, stripMacroDefs, stripComment, matchCall, parseConstDefs, findDefEqu } from "./asm.js";
 import { parseIncbins, parseIncludes } from "./incbin.js";
 import { parseNum } from "./map.js";
+import { assertInsideRoot } from "./pathGuard.js";
 import { readShadesPng } from "./png.js";
 
 /**
@@ -447,9 +448,15 @@ export function pngPathFor(gfxIncbinPath: string): string {
   return `${m[1]}.png`;
 }
 
-function labelMap(entries: { labels: string[]; path: string }[]): Map<string, string> {
-  const out = new Map<string, string>();
-  for (const e of entries) for (const label of e.labels) out.set(label, e.path);
+interface LabeledPath {
+  path: string;
+  /** 1-based line of the directive that named it. */
+  line: number;
+}
+
+function labelMap(entries: { labels: string[]; path: string; line: number }[]): Map<string, LabeledPath> {
+  const out = new Map<string, LabeledPath>();
+  for (const e of entries) for (const label of e.labels) out.set(label, { path: e.path, line: e.line });
   return out;
 }
 
@@ -490,16 +497,28 @@ export function loadGbcTilesetByName(
   const collLabel = `${name}Coll`;
   const palMapLabel = `${name}PalMap`;
 
-  const gfxIncbinPath = gfxByLabel.get(gfxLabel);
-  if (!gfxIncbinPath) throw new Error(`loadGbcTilesetByName: no INCBIN label "${gfxLabel}" found in gfx/tilesets.asm`);
-  const metatilesPath = gfxByLabel.get(metaLabel);
-  if (!metatilesPath) throw new Error(`loadGbcTilesetByName: no INCBIN label "${metaLabel}" found in gfx/tilesets.asm`);
-  const collisionPath = collByLabel.get(collLabel);
-  if (!collisionPath) throw new Error(`loadGbcTilesetByName: no INCLUDE label "${collLabel}" found in gfx/tilesets.asm`);
-  const palMapPath = palMapByLabel.get(palMapLabel);
-  if (!palMapPath) {
+  const gfxEntry = gfxByLabel.get(gfxLabel);
+  if (!gfxEntry) throw new Error(`loadGbcTilesetByName: no INCBIN label "${gfxLabel}" found in gfx/tilesets.asm`);
+  const metaEntry = gfxByLabel.get(metaLabel);
+  if (!metaEntry) throw new Error(`loadGbcTilesetByName: no INCBIN label "${metaLabel}" found in gfx/tilesets.asm`);
+  const collEntry = collByLabel.get(collLabel);
+  if (!collEntry) throw new Error(`loadGbcTilesetByName: no INCLUDE label "${collLabel}" found in gfx/tilesets.asm`);
+  const palMapEntry = palMapByLabel.get(palMapLabel);
+  if (!palMapEntry) {
     throw new Error(`loadGbcTilesetByName: no INCLUDE label "${palMapLabel}" found in gfx/tileset_palette_maps.asm`);
   }
+
+  // D25: refuse an escaping decomp path before reading it (never outside the
+  // project). Only this tileset is affected; the others still load.
+  assertInsideRoot(gfxEntry.path, { file: "gfx/tilesets.asm", line: gfxEntry.line, key: "INCBIN" });
+  assertInsideRoot(metaEntry.path, { file: "gfx/tilesets.asm", line: metaEntry.line, key: "INCBIN" });
+  assertInsideRoot(collEntry.path, { file: "gfx/tilesets.asm", line: collEntry.line, key: "INCLUDE" });
+  assertInsideRoot(palMapEntry.path, { file: "gfx/tileset_palette_maps.asm", line: palMapEntry.line, key: "INCLUDE" });
+
+  const gfxIncbinPath = gfxEntry.path;
+  const metatilesPath = metaEntry.path;
+  const collisionPath = collEntry.path;
+  const palMapPath = palMapEntry.path;
 
   const tilesetConstants = parseConstDefs(readText("constants/tileset_constants.asm"));
   const collisionConstants = parseCollisionConstants(readText("constants/collision_constants.asm"));

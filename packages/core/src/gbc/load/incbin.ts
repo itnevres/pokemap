@@ -4,6 +4,8 @@ export interface IncbinEntry {
    *  sharing one .blk) all attach to the same entry. */
   labels: string[];
   path: string;
+  /** 1-based line of the directive itself in the source text (CRLF safe). */
+  line: number;
 }
 
 // `Name:` or `Name::`, optionally followed by a `; comment` -- e.g.
@@ -26,7 +28,8 @@ function scanStackedLabels(text: string, keyword: "INCBIN" | "INCLUDE"): IncbinE
   const out: IncbinEntry[] = [];
   let pending: string[] = [];
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
     if (line.trim() === "") continue;
 
     const label = line.match(LABEL_RE);
@@ -37,7 +40,7 @@ function scanStackedLabels(text: string, keyword: "INCBIN" | "INCLUDE"): IncbinE
 
     const directive = line.match(directiveRe);
     if (directive) {
-      out.push({ labels: pending, path: directive[1]! });
+      out.push({ labels: pending, path: directive[1]!, line: i + 1 });
       pending = [];
       continue;
     }
