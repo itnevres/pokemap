@@ -248,6 +248,7 @@ it("context Discard waits for a held in-context stroke, then leaves no hub sessi
   await act(async () => h.release());
   await waitFor(() => expect(h.discards()).toHaveLength(1));
   await waitFor(() => expect(h.hub.open).toBe(false));
+  expect(h.discards()).toHaveLength(1);
 });
 
 it("Discard after leaving context for Map still waits for the in-flight context stroke", async () => {
@@ -261,4 +262,5 @@ it("Discard after leaving context for Map still waits for the in-flight context 
   await act(async () => h.release());
   await waitFor(() => expect(h.discards()).toHaveLength(1));
   await waitFor(() => expect(h.hub.open).toBe(false));
+  expect(h.discards()).toHaveLength(1);
 });

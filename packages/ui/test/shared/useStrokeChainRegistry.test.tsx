@@ -61,11 +61,21 @@ describe("useStrokeChainRegistry", () => {
 
   it("a rejecting or throwing unmounted chain is dropped without an unhandled rejection", async () => {
     const { result } = renderHook(() => useStrokeChainRegistry());
+    let rejectCalls = 0;
+    let throwCalls = 0;
+    const rejecting: SettledChain = { settled: () => { rejectCalls++; return Promise.reject(new Error("x")); } };
+    const throwing: SettledChain = { settled: () => { throwCalls++; throw new Error("y"); } };
     act(() => {
-      result.current.onStrokeChain({ settled: () => Promise.reject(new Error("x")) }, false);
-      result.current.onStrokeChain({ settled: () => { throw new Error("y"); } }, false);
+      for (const chain of [rejecting, throwing]) {
+        result.current.onStrokeChain(chain, true);
+        result.current.onStrokeChain(chain, false);
+      }
     });
     await act(async () => {});
+    await result.current.strokeSettled();
+    // Both were dropped on unmount: strokeSettled did not ask them again.
+    expect(rejectCalls).toBe(1);
+    expect(throwCalls).toBe(1);
   });
 
   it("keeps its callbacks stable across a rerender", () => {

@@ -25,8 +25,13 @@ export function hasPendingSessionMutations(map: string | null): boolean {
 //   route, which is deliberately not built.
 // - Sources are re-read only when a create or block apply was pending. A stroke started while the barrier is
 //   already waiting (the canvas stays live after the Discard confirm) is not awaited; its late /paint/apply can
-//   reopen a session. The later /paint/end reply carries a higher seq, so the UI normally recovers.
-// - There is no timeout: a paint request that never answers holds the barrier (and so Discard/Save/undo).
+//   reopen a session. The later /paint/end reply carries a higher seq, so the UI recovers when /paint/end is
+//   issued after the /discard reply; if the whole stroke is issued before that reply, the UI shows clean while
+//   the hub holds a dirty session until the map is reloaded.
+// - There is no timeout: a paint request that never answers holds the barrier (Discard, Save, undo/redo, Done,
+//   the warp popup), even after its surface unmounts.
+// - The registry is one per shell and the shell registers it under the selected map, so the wait covers every
+//   tracked chain of this shell (an unmounted chain of another map included), not only the selected map's.
 const settledSources = new Map<string, Set<() => Promise<void>>>();
 export function registerSettledSource(map: string, settled: () => Promise<void>): () => void {
   let set = settledSources.get(map);
