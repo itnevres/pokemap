@@ -1,5 +1,6 @@
 import { mkdtempSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -11,22 +12,32 @@ export interface ServerOptions {
   project?: string;
   /** Directory render tools write PNGs into; default a fresh temp dir. */
   outDir?: string;
-  /** Register the write tools (Plan 4 row 3c). Off by default; the CLI flag is --allow-writes. */
+  /** Let the write tools run (Plan 4 row 3c). Off by default; the CLI flag is --allow-writes. The tools are always listed; without it each refuses and names the flag. */
   allowWrites?: boolean;
+  /** Where to look for a running PokeMap hub. Tests only; default 127.0.0.1:5174. */
+  hubAddress?: HubAddress;
 }
 
-/** Where a running PokeMap hub answers; any HTTP answer there means the app is open. */
-export const HUB_URL = "http://127.0.0.1:5174/api/hub";
-export const HUB_TIMEOUT_MS = 500;
+/** Where a running PokeMap hub listens; any accepted connection there means the app is open. */
+export interface HubAddress { host: string; port: number }
+export const HUB_ADDRESS: HubAddress = { host: "127.0.0.1", port: 5174 };
+/** A refused loopback connect can itself take 1-2 s on Windows, so this must stay well above that. */
+export const HUB_TIMEOUT_MS = 3000;
 
-/** True when something answers at the hub address (any status). Refused or timed out means no hub. */
-export async function hubRunning(url = HUB_URL, timeoutMs = HUB_TIMEOUT_MS): Promise<boolean> {
-  try {
-    await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
-    return true;
-  } catch {
-    return false;
-  }
+/**
+ * Fails closed. False only when the connection is refused (nothing listening).
+ * A connection that is accepted, one that does not answer in time (a hub busy
+ * in a long synchronous step still accepts at the kernel), or any other error
+ * all mean "running".
+ */
+export function hubRunning(addr: HubAddress = HUB_ADDRESS, timeoutMs = HUB_TIMEOUT_MS): Promise<boolean> {
+  return new Promise((resolve) => {
+    const sock = connect({ host: addr.host, port: addr.port });
+    const done = (running: boolean) => { clearTimeout(timer); sock.destroy(); resolve(running); };
+    const timer = setTimeout(() => done(true), timeoutMs);
+    sock.once("connect", () => done(true));
+    sock.once("error", (e: NodeJS.ErrnoException) => done(e.code !== "ECONNREFUSED"));
+  });
 }
 
 const text = (t: string, isError = false) => ({ content: [{ type: "text" as const, text: t }], ...(isError ? { isError: true } : {}) });
@@ -59,7 +70,7 @@ function dashRefusal(tool: string, args: Record<string, string>) {
 }
 
 /**
- * Builds the read tool set (Plan 4 row 3a) and, with allowWrites, the write tools (row 3c). Every tool shells out to the CLI, so family dispatch and
+ * Builds the read tool set (Plan 4 row 3a) and the write tools (row 3c; they refuse unless allowWrites). Every tool shells out to the CLI, so family dispatch and
  * refusal messages ("... is not supported for gbc ...") stay the CLI's own.
  */
 export function createPokemapServer(opts: ServerOptions = {}): McpServer {
@@ -166,35 +177,41 @@ export function createPokemapServer(opts: ServerOptions = {}): McpServer {
       ...(x1 !== undefined ? ["--x1", String(x1)] : []), ...(y1 !== undefined ? ["--y1", String(y1)] : []), "--metatile", String(metatile)]);
   });
 
-  if (opts.allowWrites) registerWriteTools(server, run);
+  registerWriteTools(server, run, !!opts.allowWrites, opts.hubAddress ?? HUB_ADDRESS);
   return server;
 }
 
 type Runner = (args: string[]) => Promise<ReturnType<typeof toResult>>;
 
 /**
- * Write tools (Plan 4 row 3c), registered only with allowWrites. Each spawns
+ * Write tools (Plan 4 row 3c), always listed; without allowWrites each refuses and names --allow-writes. Each spawns
  * the CLI's own write command with --yes, so the save funnel, guards and plan
  * text are the CLI's. A running hub keeps caches and session baselines that a
  * direct write would invalidate (trap 10), so a write is refused while one
- * answers; dry_run writes nothing and skips that check.
+ * is listening (fail closed, see hubRunning); dry_run writes nothing and skips that check.
  */
-function registerWriteTools(server: McpServer, run: Runner): void {
+function registerWriteTools(server: McpServer, run: Runner, allowWrites: boolean, hub: HubAddress): void {
   const map = z.string().describe("map name, e.g. Route35");
   const dryRun = z.boolean().optional().describe("true: return the plan and write nothing");
   const kind = z.enum(["warp", "coord", "bg", "object"]);
   const index = z.number().int().min(0).describe("0-based index within that kind");
-  const guarded = async (tool: string, strings: Record<string, string>, dry: boolean | undefined, args: string[]) => {
-    const refused = dashRefusal(tool, strings);
-    if (refused) return refused;
-    if (!dry && await hubRunning()) {
-      return text(`${tool}: PokeMap is running (a hub answers on 127.0.0.1:5174). Close PokeMap first, then call this tool again; writing around a running app would make its next save fail as changed on disk.`, true);
-    }
-    return run([...args, ...(dry ? [] : ["--yes"])]);
+  let queue: Promise<unknown> = Promise.resolve(); // one CLI writer at a time
+  const guarded = (tool: string, strings: Record<string, string>, dry: boolean | undefined, args: string[]) => {
+    const job = queue.then(async () => {
+      if (!allowWrites) return text(`${tool}: write tools are disabled; restart the MCP server with --allow-writes to enable them`, true);
+      const refused = dashRefusal(tool, strings);
+      if (refused) return refused;
+      if (!dry && await hubRunning(hub)) {
+        return text(`${tool}: PokeMap is running (a hub is listening on ${hub.host}:${hub.port}). Close PokeMap first, then call this tool again; writing around a running app would make its next save fail as changed on disk.`, true);
+      }
+      return run([...args, ...(dry ? [] : ["--yes"])]);
+    });
+    queue = job.catch(() => undefined);
+    return job;
   };
 
   server.registerTool("pokemap_paint", {
-    description: "WRITE (needs --allow-writes, PokeMap closed): paint a metatile (pencil), rectangle (rect) or flood fill (bucket, GBC only) and return the save plan (both families). dry_run previews only.",
+    description: "WRITE (needs the server started with --allow-writes, and PokeMap closed): paint a metatile (pencil), rectangle (rect) or flood fill (bucket, GBC only) and return the save plan (both families). dry_run previews only.",
     inputSchema: {
       map, tool: z.enum(["pencil", "rect", "bucket"]),
       x: z.number().int(), y: z.number().int(), x1: z.number().int().optional(), y1: z.number().int().optional(),
@@ -205,29 +222,29 @@ function registerWriteTools(server: McpServer, run: Runner): void {
     ...(x1 !== undefined ? ["--x1", String(x1)] : []), ...(y1 !== undefined ? ["--y1", String(y1)] : []), "--metatile", String(metatile)]));
 
   server.registerTool("pokemap_indicator_add", {
-    description: "WRITE (needs --allow-writes, PokeMap closed): add a Pokemon Indicator object event with its script (GBA only) and return the save plan. dry_run previews only.",
+    description: "WRITE (needs the server started with --allow-writes, and PokeMap closed): add a Pokemon Indicator object event with its script (GBA only) and return the save plan. dry_run previews only.",
     inputSchema: {
       map, species: z.string().describe("e.g. RATTATA or SPECIES_RATTATA"), text: z.string().describe("text shown on interact"),
       x: z.number().int(), y: z.number().int(), elevation: z.number().int().min(0).optional(), dry_run: dryRun,
     },
-  }, ({ map, species, text, x, y, elevation, dry_run }) => guarded("pokemap_indicator_add", { map, species, text }, dry_run, [
-    "indicator", "add", map, `--species=${species}`, `--text=${text}`, "--x", String(x), "--y", String(y),
+  }, ({ map, species, text: msg, x, y, elevation, dry_run }) => guarded("pokemap_indicator_add", { map, species, text: msg }, dry_run, [
+    "indicator", "add", map, `--species=${species}`, `--text=${msg}`, "--x", String(x), "--y", String(y),
     ...(elevation !== undefined ? ["--elevation", String(elevation)] : [])]));
 
   server.registerTool("pokemap_event_move", {
-    description: "WRITE (needs --allow-writes, PokeMap closed): move one event to (x, y) in 16 px event steps (GBC only) and return the save plan. dry_run previews only.",
+    description: "WRITE (needs the server started with --allow-writes, and PokeMap closed): move one event to (x, y) in 16 px event steps (GBC only) and return the save plan. dry_run previews only.",
     inputSchema: { map, kind, index, x: z.number().int(), y: z.number().int(), dry_run: dryRun },
   }, ({ map, kind, index, x, y, dry_run }) => guarded("pokemap_event_move", { map }, dry_run, [
     "event", "move", map, "--kind", kind, "--index", String(index), "--x", String(x), "--y", String(y)]));
 
   server.registerTool("pokemap_event_add", {
-    description: "WRITE (needs --allow-writes, PokeMap closed): append one event (GBC only); args is the macro's full comma-separated argument list in source order (4 for warp/coord/bg, 13 for object). Returns the save plan. dry_run previews only.",
+    description: "WRITE (needs the server started with --allow-writes, and PokeMap closed): append one event (GBC only); args is the macro's full comma-separated argument list in source order (4 for warp/coord/bg, 13 for object). Returns the save plan. dry_run previews only.",
     inputSchema: { map, kind, args: z.string(), const: z.string().optional().describe("object only: new object_const_def const"), dry_run: dryRun },
-  }, ({ map, kind, args, const: constName, dry_run }) => guarded("pokemap_event_add", { map, args, ...(constName ? { const: constName } : {}) }, dry_run, [
-    "event", "add", map, "--kind", kind, `--args=${args}`, ...(constName ? [`--const=${constName}`] : [])]));
+  }, ({ map, kind, args, const: constName, dry_run }) => guarded("pokemap_event_add", { map, args, ...(constName !== undefined ? { const: constName } : {}) }, dry_run, [
+    "event", "add", map, "--kind", kind, `--args=${args}`, ...(constName !== undefined ? [`--const=${constName}`] : [])]));
 
   server.registerTool("pokemap_event_delete", {
-    description: "WRITE (needs --allow-writes, PokeMap closed): delete one event (GBC only) and return the save plan, including warnings for warps it re-targets. dry_run previews only.",
+    description: "WRITE (needs the server started with --allow-writes, and PokeMap closed): delete one event (GBC only) and return the save plan, including warnings for warps it re-targets. dry_run previews only.",
     inputSchema: { map, kind, index, dry_run: dryRun },
   }, ({ map, kind, index, dry_run }) => guarded("pokemap_event_delete", { map }, dry_run, [
     "event", "delete", map, "--kind", kind, "--index", String(index)]));

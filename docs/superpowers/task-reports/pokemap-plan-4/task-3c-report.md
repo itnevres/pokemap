@@ -30,3 +30,28 @@ Mutation checks (writes.test.ts):
 - hub check removed (`false && ...`): 5 hub-refusal tests red.
 - `--allow-writes` gate removed (`if (true)`): "lists the write tools only with allowWrites" red.
 - paint x/y mapping swapped: first run stayed green (test coordinates were symmetric: x=y); tests changed to x=3,y=1 (GBA) and x=2,y=0 (GBC); rerun: GBA and GBC paint tests red. Restored afterwards.
+
+## Review round 1
+
+Spec review (Opus) and quality review (Opus) both returned CHANGES NEEDED. Master rulings applied: tools always listed and refuse without the flag, naming it; hub check fails closed; hub address injectable; `--project=` accepted; open question 1 moved out of "Open:".
+
+Fixed:
+- Spec 1 / quality 13 (flag): write tools are always registered. Without `allowWrites` each refuses (dry run too) with a message naming `--allow-writes`. Plan ruling updated, still marked as the master's call. Tests: all five tools, both dry modes; plus a stdio spawn of index.ts with and without the flag.
+- Spec 2 / quality 1 (fail open): `hubRunning` is now a TCP connect (3 s timeout). Only ECONNREFUSED means "not running"; an accepted connection, any answer, a timeout or any other error means "running". Tests: refused port; HTTP listener; accept-and-never-answer listener; all five write tools refused against each fake hub with files byte-identical; dry run passes through.
+- Quality 3 (real port 5174): `ServerOptions.hubAddress` (tests only). Every test uses a known-closed ephemeral port or an ephemeral fake hub; no test skips or depends on PokeMap being open.
+- Quality 2 / spec 5 (`--project`): new `src/args.ts` with strict `parseArgs`: `--project <p>` and `--project=<p>`; a missing value or an unknown option exits 2 at startup; startup logs project and write state to stderr. Tests in `test/args.test.ts`.
+- Spec 3: open question 1 moved into the Rulings; the remaining open item renumbered. Spec 4: the `dry_run` skip recorded in the ruling as a 3c implementation note.
+- Spec 6, quality 11: tests assert the dry-run text and a diff body (`map.bin`).
+- Spec 7, quality 4: indicator_add test uses asymmetric x/y, elevation 3, and checks the added object event and script; a rect test covers x1/y1.
+- Spec 8 / quality 5: dash-refusal cases pass `dry_run: true`.
+- Quality 8: write calls serialized through a promise chain. Quality 9: `const: ""` no longer dropped. Quality 12: handler variable `text` renamed `msg`; no HTTP body left to cancel.
+- Spec 9: one exported `HUB_ADDRESS`. The coupling is recorded here: if the hub moves off 5174 (row 1a port 0, Electron), pass its address to the MCP server.
+
+Left, with reasons:
+- Quality 6 (300 s kill of a write mid-commit): needs a change to the shared runCli timeout; follow-up.
+- Quality 7 / spec 10 (window between check and commit): inherent in checking before the CLI spawn; moving the probe into the CLI is a larger change.
+- Quality 10: the hub suite copies the corpora in beforeAll, so it errors rather than skips without them.
+- Spec 7 remainder: `const` (object add) and GBC `bucket` mappings still have no write test.
+- Quality 12 remainder: the CLI's own "pass --yes" dry-run wording is the CLI's text, left verbatim.
+
+Verification and mutation results: see the end of this section.
