@@ -15,3 +15,8 @@
 
 ## Gate
 Gate at `1aaa4ed` (code identical to `7d7e947`): 5,163 pass / 1 fail / 273 files; typecheck pass, UI build pass; subjects unchanged. The one fail is the known `engine.test.ts > parses the subject repo's real porymap.project.cfg` env fail (RESUME lists it).
+
+## Live check (2026-11-22, Q8 UI change, RULES §3b)
+Servers started from this branch's worktree (`npx tsx packages/server/src/serve.ts`, then `--gbc`; `npm run dev -w @pokemap/ui`); the Vite-served `BlockEditorDialog.tsx` contained the new `affected` list. Read-only steps only: nothing applied or saved, Save/Undo stayed disabled, both subject repos unchanged (`git status --porcelain` empty), servers stopped after.
+- **GBA** (Route29, Edit block tool, a primary-tileset tree block, Layer type COVERED → SPLIT, OK): the Confirm edit region read "Used 231 times on this map (+ border), 3986 times on 25 other maps; 26 maps affected", 8 `<li>` entries (CherrygroveCity … Route26) and `and 18 more`. Cancel, then Escape: no pending edit.
+- **GBC** (Route39, Edit block tool, a TILESET_JOHTO block of eight-by-two `$05` tiles, Palette GREEN): picked sheet tile `$8A`, placed it on square 0; the Palette select changed GREEN → RED with no scope prompt. The GET reply's `sheet.tilePalettes` (length 224) has `[0x8A]` = "RED" and `[5]` = "GREEN", matching; its `block.tilePalettes[0]` is "GREEN", so the old code would have kept GREEN.
