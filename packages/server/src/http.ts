@@ -68,7 +68,6 @@ export function decodeSegment(raw: string): string | undefined {
   }
 }
 
-
 /**
  * Plan H task H-a: the JSON-body preamble every POST route wrote out by hand
  * (read, parse, 400 on bad JSON, shape check, 413 on an oversize body, 500
@@ -98,6 +97,7 @@ export function jsonBody<T>(
       send(500, { error: e instanceof Error ? e.message : String(e) });
     });
 }
+
 /** JSON replies always declare their type and disable content sniffing. */
 export function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { "content-type": "application/json", "x-content-type-options": "nosniff" });
