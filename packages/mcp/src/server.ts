@@ -1,4 +1,5 @@
 import { mkdtempSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -18,6 +19,17 @@ const text = (t: string, isError = false) => ({ content: [{ type: "text" as cons
 function toResult(r: CliResult) {
   const body = [r.stdout, r.stderr].filter((s) => s.trim()).join("\n");
   return text(body || `(exit ${r.status}, no output)`, r.status !== 0);
+}
+
+/**
+ * Image content for the PNG a render wrote, then the CLI's own text. A failed
+ * CLI call is returned unchanged, with no image.
+ */
+async function imageResult(r: CliResult, file: string) {
+  const base = toResult(r);
+  if (base.isError) return base;
+  const data = (await readFile(file)).toString("base64");
+  return { content: [{ type: "image" as const, data, mimeType: "image/png" }, ...base.content] };
 }
 
 /**
@@ -44,25 +56,27 @@ export function createPokemapServer(opts: ServerOptions = {}): McpServer {
   const time = z.enum(["morn", "day", "nite"]).optional().describe("time of day (GBC only)");
 
   server.registerTool("pokemap_render", {
-    description: "Render a map or layout to a PNG file; returns the file path and size (both families). Image content comes in a later release.",
+    description: "Render a map or layout to a PNG; returns the PNG as image content, then its file path and size (both families).",
     inputSchema: { target: z.string().describe("map or layout name"), border: z.number().int().min(0).optional().describe("rings of border"), time },
-  }, ({ target, border, time }) => {
+  }, async ({ target, border, time }) => {
     const refused = dashRefusal("pokemap_render", { target });
     if (refused) return refused;
     const out = outFile(`${target.replace(/[^\w.-]/g, "_")}.png`);
-    return run(["render", target, "-o", out, ...(border !== undefined ? ["--border", String(border)] : []), ...(time ? ["--time", time] : [])]);
+    return imageResult(await runCli(opts.project, ["render", target, "-o", out, ...(border !== undefined ? ["--border", String(border)] : []), ...(time ? ["--time", time] : [])]), out);
   });
 
   server.registerTool("pokemap_render_world", {
-    description: "Render a bounded region of the stitched world to a PNG file (bbox in tiles for GBA, blocks for GBC); returns the path.",
+    description: "Render a bounded region of the stitched world to a PNG (bbox in tiles for GBA, blocks for GBC); returns the PNG as image content, then its path.",
     inputSchema: {
       x: z.number().int(), y: z.number().int(), w: z.number().int().positive(), h: z.number().int().positive(),
       scale: z.number().int().positive().optional().describe("pixels per tile (GBA default 4) or block (GBC default 8)"),
       dungeons: z.boolean().optional().describe("GBA only; false excludes auto-placed dungeon maps"), time,
     },
-  }, ({ x, y, w, h, scale, dungeons, time }) =>
-    run(["render-world", "--bbox", `${x},${y},${w},${h}`, "-o", outFile(`world-${x}_${y}_${w}x${h}.png`),
-      ...(scale ? ["--scale", String(scale)] : []), ...(dungeons === false ? ["--no-dungeons"] : []), ...(time ? ["--time", time] : [])]));
+  }, async ({ x, y, w, h, scale, dungeons, time }) => {
+    const out = outFile(`world-${x}_${y}_${w}x${h}.png`);
+    return imageResult(await runCli(opts.project, ["render-world", "--bbox", `${x},${y},${w},${h}`, "-o", out,
+      ...(scale ? ["--scale", String(scale)] : []), ...(dungeons === false ? ["--no-dungeons"] : []), ...(time ? ["--time", time] : [])]), out);
+  });
 
   server.registerTool("pokemap_map_info", {
     description: "A map's header, connections, events, resolved split and layout_version, as JSON (both families).",
