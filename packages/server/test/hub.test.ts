@@ -4,6 +4,7 @@ import { createServer as createHttp, request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { createHub, parentOf, safeNorm, type Hub } from "../src/hub.js";
+import { postChunked } from "./helpers/oversizeBody.js";
 import { norm } from "@pokemap/core/src/config/paths.js";
 import { SUBJECT_ROOT, hasProject } from "@pokemap/core/test/helpers/corpus.js";
 import { GBC_SUBJECT_ROOT, hasGbcProject } from "@pokemap/core/test/gbc/helpers/corpus.js";
@@ -42,11 +43,15 @@ function rawRequest(
   port: number, path: string, opts: { method?: string; headers?: Record<string, string>; body?: string },
 ): Promise<{ status: number; body: string }> {
   return new Promise((resolvePromise, reject) => {
-    const req = httpRequest({ host: "127.0.0.1", port, path, method: opts.method ?? "GET", headers: opts.headers }, (res) => {
+    // `agent: false` sends `connection: close`, so a request that declares a body it never sends (the E1b oversize
+    // cases) does not leave a keep-alive socket that makes `hub.close()` wait for it.
+    const req = httpRequest({ host: "127.0.0.1", port, path, method: opts.method ?? "GET", headers: opts.headers, agent: false }, (res) => {
       let data = "";
       res.on("data", (c: Buffer) => (data += c));
       res.on("end", () => resolvePromise({ status: res.statusCode ?? 0, body: data }));
     });
+    // A server that never answers (e.g. `refuseOversize` removed) fails in 2 s, not at the suite timeout.
+    req.setTimeout(2000, () => req.destroy(new Error("no response within 2 s")));
     req.on("error", reject);
     if (opts.body) req.write(opts.body);
     req.end();
@@ -288,6 +293,47 @@ describe("hub (non-corpus)", () => {
     }
   });
 
+  it("E1b: an oversize content-length POST /api/hub/open is refused 413 without changing the current project", async () => {
+    const hub = await createHub({ port: 0, home: makeHome() });
+    try {
+      const before = await getJson(hub.port, "/api/hub");
+      const r = await rawRequest(hub.port, "/api/hub/open", {
+        method: "POST",
+        headers: { "content-length": String(16777217), "content-type": "application/json" },
+      });
+      expect(r.status).toBe(413);
+      expect(JSON.parse(r.body)).toEqual({ error: "request body too large" });
+      expect(await getJson(hub.port, "/api/hub")).toEqual(before);
+    } finally {
+      await hub.close();
+    }
+  });
+
+  it("E1b: GET /api/hub JSON carries x-content-type-options: nosniff", async () => {
+    const hub = await createHub({ port: 0, home: makeHome() });
+    try {
+      const r = await fetch(`http://127.0.0.1:${hub.port}/api/hub`);
+      expect(r.status).toBe(200);
+      expect(r.headers.get("x-content-type-options")).toBe("nosniff");
+    } finally {
+      await hub.close();
+    }
+  });
+
+  it("E1b: a cross-origin request answers 403 (not 413) even with the oversize content-length header", async () => {
+    const hub = await createHub({ port: 0, home: makeHome() });
+    try {
+      const r = await rawRequest(hub.port, "/api/hub/open", {
+        method: "POST",
+        headers: { Origin: "http://evil.example", Host: `127.0.0.1:${hub.port}`, "content-length": String(16777217) },
+      });
+      expect(r.status).toBe(403);
+      expect(JSON.parse(r.body)).toEqual({ error: "cross-origin request refused" });
+    } finally {
+      await hub.close();
+    }
+  });
+
   // SR-F10: an unlistable directory (EPERM/EACCES) must be a named 403, not
   // an opaque 500 -- verified on this machine (see fix-round report) that
   // "C:/System Volume Information" really does raise EPERM; the skip guards
@@ -357,6 +403,33 @@ describe.skipIf(!hasProject(SUBJECT_ROOT) || !hasGbcProject(GBC_SUBJECT_ROOT))("
   // the create-new-handler step at all) and only THEN fail, inside
   // createProjectHandler's own openProject -- a directory with only the gba
   // marker file, missing every other real project file, does exactly that.
+  // Review round 1 (quality I2 and M1): the non-corpus E1b test above can only compare `current: null` with
+  // itself. This one has a real project open, so a refusal that disturbed it would show, and it covers both
+  // the declared-length 413 and the route-level chunked `BodyTooLarge` -> 413 branch with a body really uploaded.
+  it("E1b: oversize POST /api/hub/open (declared and chunked) answers 413 and leaves the open project running", async () => {
+    const own = await createHub({ port: 0, home: makeHome() });
+    try {
+      expect((await postJson(own.port, "/api/hub/open", { path: SUBJECT_ROOT })).status).toBe(200);
+      const before = await getJson(own.port, "/api/hub") as { current: { root: string } | null };
+      expect(before.current).not.toBeNull();
+
+      const declared = await rawRequest(own.port, "/api/hub/open", {
+        method: "POST", headers: { "content-length": String(16777217), "content-type": "application/json" },
+      });
+      expect(declared.status).toBe(413);
+      expect(JSON.parse(declared.body)).toEqual({ error: "request body too large" });
+
+      const chunked = await postChunked(own.port, "/api/hub/open");
+      expect(chunked.status).toBe(413);
+      expect(JSON.parse(chunked.body)).toEqual({ error: "request body too large" });
+
+      expect(await getJson(own.port, "/api/hub")).toEqual(before);
+      expect(await getJson(own.port, "/api/project")).toEqual({ family: "gba", root: norm(SUBJECT_ROOT) });
+    } finally {
+      await own.close();
+    }
+  }, 60_000);
+
   it("a failed second open (past family detection) after a successful one leaves the existing project running, not disposed", async () => {
     const opened = await postJson(hub.port, "/api/hub/open", { path: SUBJECT_ROOT });
     expect(opened.status).toBe(200);

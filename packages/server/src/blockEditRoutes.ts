@@ -22,8 +22,8 @@ import { encodePng } from "@pokemap/cli/src/png.js";
 import type { createEditSessionStore } from "./editSessions.js";
 import type { createGbcEditSessionStore } from "./gbcEditSessions.js";
 import { ownedTilesetPaths, requireTilesetOwnership, stageTilesetPlan, type BlockEditStore, type OwnershipEntry } from "./blockEditOwnership.js";
-import { decodeMapName, parseTimeParam } from "./gbcRoutes.js";
-import { readBody } from "./index.js";
+import { parseTimeParam } from "./gbcRoutes.js";
+import { BodyTooLarge, decodeSegment, readBody } from "./http.js";
 
 type Send = (code: number, body: unknown) => void;
 type Routes = { handle(req: IncomingMessage, url: URL, send: Send): boolean };
@@ -143,6 +143,7 @@ function routes(deps: CommonDeps, read: (name: string, url: URL, version: number
     const match = req.method === "GET" ? block ?? image : req.method === "POST" ? draft ?? action : null;
     if (!match) return false;
     const fail = (error: unknown, planner = false) => {
+      if (error instanceof BodyTooLarge) { send(413, { error: "request body too large" }); return; }
       if (error instanceof BadGrid) { send(409, { error: error.message, code: "BAD_GRID" }); return; }
       const refusal = error instanceof BlockEditRefusal;
       send(refusal ? (planner || error instanceof GetConflict || error.code !== "BAD_VALUE" ? 409 : 400) : 500,
@@ -150,7 +151,7 @@ function routes(deps: CommonDeps, read: (name: string, url: URL, version: number
     };
     try {
       const version = deps.syncOverlay();
-      const name = decodeMapName(match[1]!);
+      const name = decodeSegment(match[1]!);
       if (name === undefined) { send(400, { error: `malformed map name ${match[1]}`, code: "BAD_VALUE" }); return true; }
       if (!deps.hasMap(name)) { send(404, { error: `no map ${name}`, code: "NOT_FOUND" }); return true; }
       if ((draft || action) && req.method === "POST") {
