@@ -46,13 +46,18 @@ export type { BlockEditPlan } from "@pokemap/core/src/blockEdit/types.js";
 
 /**
  * Number of 16-byte metatile records in the saved `metatilesPath` (project-relative).
- * A tileset header that names a file that is not on disk is bad project data the
- * operator can fix, not a server fault: a paint that needs the count answers 409
- * `BAD_VALUE` naming the path (Plan H Q3), where a bare `statSync` threw a 500.
+ * A tileset header that names a file that is not on disk (or a directory) is bad
+ * project data the operator can fix, not a server fault, so it answers 409
+ * `BAD_VALUE` naming the path. Any other fs error is an environment fault and stays a 500.
  */
 export function savedMetatileCount(root: string, metatilesPath: string): number {
-  try { return Math.floor(statSync(resolve(root, metatilesPath)).size / 16); }
-  catch (e) {
+  try {
+    const stat = statSync(resolve(root, metatilesPath));
+    // A directory stats fine with a made-up size; it would read as 0 or 256 metatiles.
+    if (!stat.isFile()) throw new BlockEditRefusal("BAD_VALUE", `${metatilesPath}: metatiles path is not a file`);
+    return Math.floor(stat.size / 16);
+  } catch (e) {
+    if (e instanceof BlockEditRefusal) throw e;
     const code = (e as NodeJS.ErrnoException).code;
     if (code === "ENOENT" || code === "ENOTDIR") throw new BlockEditRefusal("BAD_VALUE", `${metatilesPath}: metatiles file is missing`);
     throw e;

@@ -15,7 +15,7 @@
  */
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { beforeAll, afterAll, beforeEach, afterEach, describe, expect, it, vi } from "vitest";
@@ -1279,6 +1279,12 @@ describe("savedMetatileCount (Q3)", () => {
     writeFileSync(join(dir, "plain.bin"), Buffer.alloc(16));
     const refusal = expectRefusal(() => savedMetatileCount(dir, "plain.bin/metatiles.bin"), "BAD_VALUE");
     expect(refusal.message).toContain("plain.bin/metatiles.bin");
+  });
+
+  it("a directory at the path is refused BAD_VALUE, not counted as a file", () => {
+    mkdirSync(join(dir, "adir.bin"));
+    const refusal = expectRefusal(() => savedMetatileCount(dir, "adir.bin"), "BAD_VALUE");
+    expect(refusal.message).toContain("adir.bin");
   });
 
   it("rethrows an error that is not a missing file (a NUL byte in the path is rejected portably)", () => {
