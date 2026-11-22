@@ -21,6 +21,16 @@ function toResult(r: CliResult) {
 }
 
 /**
+ * Refuses free-form string arguments that the CLI would read as options
+ * (e.g. "--help"). Returns the error result, or null when every value is safe.
+ * Call before spawning the CLI.
+ */
+function dashRefusal(tool: string, args: Record<string, string>) {
+  const bad = Object.entries(args).find(([, v]) => v.startsWith("-"));
+  return bad ? text(`${tool}: argument "${bad[0]}" must not start with "-"`, true) : null;
+}
+
+/**
  * Builds the read-only tool set (Plan 4 row 3a). Write tools (row 3c) are not
  * registered here. Every tool shells out to the CLI, so family dispatch and
  * refusal messages ("... is not supported for gbc ...") stay the CLI's own.
@@ -37,6 +47,8 @@ export function createPokemapServer(opts: ServerOptions = {}): McpServer {
     description: "Render a map or layout to a PNG file; returns the file path and size (both families). Image content comes in a later release.",
     inputSchema: { target: z.string().describe("map or layout name"), border: z.number().int().min(0).optional().describe("rings of border"), time },
   }, ({ target, border, time }) => {
+    const refused = dashRefusal("pokemap_render", { target });
+    if (refused) return refused;
     const out = outFile(`${target.replace(/[^\w.-]/g, "_")}.png`);
     return run(["render", target, "-o", out, ...(border !== undefined ? ["--border", String(border)] : []), ...(time ? ["--time", time] : [])]);
   });
@@ -55,7 +67,11 @@ export function createPokemapServer(opts: ServerOptions = {}): McpServer {
   server.registerTool("pokemap_map_info", {
     description: "A map's header, connections, events, resolved split and layout_version, as JSON (both families).",
     inputSchema: { map, section: z.enum(["header", "connections", "events"]).optional().describe("one section only") },
-  }, ({ map, section }) => run(["query", map, ...(section ? [`--${section}`] : [])]));
+  }, ({ map, section }) => {
+    const refused = dashRefusal("pokemap_map_info", { map });
+    if (refused) return refused;
+    return run(["query", map, ...(section ? [`--${section}`] : [])]);
+  });
 
   server.registerTool("pokemap_validate", {
     description: "Static checks over the project (GBA only): metatile range per layout and palette range. Findings as JSON.",
@@ -69,12 +85,20 @@ export function createPokemapServer(opts: ServerOptions = {}): McpServer {
   server.registerTool("pokemap_encounters", {
     description: "Wild encounters for a map with true percentages, as JSON (both families).",
     inputSchema: { map },
-  }, ({ map }) => run(["encounters", map, "--json"]));
+  }, ({ map }) => {
+    const refused = dashRefusal("pokemap_encounters", { map });
+    if (refused) return refused;
+    return run(["encounters", map, "--json"]);
+  });
 
   server.registerTool("pokemap_where", {
     description: "Every map a species can be caught on, as JSON (both families).",
     inputSchema: { species: z.string().describe("e.g. RATTATA or SPECIES_RATTATA") },
-  }, ({ species }) => run(["where", species, "--json"]));
+  }, ({ species }) => {
+    const refused = dashRefusal("pokemap_where", { species });
+    if (refused) return refused;
+    return run(["where", species, "--json"]);
+  });
 
   server.registerTool("pokemap_coverage", {
     description: "Encounter design gaps across the project, as JSON (both families).",
@@ -84,12 +108,20 @@ export function createPokemapServer(opts: ServerOptions = {}): McpServer {
   server.registerTool("pokemap_indicator_suggest", {
     description: "Rank catchable species and suggest a placement for a Pokemon Indicator on a map (GBA only, read-only).",
     inputSchema: { map },
-  }, ({ map }) => run(["indicator", "suggest", map]));
+  }, ({ map }) => {
+    const refused = dashRefusal("pokemap_indicator_suggest", { map });
+    if (refused) return refused;
+    return run(["indicator", "suggest", map]);
+  });
 
   server.registerTool("pokemap_indicator_list", {
     description: "List existing Pokemon Indicators (overworld-species object events) on a map (GBA only, read-only).",
     inputSchema: { map },
-  }, ({ map }) => run(["indicator", "list", map]));
+  }, ({ map }) => {
+    const refused = dashRefusal("pokemap_indicator_list", { map });
+    if (refused) return refused;
+    return run(["indicator", "list", map]);
+  });
 
   server.registerTool("pokemap_diff", {
     description: "Dry-run a paint given in this call and return its save plan. Does NOT see an open editor session's pending changes. Never writes.",
@@ -98,9 +130,12 @@ export function createPokemapServer(opts: ServerOptions = {}): McpServer {
       x: z.number().int(), y: z.number().int(), x1: z.number().int().optional(), y1: z.number().int().optional(),
       metatile: z.number().int().min(0),
     },
-  }, ({ map, tool, x, y, x1, y1, metatile }) =>
-    run(["diff", map, "--tool", tool, "--x", String(x), "--y", String(y),
-      ...(x1 !== undefined ? ["--x1", String(x1)] : []), ...(y1 !== undefined ? ["--y1", String(y1)] : []), "--metatile", String(metatile)]));
+  }, ({ map, tool, x, y, x1, y1, metatile }) => {
+    const refused = dashRefusal("pokemap_diff", { map });
+    if (refused) return refused;
+    return run(["diff", map, "--tool", tool, "--x", String(x), "--y", String(y),
+      ...(x1 !== undefined ? ["--x1", String(x1)] : []), ...(y1 !== undefined ? ["--y1", String(y1)] : []), "--metatile", String(metatile)]);
+  });
 
   return server;
 }

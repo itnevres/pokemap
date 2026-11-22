@@ -41,6 +41,12 @@ describe("tool list", () => {
     const names = (await client.listTools()).tools.map((t) => t.name).sort();
     expect(names).toEqual([...READ_TOOLS].sort());
   });
+
+  it("refuses a dash-leading argument before the CLI runs", async () => {
+    const r = await call(client, "pokemap_map_info", { map: "--help" });
+    expect(r.isError).toBe(true);
+    expect(r.text).toBe('pokemap_map_info: argument "map" must not start with "-"');
+  });
 });
 
 describe("GBA", () => {

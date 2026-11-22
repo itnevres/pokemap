@@ -6,6 +6,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const CLI_ENTRY = join(HERE, "../../cli/src/index.ts");
 const REPO_ROOT = join(HERE, "../../..");
 
+/** Default kill-after for one CLI call; validate scans every layout and can be slow. */
+export const CLI_TIMEOUT_MS = 300_000;
+
 export interface CliResult { status: number; stdout: string; stderr: string }
 
 /**
@@ -13,16 +16,21 @@ export interface CliResult { status: number; stdout: string; stderr: string }
  * tool returns exactly what the CLI prints, refusal text included. `node
  * --import tsx` rather than `npx tsx`: Windows cannot spawn the npx .cmd shim
  * without a shell. cwd is the repo root so pokemap.config.json's fallback
- * resolves when no project is given.
+ * resolves when no project is given. A call still running after timeoutMs is
+ * killed and resolves as an error result.
  */
-export function runCli(project: string | undefined, args: string[]): Promise<CliResult> {
+export function runCli(project: string | undefined, args: string[], timeoutMs = CLI_TIMEOUT_MS): Promise<CliResult> {
   const full = [...(project ? ["--project", project] : []), ...args];
   return new Promise((resolve) => {
     const child = spawn(process.execPath, ["--import", "tsx", CLI_ENTRY, ...full], { cwd: REPO_ROOT });
     let stdout = "", stderr = "";
+    const timer = setTimeout(() => {
+      child.kill();
+      resolve({ status: 1, stdout, stderr: `${stderr}pokemap CLI timed out after ${Math.round(timeoutMs / 1000)} seconds` });
+    }, timeoutMs);
     child.stdout.setEncoding("utf8").on("data", (d: string) => (stdout += d));
     child.stderr.setEncoding("utf8").on("data", (d: string) => (stderr += d));
-    child.on("error", (e) => resolve({ status: 1, stdout, stderr: `${stderr}${e.message}` }));
-    child.on("close", (code) => resolve({ status: code ?? 1, stdout, stderr }));
+    child.on("error", (e) => { clearTimeout(timer); resolve({ status: 1, stdout, stderr: `${stderr}${e.message}` }); });
+    child.on("close", (code) => { clearTimeout(timer); resolve({ status: code ?? 1, stdout, stderr }); });
   });
 }
