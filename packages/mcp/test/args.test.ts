@@ -15,6 +15,9 @@ describe("parseMcpArgs", () => {
   it("a missing --project value is an error", () => {
     expect(() => parseMcpArgs(["--project"])).toThrow();
     expect(() => parseMcpArgs(["--project", "--allow-writes"])).toThrow();
+    expect(() => parseMcpArgs(["--project="])).toThrow(/needs a path/);
+    expect(() => parseMcpArgs(["--project", ""])).toThrow(/needs a path/);
+    expect(() => parseMcpArgs(["--project", "   "])).toThrow(/needs a path/);
   });
   it("an unknown option is an error", () => {
     expect(() => parseMcpArgs(["--allow-write"])).toThrow();

@@ -55,3 +55,8 @@ Left, with reasons:
 - Quality 12 remainder: the CLI's own "pass --yes" dry-run wording is the CLI's text, left verbatim.
 
 Verification and mutation results: see the end of this section.
+
+## Verification and review round 2 (master, 2026-11-22)
+
+- At `76683b2` (under the machine-wide test lock): typecheck pass; `packages/mcp` 46/46. Mutations, each caught (tests red): fail-open hub check (6 tests), flag refusal removed (1), `--project=` form broken (1); sources restored, tree clean.
+- Opus re-review (`review-3c-rereview-opus.md` in the master's overnight notes): every round-1 Important finding fixed; the items left in round 1 are acceptable to merge. One new Important: an empty `--project` value (`--project=`, `--project ""`) was accepted and the CLI would fall back to `pokemap.config.json` (possibly a real game). Fixed by the master: `parseMcpArgs` throws "--project needs a path" on an empty or blank value; three test cases added. Six minor findings are left open (listed in the PR).
