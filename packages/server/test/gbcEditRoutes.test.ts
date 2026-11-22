@@ -18,6 +18,7 @@ import { gbcWarpLinks } from "@pokemap/core/src/world/nearWarpAdapters.js";
 import { readSidecar } from "@pokemap/core/src/world/sidecar.js";
 import { buildGbcWorldPayload } from "../src/gbcRoutes.js";
 import { createHub } from "../src/hub.js";
+import { postChunked } from "./helpers/oversizeBody.js";
 import { gbcCoverage } from "@pokemap/core/src/gbc/analyse/atlas.js";
 import { paintCells, floodFill, shiftGrid } from "@pokemap/core/src/gbc/edit/paint.js";
 import type { Block } from "@pokemap/core/src/gbc/model/types.js";
@@ -97,6 +98,16 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
     expect(await r.json()).toEqual({ changes: [], refusals: [], signNotices: [], tilesetEffects: [], fingerprint: expect.any(String) });
     await post(`${NBT}/discard`);
   });
+
+  // Review round 1 (quality I2): the route-level `BodyTooLarge` -> 413 branch of this file's `run()`.
+  it("1b. a chunked MAX_BODY_BYTES + 1 body on paint/apply answers 413 and opens no session", async () => {
+    const r = await postChunked(Number(new URL(base).port), `${NBT}/paint/apply`);
+    expect(r.status).toBe(413);
+    expect(JSON.parse(r.body)).toEqual({ error: "request body too large" });
+    expect(h.dirtyMaps()).toEqual([]);
+    expect((await plan()).changes).toEqual([]);
+    await post(`${NBT}/discard`);
+  }, 60_000);
 
   it("2. paint begin/apply/end: session shape, plan, dirtyMaps, render override, discard restores", async () => {
     const before = await png("NewBarkTown"); // populates renderCache
