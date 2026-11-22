@@ -59,6 +59,8 @@ export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
   // rendered.
   const editSession = useEditSession(selected, layout.data?.blocks, layout.data?.map);
   const [switchError, setSwitchError] = useState<string | null>(null);
+  const selectedNow = useRef(selected);
+  useEffect(() => { selectedNow.current = selected; }, [selected]);
 
   // Plan 6c E2: map-editing state and handlers (selected event, tool/dialog
   // state, event ops, discard) -- see useMapEditing.ts. Called here, at the same
@@ -193,7 +195,8 @@ export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
       // failure, never thrown into the dialog.
       onCommitted: () => {
         setSaveToken((token) => token + 1);
-        layout.reload().catch((e: unknown) => setSwitchError(`Saved, but could not reload the map: ${e instanceof Error ? e.message : String(e)}`));
+        const committed = selected;
+        layout.reload().catch((e: unknown) => { if (selectedNow.current === committed) setSwitchError(`Saved, but could not reload the map: ${e instanceof Error ? e.message : String(e)}`); });
       },
     },
   };

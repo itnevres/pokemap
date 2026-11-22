@@ -41,7 +41,7 @@ export function useGbcRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
   // the hub announces it only through `tilesetVersion`. Re-read this map's payload when that moves so the
   // palette is right even with no session open here -- passive, so a failure is swallowed; the first
   // version this hook sees is its mount value, not a change. `reloadMap`'s identity moves with the base
-  // payload, and the guard above is what keeps that from costing an extra read.
+  // payload, and the guard below is what keeps that from costing an extra read.
   const tilesetVersion = useTilesetVersion();
   const seenTilesetVersion = useRef(tilesetVersion);
   const reloadMap = map.reload;

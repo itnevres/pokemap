@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { MapData } from "@pokemap/core/src/load/maps.js";
 import type { Layout, Split } from "@pokemap/core/src/model/types.js";
 import { noteTilesetStamp, tilesetGeneration } from "../shared/tilesetVersion.js";
+import { keepUnchanged } from "../shared/keepUnchanged.js";
 
 /** Mirrors `packages/core/src/model/types.ts`'s `Block`, plus the resolved
  *  tile behaviour the server computes per block (see `/api/map/:name`). */
@@ -53,8 +54,9 @@ export function useMapLayout(name: string | null): UseMapLayoutResult {
   // started, the same "a reload's result never shadows a newer fetch" rule `useGbcMap` keeps with
   // `forBase`.
   const selected = useRef(name);
-  selected.current = name;
   const epoch = useRef(0);
+  const reloadSeq = useRef(0);
+  const loadingRef = useRef(false);
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -75,7 +77,9 @@ export function useMapLayout(name: string | null): UseMapLayoutResult {
   useEffect(() => {
     // Any load retires a reload that is still in flight for an older selection.
     const mine = ++epoch.current;
+    selected.current = name;
     if (!name) {
+      loadingRef.current = false;
       setData(null);
       setError(null);
       setLoading(false);
@@ -83,6 +87,7 @@ export function useMapLayout(name: string | null): UseMapLayoutResult {
     }
 
     let cancelled = false;
+    loadingRef.current = true;
     setLoading(true);
     setError(null);
     const generation = tilesetGeneration();
@@ -92,12 +97,14 @@ export function useMapLayout(name: string | null): UseMapLayoutResult {
         if (!cancelled && epoch.current === mine) {
           noteTilesetStamp(d, generation);
           setData(d);
+          loadingRef.current = false;
           setLoading(false);
         }
       })
       .catch((e: unknown) => {
         if (!cancelled && epoch.current === mine) {
           setError(e instanceof Error ? e.message : String(e));
+          loadingRef.current = false;
           setLoading(false);
         }
       });
@@ -109,13 +116,18 @@ export function useMapLayout(name: string | null): UseMapLayoutResult {
 
   const reload = useCallback(async () => {
     const target = selected.current;
-    if (target === null) return;
+    // Nothing selected, or the first load is still in flight (it reads the current state itself).
+    if (!target || loadingRef.current) return;
     const mine = epoch.current;
+    const seq = ++reloadSeq.current;
     const generation = tilesetGeneration();
     const d = await fetchLayout(target);
-    if (!mounted.current || epoch.current !== mine || selected.current !== target) return;
+    // Last-STARTED wins: a slower older reload must not overwrite a newer one's payload.
+    if (!mounted.current || epoch.current !== mine || selected.current !== target || reloadSeq.current !== seq) return;
     noteTilesetStamp(d, generation);
-    setData(d);
+    // A reload that changed only counts keeps the blocks/map identities: they seed the edit session, and a
+    // new seed would hide a dirty session's view until its next read.
+    setData((prev) => keepUnchanged(prev, d, ["blocks", "map"]));
     setError(null);
   }, [fetchLayout]);
 

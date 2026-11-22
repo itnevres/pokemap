@@ -62,6 +62,20 @@ describe("useGbcMap", () => {
     expect(currentTilesetVersion()).toBe(11);
   });
 
+  it("reload() keeps the blocks and events identities when only the counts changed", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ ...VALID_BODY, tilesetVersion: 0, paddingWidth: 3 }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ ...VALID_BODY, tilesetVersion: 0, paddingWidth: 4 }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = renderHook(() => useGbcMap("NewBarkTown"));
+    await waitFor(() => expect(result.current.data).not.toBeNull());
+    const before = result.current.data!;
+    await act(async () => { await result.current.reload(); });
+    expect(result.current.data!.paddingWidth).toBe(4);
+    expect(result.current.data!.blocks).toBe(before.blocks);
+    expect(result.current.data!.events).toBe(before.events);
+  });
+
   it("name === null fetches nothing and idles", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);

@@ -3,6 +3,7 @@ import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
 import { isGbcMapPayload } from "../guards.js";
 import { fetchGuarded, type UseGuardedFetchResult } from "../../hooks/useGuardedFetch.js";
 import { noteTilesetStamp, tilesetGeneration } from "../../shared/tilesetVersion.js";
+import { keepUnchanged } from "../../shared/keepUnchanged.js";
 
 export interface UseGbcMapResult extends UseGuardedFetchResult<GbcMapPayload> {
   /** Plan 7 Task 5: re-reads the payload in place (after a save committed). Unlike a URL change this never
@@ -50,7 +51,8 @@ export function useGbcMap(name: string | null): UseGbcMapResult {
     const generation = tilesetGeneration();
     const data = await fetchGuarded(url, isGbcMapPayload, label);
     noteTilesetStamp(data, generation);
-    setFresh({ url, forBase: baseData, data });
+    // Keep the blocks/events identities when only counts changed: they seed the edit session.
+    setFresh((previous) => ({ url, forBase: baseData, data: keepUnchanged(previous && previous.url === url && previous.forBase === baseData ? previous.data : baseData, data, ["blocks", "events"]) }));
   }, [url, label, baseData]);
   const data = fresh && fresh.url === url && fresh.forBase === baseData ? fresh.data : baseData;
   return { data, error: base.error, reload };
