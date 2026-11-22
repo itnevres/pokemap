@@ -22,3 +22,10 @@ Tier: Medium (ordinary feature over connected components; every wrong answer fai
 - `npm run typecheck`: passed.
 - Not run: full suite, UI build (row-level verify only), live Claude Code check (needs 3b image content).
 - npm quirk: `npm install -w @pokemap/mcp <pkg>` did not add the deps in this worktree; deps were declared in `packages/mcp/package.json` and a plain `npm install` produced the lockfile.
+
+## Review and gate (master, 2026-11-22)
+
+- Combined spec-and-quality review (Medium; Claude Sonnet, Codex at its usage limit): APPROVE, no blocking findings. Findings 1 (dash-leading arguments parsed as CLI options) and 2 (no timeout or child kill) fixed in `849c83e`: `dashRefusal` guards every free-form string argument; `runCli` kills the child after `CLI_TIMEOUT_MS` (300 s). Left: GBC `where`/`diff` not covered by tests (finding 4), `comment` key in package.json (matches packages/cli).
+- `npx vitest run --no-file-parallelism packages/mcp && npm run typecheck` at `849c83e`: 14 pass; typecheck pass.
+- Gate at `849c83e` (own `node_modules` via `npm ci`, under the machine-wide test lock): 5,243 pass / 2 fail / 277 files; typecheck pass, UI build pass; subjects unchanged. Fails: `core/test/config/engine.test.ts` (known env fail) and `server/test/api.test.ts` "GET /api/defects ..." (known 5 s timeout, passes alone), both listed in RESUME.
+- After merge the shared `node_modules` needs `npm install` (new `@modelcontextprotocol/sdk` and `zod` dependencies; the root typecheck and suite include `packages/mcp`).
