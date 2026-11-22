@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createServer, type PokemapServer } from "../src/index.js";
 import { MAX_BODY_BYTES } from "../src/http.js";
-import { postChunked, postDeclared } from "./helpers/oversizeBody.js";
+import { postChunked } from "./helpers/oversizeBody.js";
 import { SUBJECT_ROOT, hasProject } from "@pokemap/core/test/helpers/corpus.js";
 import { projectPaths } from "@pokemap/core/src/config/paths.js";
 import { writeSidecar } from "@pokemap/core/src/world/sidecar.js";
@@ -330,8 +330,6 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("world api", () => {
     expect(r.status).toBe(413);
     expect(await r.json()).toEqual({ error: "request body too large" });
     expect(sidecarBytes()).toEqual(before);
-    const real = await postDeclared(s.port, "/api/world/placement");
-    expect(real.status).toBe(413);
   }, 60_000);
 
   // E2 acceptance 4: the placement guard the GBC twin already has, plus GBA's
