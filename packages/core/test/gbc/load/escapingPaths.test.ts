@@ -71,6 +71,21 @@ describe("openGbcProject with decomp paths that leave the project", () => {
     return i + 1;
   }
 
+  /** Points the quoted path on the first line after `label` at `to`; returns its 1-based line. */
+  function mutateLabel(file: string, label: string, to: string): number {
+    const abs = join(root, file);
+    const rows = readFileSync(abs, "utf8").split("
+");
+    const at = rows.findIndex((l) => l.startsWith(label));
+    const i = at < 0 ? -1 : rows.findIndex((l, n) => n > at && /"[^"]+"/.test(l));
+    if (i < 0) throw new Error(`fixture shape changed: ${label} not found in ${file}`);
+    rows[i] = rows[i]!.replace(/"[^"]+"/, `"${to}"`);
+    writeFileSync(abs, rows.join("
+"));
+    return i + 1;
+  }
+  const other: Record<"gfx" | "coll" | "palMap", number> = { gfx: 0, coll: 0, palMap: 0 };
+
   beforeAll(() => {
     // itWithGbcCorpus skips the cases, but beforeAll still runs: guard it.
     try { root = copyGbcSubjectToTemp(); } catch { return; }
@@ -78,6 +93,10 @@ describe("openGbcProject with decomp paths that leave the project", () => {
     lines.tileset = mutate("gfx/tilesets.asm", '"data/tilesets/kanto_metatiles.bin"', '"../../outside/kanto_metatiles.bin"', "TilesetKantoMeta::");
     lines.roofs = mutate("data/maps/roofs.asm", '"gfx/tilesets/roofs/new_bark.2bpp"', '"../../outside/new_bark.2bpp"');
     lines.palette = mutate("engine/gfx/color.asm", '"gfx/tilesets/bg_tiles.pal"', '"../../outside/bg_tiles.pal"', "TilesetBGPalette:");
+    // One tileset each, so each guard (gfx / coll / palette map) is the only thing that can refuse.
+    other.gfx = mutateLabel("gfx/tilesets.asm", "TilesetParkGFX::", "../../outside/park.2bpp.lz");
+    other.coll = mutateLabel("gfx/tilesets.asm", "TilesetHouseColl::", "../../outside/house_coll.asm");
+    other.palMap = mutateLabel("gfx/tileset_palette_maps.asm", "TilesetPokecenterPalMap:", "../../outside/pc_palmap.asm");
     proj = openGbcProject(root);
   });
   afterAll(() => { if (root) removeTemp(root); });
@@ -108,6 +127,21 @@ describe("openGbcProject with decomp paths that leave the project", () => {
     const e = escape(() => proj.tileset("TILESET_KANTO"));
     expect(e.brokenPath).toMatchObject({ file: "gfx/tilesets.asm", line: lines.tileset, path: "../../outside/kanto_metatiles.bin" });
     expect(proj.tileset("TILESET_JOHTO").metatiles.length).toBeGreaterThan(0);
+  });
+
+  itWithGbcCorpus("refuses a tileset whose GFX INCBIN escapes", () => {
+    const e = escape(() => proj.tileset("TILESET_PARK"));
+    expect(e.brokenPath).toMatchObject({ file: "gfx/tilesets.asm", line: other.gfx, key: "INCBIN", path: "../../outside/park.2bpp.lz" });
+  });
+
+  itWithGbcCorpus("refuses a tileset whose Coll INCLUDE escapes", () => {
+    const e = escape(() => proj.tileset("TILESET_HOUSE"));
+    expect(e.brokenPath).toMatchObject({ file: "gfx/tilesets.asm", line: other.coll, key: "INCLUDE", path: "../../outside/house_coll.asm" });
+  });
+
+  itWithGbcCorpus("refuses a tileset whose palette-map INCLUDE escapes", () => {
+    const e = escape(() => proj.tileset("TILESET_POKECENTER"));
+    expect(e.brokenPath).toMatchObject({ file: "gfx/tileset_palette_maps.asm", line: other.palMap, key: "INCLUDE", path: "../../outside/pc_palmap.asm" });
   });
 
   itWithGbcCorpus("refuses the roofs when a roof INCBIN escapes", () => {

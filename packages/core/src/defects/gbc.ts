@@ -9,6 +9,7 @@ import { sizeDefect } from "./size.js";
 import type { DataDefect, MapDefectsCheck } from "./types.js";
 import { resolvesAll, type SymbolIndex } from "./symbols.js";
 import type { GbcMapEvents } from "../gbc/model/types.js";
+import { assertInsideRoot } from "../gbc/load/pathGuard.js";
 
 export function gbcEventSymbolDefects(name: string, events: GbcMapEvents, text: string, symbols: SymbolIndex): DataDefect[] {
   const file = `maps/${name}.asm`;
@@ -64,6 +65,8 @@ export function checkGbcMapDefects(proj: GbcProject, mapName: string, opts?: { s
   const incomplete: MapDefectsCheck["incomplete"] = [];
   const add = (kind: DataDefect["kind"], message: string, fix: string, target = file) =>
     out.push({ file: target, kind, message, fix });
+  // D25: a decomp path that leaves the project is never read here (F1c turns this into a defect).
+  assertInsideRoot(map.blkPath, { file: "data/maps/blocks.asm", key: "INCBIN" });
   const raw = readFileSync(`${proj.root}/${map.blkPath}`);
   const expected = map.width * map.height;
   if (raw.length !== expected) out.push(sizeDefect(map.blkPath, raw.length, expected,
@@ -82,6 +85,7 @@ export function checkGbcMapDefects(proj: GbcProject, mapName: string, opts?: { s
   }
   const meta = parseIncbins(read("gfx/tilesets.asm")).find((entry) => entry.labels.includes(`${name}Meta`));
   if (!meta) throw new Error(`gfx/tilesets.asm: no INCBIN for ${name}Meta`);
+  assertInsideRoot(meta.path, { file: "gfx/tilesets.asm", key: "INCBIN" });
   const bytes = readFileSync(`${proj.root}/${meta.path}`).length;
   if (bytes % 16 !== 0) throw new Error(`${meta.path}: size ${bytes} is not a multiple of 16`);
   const count = bytes / 16;
