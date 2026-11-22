@@ -468,8 +468,8 @@ export function suite(family: "gba" | "gbc") {
     // palette follows a block the editor appended. The key list stays EXACT -- it just grew by them.
     const expectSessionBody = (body: any) => {
       expect(Object.keys(body).sort()).toEqual((family === "gba"
-        ? ["blocks", "border", "canRedo", "canUndo", "isDirty", "map", "primaryCount", "secondaryCount", "tilesetVersion"]
-        : ["blocks", "canRedo", "canUndo", "events", "isDirty", "metatileCount", "tilesetVersion"]));
+        ? ["blocks", "border", "canRedo", "canUndo", "isDirty", "map", "primaryCount", "secondaryCount", "tilesetInstance", "tilesetVersion"]
+        : ["blocks", "canRedo", "canUndo", "events", "isDirty", "metatileCount", "tilesetInstance", "tilesetVersion"]));
       expect(typeof body.tilesetVersion).toBe("number");
       expect(Array.isArray(body.blocks)).toBe(true);
       expect(typeof body.isDirty).toBe("boolean");

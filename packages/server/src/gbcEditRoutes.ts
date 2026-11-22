@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { createGbcBlockEditRoutes } from "./blockEditRoutes.js";
 import { syncTilesetOverlay, type OverlayState } from "./tilesetOverlay.js";
 import { statSync } from "node:fs";
@@ -97,24 +98,26 @@ const kindOf = (o: Obj): GbcEventKind =>
 export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void; clearTilesetCaches?(): void; symbols?: ReturnType<typeof createSymbolIndexCache> } & AddEventHooks) {
   const store = createGbcEditSessionStore(proj);
   const overlayState: OverlayState = {
-    version: 0, applied: new Map(), clearCaches: () => hooks.clearTilesetCaches?.(),
+    instance: randomUUID(), version: 0, applied: new Map(), clearCaches: () => hooks.clearTilesetCaches?.(),
   };
   const syncOverlay = () => syncTilesetOverlay(store.entries(), proj, overlayState);
+  const overlayStamp = (): { tilesetVersion: number; tilesetInstance: string } => ({
+    tilesetVersion: syncOverlay(), tilesetInstance: overlayState.instance,
+  });
   // `NOTHING_OPEN` deliberately carries NO `metatileCount` (Plan 14.2 fix hop A): it answers a
   // closed session (discard, or undo/redo with nothing open), where nothing about the tileset
   // changed, so the client's last count is still the right one -- and its own `discard` resets
-  // the count anyway. Adding a field here would only churn the exact-shape tests that pin this
-  // "nothing open" body.
+  // the count anyway.
   const NOTHING_OPEN = () => ({
-    tilesetVersion: syncOverlay(), blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false,
+    ...overlayStamp(), blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false,
   });
   const sessionBody = (e: GbcSessionEntry) => {
     // `syncOverlay()` first, then the count: `proj.tileset` is what the overlay replaces, so this
     // is the map's EFFECTIVE metatile count -- the same `ts.metatiles.length` the map payload
     // reports (`gbcRoutes.ts` `buildGbcMapPayload`) -- grown by a block the editor appended.
-    const tilesetVersion = syncOverlay();
+    const stamp = overlayStamp();
     return {
-      tilesetVersion,
+      ...stamp,
       blocks: e.session.blocks, events: e.session.events, isDirty: e.session.isDirty,
       canUndo: e.stack.canUndo(), canRedo: e.stack.canRedo(),
       metatileCount: proj.tileset(e.session.map.tileset).metatiles.length,
@@ -275,7 +278,7 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
   /** Route table keyed `METHOD sub-route`. `body: true` routes get the parsed JSON object. */
   const routes: Record<string, { body: boolean; run(name: string, body: Obj): Result }> = {
     "POST event/create": { body: true, run: (name, body) => {
-      try { const result = addEvents.create(name, body); return ok({ ...result, tilesetVersion: syncOverlay() }); }
+      try { const result = addEvents.create(name, body); return ok({ ...result, ...overlayStamp() }); }
       catch (error) { return { code: 400, body: eventFailure("gbc", name, error) }; }
     } },
     "GET indicator/at": { body: false, run: (name, body) => {
@@ -536,6 +539,7 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
     /** Current blocks of an open session for `name`, else undefined (the render route's override). */
     openBlocks: (name: string): Block[] | undefined => (store.has(name) ? store.open(name).session.blocks : undefined),
     syncOverlay,
+    overlayStamp,
     invalidateOptions: addEvents.invalidate,
     dirtyMaps: (): string[] => store.dirty(),
     closeAll: (): void => store.closeAll(),

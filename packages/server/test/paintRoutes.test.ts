@@ -16,7 +16,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("Q1: GBA session snapshots (hermetic 
   let server: Server;
   let base: string;
   const nothing = {
-    tilesetVersion: expect.any(Number), blocks: [], border: [], map: null,
+    tilesetVersion: expect.any(Number), tilesetInstance: expect.any(String), blocks: [], border: [], map: null,
     isDirty: false, canUndo: false, canRedo: false,
   };
   const get = (name: string) => fetch(`${base}/api/edit/${name}/session`);

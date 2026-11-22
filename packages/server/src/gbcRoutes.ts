@@ -144,7 +144,7 @@ export function buildGbcGroupsPayload(proj: GbcProject): { groupOrder: string[];
  * be unit-tested directly against a stub `GbcProject`, without needing
  * `createGbcProjectHandler` restructured for dependency injection.
  */
-export function buildGbcMapPayload(proj: GbcProject, map: GbcMap, symbols?: SymbolIndex, tilesetVersion = 0): GbcMapPayload & { tilesetVersion: number } {
+export function buildGbcMapPayload(proj: GbcProject, map: GbcMap, symbols?: SymbolIndex, tilesetVersion = 0, tilesetInstance?: string): GbcMapPayload & { tilesetVersion: number; tilesetInstance?: string } {
   const { layout } = proj.layout(map);
   const ts = proj.tileset(map.tileset);
 
@@ -168,6 +168,7 @@ export function buildGbcMapPayload(proj: GbcProject, map: GbcMap, symbols?: Symb
   return {
     family: "gbc",
     tilesetVersion,
+    ...(tilesetInstance === undefined ? {} : { tilesetInstance }),
     map,
     layout: { blkPath: layout.blkPath, width: layout.width, height: layout.height },
     blocks: layout.blocks,
@@ -179,7 +180,7 @@ export function buildGbcMapPayload(proj: GbcProject, map: GbcMap, symbols?: Symb
     defects,
     incomplete,
     paddingWidth: proj.paddingWidth(),
-  } satisfies GbcMapPayload & { tilesetVersion: number };
+  } satisfies GbcMapPayload & { tilesetVersion: number; tilesetInstance?: string };
 }
 
 /**
@@ -392,12 +393,12 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
 
       const mapMatch = /^\/api\/map\/(.+)$/.exec(url.pathname);
       if (mapMatch) {
-        const tilesetVersion = edit.syncOverlay();
+        const stamp = edit.overlayStamp();
         const rawName = mapMatch[1]!;
         const name = decodeSegment(rawName);
         if (name === undefined) return send(400, { error: `malformed map name ${rawName}` });
         if (!mapNames.has(name)) return send(404, { error: `no map ${name}` });
-        return send(200, symbols.check((index) => buildGbcMapPayload(proj, proj.map(name), index, tilesetVersion)));
+        return send(200, symbols.check((index) => buildGbcMapPayload(proj, proj.map(name), index, stamp.tilesetVersion, stamp.tilesetInstance)));
       }
 
       // Both PNG routes below resolve the map name FIRST (404), then
