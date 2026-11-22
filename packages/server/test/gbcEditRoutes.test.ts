@@ -18,6 +18,7 @@ import { gbcWarpLinks } from "@pokemap/core/src/world/nearWarpAdapters.js";
 import { readSidecar } from "@pokemap/core/src/world/sidecar.js";
 import { buildGbcWorldPayload } from "../src/gbcRoutes.js";
 import { createHub } from "../src/hub.js";
+import { postChunked } from "./helpers/oversizeBody.js";
 import { gbcCoverage } from "@pokemap/core/src/gbc/analyse/atlas.js";
 import { paintCells, floodFill, shiftGrid } from "@pokemap/core/src/gbc/edit/paint.js";
 import type { Block } from "@pokemap/core/src/gbc/model/types.js";
@@ -98,6 +99,16 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
     await post(`${NBT}/discard`);
   });
 
+  // Review round 1 (quality I2): the route-level `BodyTooLarge` -> 413 branch of this file's `run()`.
+  it("1b. a chunked MAX_BODY_BYTES + 1 body on paint/apply answers 413 and opens no session", async () => {
+    const r = await postChunked(Number(new URL(base).port), `${NBT}/paint/apply`);
+    expect(r.status).toBe(413);
+    expect(JSON.parse(r.body)).toEqual({ error: "request body too large" });
+    expect(h.dirtyMaps()).toEqual([]);
+    expect((await plan()).changes).toEqual([]);
+    await post(`${NBT}/discard`);
+  }, 60_000);
+
   it("2. paint begin/apply/end: session shape, plan, dirtyMaps, render override, discard restores", async () => {
     const before = await png("NewBarkTown"); // populates renderCache
     await post(`${NBT}/paint/begin`);
@@ -119,7 +130,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
     expect(during.equals(before)).toBe(false);
 
     const gone = await post(`${NBT}/discard`);
-    expect(await gone.json()).toEqual({ blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false, tilesetVersion: expect.any(Number) });
+    expect(await gone.json()).toEqual({ blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false, tilesetVersion: expect.any(Number), tilesetInstance: expect.any(String) });
     expect(h.dirtyMaps()).toEqual([]);
     expect((await png("NewBarkTown")).equals(before)).toBe(true);
   });
@@ -226,7 +237,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
 
   it("6. undo/redo round-trip blocks; undo/redo on a never-opened map is the nothing-open shape", async () => {
     const nothing = {
-      blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false, tilesetVersion: expect.any(Number),
+      blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false, tilesetVersion: expect.any(Number), tilesetInstance: expect.any(String),
     };
     expect(await (await post("/api/edit/ElmsLab/undo")).json()).toEqual(nothing);
     expect(await (await post("/api/edit/ElmsLab/redo")).json()).toEqual(nothing);
@@ -249,7 +260,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
 
   it("Q1: never-opened map returns nothing-open without opening a session", async () => {
     const nothing = {
-      blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false, tilesetVersion: expect.any(Number),
+      blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false, tilesetVersion: expect.any(Number), tilesetInstance: expect.any(String),
     };
     const response = await get("/api/edit/ElmsLab/session");
     expect(response.status).toBe(200);
@@ -275,6 +286,17 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
     await post(`${NBT}/discard`);
   });
 
+  it("Q6: map payload and session replies carry the same stable tilesetInstance", async () => {
+    const map = await (await get("/api/map/NewBarkTown")).json() as { tilesetVersion: number; tilesetInstance?: string };
+    expect(map.tilesetInstance).toEqual(expect.any(String));
+    const nothingOpen = await (await get(`${NBT}/session`)).json() as { tilesetInstance?: string };
+    expect(nothingOpen.tilesetInstance).toBe(map.tilesetInstance);
+    await post(`${NBT}/paint/begin`);
+    const open = await (await get(`${NBT}/session`)).json() as { tilesetInstance?: string };
+    expect(open.tilesetInstance).toBe(map.tilesetInstance);
+    await post(`${NBT}/discard`);
+  });
+
   it("Q1: discarded map returns nothing-open again", async () => {
     const before = await session(await post(`${NBT}/paint/begin`));
     const metatileId = before.blocks[0]!.metatileId === 40 ? 41 : 40;
@@ -282,7 +304,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
     expect((await post(`${NBT}/paint/end`)).status).toBe(200);
     expect((await post(`${NBT}/discard`)).status).toBe(200);
     const nothing = {
-      blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false, tilesetVersion: expect.any(Number),
+      blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false, tilesetVersion: expect.any(Number), tilesetInstance: expect.any(String),
     };
     const response = await get(`${NBT}/session`);
     expect(response.status).toBe(200);

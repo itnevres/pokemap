@@ -380,6 +380,64 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("server", () => {
   it("400s a non-integer metatile id", async () => {
     expect((await get("/api/metatile/PetalburgCity_Layout/abc.png")).status).toBe(400);
   });
+
+  // E2 acceptance 1 (S1): the species segment reaches
+  // `graphics/pokemon/<dir>/icon.png` after the route's `[^/]+` match, so an
+  // encoded separator survives the match and only the `^\w+$` test can refuse
+  // it. `SPECIES_..%2F..%2Fx` decodes to `SPECIES_../../x`; `a%20b` decodes
+  // to `a b` -- both outside `^\w+$`, both 400 before any file is read.
+  it("400s a species name that is not a bare \\w+ constant, including an encoded path separator", async () => {
+    expect((await get("/api/species/SPECIES_..%2F..%2Fx/icon.png")).status).toBe(400);
+    expect((await get("/api/species/a%20b/icon.png")).status).toBe(400);
+  });
+
+  it("still serves a real species icon as 200 after the species guard", async () => {
+    // The same route another test already requests -- pinning that the guard
+    // refuses only the malformed names, not every name.
+    const r = await get("/api/species/SPECIES_ESPEON/icon.png");
+    expect(r.status).toBe(200);
+    expect(r.headers.get("content-type")).toBe("image/png");
+  });
+
+  // E2 acceptance 2 (S4): one malformed percent-escape per GBA route family.
+  // `%E0%A4%A` is a truncated multi-byte UTF-8 sequence -- `decodeURIComponent`
+  // throws a URIError on it, which used to reach the outer catch as a 500.
+  // Every family's decode site must answer 400 instead. The species and
+  // event-options families phrase their own refusal (species names its guard,
+  // event-options lives in addEventRoutes.ts and already answered 400), so
+  // this pins the status for all of them and the exact body only for the
+  // shared decode-site message.
+  it.each([
+    ["map", "/api/map/%E0%A4%A", true],
+    ["render", "/api/render/%E0%A4%A.png", true],
+    ["metatile", "/api/metatile/%E0%A4%A/0.png", true],
+    ["species", "/api/species/%E0%A4%A/icon.png", false],
+    ["edit session", "/api/edit/%E0%A4%A/session", true],
+    ["defects", "/api/defects/%E0%A4%A", true],
+    ["event-options", "/api/event-options/%E0%A4%A", false],
+    ["world warps", "/api/warps/%E0%A4%A", true],
+    ["encounters", "/api/encounters/%E0%A4%A", true],
+    ["where", "/api/where/%E0%A4%A", true],
+  ] as [string, string, boolean][])("400s a malformed percent-escape in the %s route, never 500", async (_family, path, sharedBody) => {
+    const r = await get(path);
+    expect(r.status, `${path} answered ${r.status}`).toBe(400);
+    if (sharedBody) expect(await r.json()).toEqual({ error: "malformed percent-escape in path" });
+    else expect((await r.json()) as { error?: string }).toHaveProperty("error");
+  });
+
+  // E2 acceptance 5: every JSON reply declares its type and disables content
+  // sniffing -- checked on a 200 and a 400, since a guard added later could
+  // easily answer through a path that skips the header.
+  it("sends x-content-type-options: nosniff on a JSON 200 and a JSON 400", async () => {
+    const ok = await get("/api/project");
+    expect(ok.status).toBe(200);
+    expect(ok.headers.get("x-content-type-options")).toBe("nosniff");
+
+    // A real 400 (not a 404): the border parser refuses a non-numeric border.
+    const bad = await get("/api/render/PetalburgCity.png?border=abc");
+    expect(bad.status).toBe(400);
+    expect(bad.headers.get("x-content-type-options")).toBe("nosniff");
+  });
 });
 
 

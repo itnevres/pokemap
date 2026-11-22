@@ -60,7 +60,8 @@ import { encodePng } from "@pokemap/cli/src/png.js";
 import { parseBorder, parseTime, type TimeOfDay } from "@pokemap/cli/src/args.js";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { loadGbcFrontSprite, loadGbcPicFolders } from "@pokemap/core/src/gbc/load/sprites.js";
-import { readBody, type ProjectHandler } from "./index.js";
+import type { ProjectHandler } from "./index.js";
+import { BodyTooLarge, decodeSegment, readBody, refuseOversize, sendJson } from "./http.js";
 import { warmEach, type WarmResult } from "./warmUp.js";
 import { createGbcEditRoutes } from "./gbcEditRoutes.js";
 
@@ -76,26 +77,6 @@ import { createGbcEditRoutes } from "./gbcEditRoutes.js";
  * (`gbcEditRoutes.ts` serves it).
  */
 const GBA_ONLY_ROUTE_RE = /^\/api\/sign\//;
-
-/**
- * `decodeURIComponent` throws a `URIError` on a malformed percent-escape
- * (e.g. a lone `%` or a truncated multi-byte UTF-8 sequence like
- * `%E0%A4%A`) -- letting that throw reach a route's own try/catch-free body
- * would surface as a 500 naming only "URI malformed", not the offending
- * segment (Task 1b fix round 1, spec review finding 7). Every `:name`-style
- * route below calls this instead of `decodeURIComponent` directly, and
- * answers 400 naming the raw (still-encoded) segment on `undefined` --
- * `index.ts`'s GBA routes keep their own pre-existing 500-on-malformed-
- * escape behaviour unchanged, since this fix is GBC-only (spec ground rule:
- * "index.ts is not touched in this task").
- */
-export function decodeMapName(raw: string): string | undefined {
-  try {
-    return decodeURIComponent(raw);
-  } catch {
-    return undefined;
-  }
-}
 
 /**
  * Shared `?time=` parser for the render and metatile routes (Task 1b fix
@@ -163,7 +144,7 @@ export function buildGbcGroupsPayload(proj: GbcProject): { groupOrder: string[];
  * be unit-tested directly against a stub `GbcProject`, without needing
  * `createGbcProjectHandler` restructured for dependency injection.
  */
-export function buildGbcMapPayload(proj: GbcProject, map: GbcMap, symbols?: SymbolIndex, tilesetVersion = 0): GbcMapPayload & { tilesetVersion: number } {
+export function buildGbcMapPayload(proj: GbcProject, map: GbcMap, symbols?: SymbolIndex, tilesetVersion = 0, tilesetInstance?: string): GbcMapPayload & { tilesetVersion: number; tilesetInstance?: string } {
   const { layout } = proj.layout(map);
   const ts = proj.tileset(map.tileset);
 
@@ -187,6 +168,7 @@ export function buildGbcMapPayload(proj: GbcProject, map: GbcMap, symbols?: Symb
   return {
     family: "gbc",
     tilesetVersion,
+    ...(tilesetInstance === undefined ? {} : { tilesetInstance }),
     map,
     layout: { blkPath: layout.blkPath, width: layout.width, height: layout.height },
     blocks: layout.blocks,
@@ -198,7 +180,7 @@ export function buildGbcMapPayload(proj: GbcProject, map: GbcMap, symbols?: Symb
     defects,
     incomplete,
     paddingWidth: proj.paddingWidth(),
-  } satisfies GbcMapPayload & { tilesetVersion: number };
+  } satisfies GbcMapPayload & { tilesetVersion: number; tilesetInstance?: string };
 }
 
 /**
@@ -393,15 +375,12 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
 
   const handle = (req: IncomingMessage, res: ServerResponse) => {
     if (disposed) {
-      res.writeHead(503, { "content-type": "application/json" });
-      res.end(JSON.stringify({ error: "project closed" }));
+      sendJson(res, 503, { error: "project closed" });
       return;
     }
+    if (refuseOversize(req, res)) return;
     const url = new URL(req.url ?? "/", "http://localhost");
-    const send = (code: number, body: unknown) => {
-      res.writeHead(code, { "content-type": "application/json" });
-      res.end(JSON.stringify(body));
-    };
+    const send = (code: number, body: unknown) => sendJson(res, code, body);
 
     try {
       if (url.pathname === "/api/project") {
@@ -414,12 +393,12 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
 
       const mapMatch = /^\/api\/map\/(.+)$/.exec(url.pathname);
       if (mapMatch) {
-        const tilesetVersion = edit.syncOverlay();
+        const stamp = edit.overlayStamp();
         const rawName = mapMatch[1]!;
-        const name = decodeMapName(rawName);
+        const name = decodeSegment(rawName);
         if (name === undefined) return send(400, { error: `malformed map name ${rawName}` });
         if (!mapNames.has(name)) return send(404, { error: `no map ${name}` });
-        return send(200, symbols.check((index) => buildGbcMapPayload(proj, proj.map(name), index, tilesetVersion)));
+        return send(200, symbols.check((index) => buildGbcMapPayload(proj, proj.map(name), index, stamp.tilesetVersion, stamp.tilesetInstance)));
       }
 
       // Both PNG routes below resolve the map name FIRST (404), then
@@ -439,7 +418,7 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
       if (renderMatch) {
         edit.syncOverlay();
         const rawName = renderMatch[1]!;
-        const name = decodeMapName(rawName);
+        const name = decodeSegment(rawName);
         if (name === undefined) return send(400, { error: `malformed map name ${rawName}` });
         if (!mapNames.has(name)) return send(404, { error: `no map ${name}` });
 
@@ -485,7 +464,7 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
         edit.syncOverlay();
         const rawName = metatileMatch[1]!;
         const rawId = metatileMatch[2]!;
-        const name = decodeMapName(rawName);
+        const name = decodeSegment(rawName);
         if (name === undefined) return send(400, { error: `malformed map name ${rawName}` });
         if (!mapNames.has(name)) return send(404, { error: `no map ${name}` });
 
@@ -539,6 +518,7 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
           writeSidecar(proj.root, sidecar);
           return send(200, { acceptedConflicts: sidecar.acceptedConflicts });
         }).catch((e: unknown) => {
+          if (e instanceof BodyTooLarge) return send(413, { error: "request body too large" });
           console.error(e);
           send(500, { error: e instanceof Error ? e.message : String(e) });
         });
@@ -563,6 +543,7 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
             return send(200, { dungeonAutoLayout: sidecar.dungeonAutoLayout });
           })
           .catch((e: unknown) => {
+            if (e instanceof BodyTooLarge) return send(413, { error: "request body too large" });
             console.error(e);
             send(500, { error: e instanceof Error ? e.message : String(e) });
           });
@@ -591,6 +572,7 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
             return send(200, { ok: true });
           })
           .catch((e: unknown) => {
+            if (e instanceof BodyTooLarge) return send(413, { error: "request body too large" });
             console.error(e);
             send(500, { error: e instanceof Error ? e.message : String(e) });
           });
@@ -599,13 +581,13 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
       // `(.+)`, not `[^/]+` -- same reasoning as `/api/map/:name` above: a
       // map name never contains a slash in this corpus, but matching the
       // rest of the path rather than one segment keeps this route's own
-      // malformed-escape handling (`decodeMapName`) the single place that
+      // malformed-escape handling (`decodeSegment`) the single place that
       // rejects a bad name, instead of a slash in it silently 404ing through
       // the generic fallthrough.
       const warpsMatch = /^\/api\/warps\/(.+)$/.exec(url.pathname);
       if (warpsMatch && req.method === "GET") {
         const rawName = warpsMatch[1]!;
-        const name = decodeMapName(rawName);
+        const name = decodeSegment(rawName);
         if (name === undefined) return send(400, { error: `malformed map name ${rawName}` });
         if (!mapNames.has(name)) return send(404, { error: `no map ${name}` });
         return send(200, buildGbcWarpsPayload(proj, name));
@@ -645,6 +627,7 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
           writeDungeons(proj.root, dungeons);
           return send(200, dungeon);
         }).catch((e: unknown) => {
+          if (e instanceof BodyTooLarge) return send(413, { error: "request body too large" });
           console.error(e);
           send(500, { error: e instanceof Error ? e.message : String(e) });
         });
@@ -652,7 +635,7 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
       const dungeonIdMatch = /^\/api\/dungeons\/(.+)$/.exec(url.pathname);
       if (dungeonIdMatch && (req.method === "PATCH" || req.method === "DELETE")) {
         const rawId = dungeonIdMatch[1]!;
-        const id = decodeMapName(rawId);
+        const id = decodeSegment(rawId);
         if (id === undefined) return send(400, { error: `malformed dungeon id ${rawId}` });
         if (req.method === "DELETE") {
           const dungeons = readDungeons(proj.root);
@@ -684,6 +667,7 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
           writeDungeons(proj.root, dungeons);
           return send(200, dungeon);
         }).catch((e: unknown) => {
+          if (e instanceof BodyTooLarge) return send(413, { error: "request body too large" });
           console.error(e);
           send(500, { error: e instanceof Error ? e.message : String(e) });
         });
@@ -693,7 +677,7 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
       if (encountersMatch) {
         edit.syncOverlay();
         const rawName = encountersMatch[1]!;
-        const name = decodeMapName(rawName);
+        const name = decodeSegment(rawName);
         if (name === undefined) return send(400, { error: `malformed map name ${rawName}` });
         if (!mapNames.has(name)) return send(404, { error: `no map ${name}` });
         return send(200, buildGbcEncountersPayload(proj, name));
@@ -701,7 +685,7 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
 
       // `[^/]+`, the GBA `/api/where/:species` convention (`index.ts`) --
       // a species constant never contains a slash. Unlike GBA's own route,
-      // this one runs the raw segment through `decodeMapName` first (this
+      // this one runs the raw segment through `decodeSegment` first (this
       // file's own established convention for every `:name`-style capture,
       // even though this one isn't a map name), so a malformed percent-escape
       // answers 400 rather than an unnamed 500. An unknown species is a 200
@@ -711,7 +695,7 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
       if (whereMatch) {
         edit.syncOverlay();
         const raw = whereMatch[1]!;
-        const species = decodeMapName(raw);
+        const species = decodeSegment(raw);
         if (species === undefined) return send(400, { error: `malformed species ${raw}` });
         return send(200, gbcWhereSpecies(proj, normalizeGbcSpecies(species)));
       }
@@ -721,14 +705,14 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
       }
 
       // `[^/]+`, same as GBA's `/api/species/:s/icon.png` (`index.ts`); the
-      // raw segment goes through `decodeMapName` and `normalizeGbcSpecies`
+      // raw segment goes through `decodeSegment` and `normalizeGbcSpecies`
       // like `/api/where/:species` above, so `chikorita` and
       // `SPECIES_CHIKORITA` both resolve. GBC serves the real GBC front sprite
       // (frame 0), not GBA's icon/overworld art, so no `?source=`/`?frame=`.
       const speciesIconMatch = /^\/api\/species\/([^/]+)\/icon\.png$/.exec(url.pathname);
       if (speciesIconMatch) {
         const raw = speciesIconMatch[1]!;
-        const decoded = decodeMapName(raw);
+        const decoded = decodeSegment(raw);
         if (decoded === undefined) return send(400, { error: `malformed species ${raw}` });
         const species = normalizeGbcSpecies(decoded);
         let png = speciesIconCache.get(species);

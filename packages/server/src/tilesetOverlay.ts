@@ -2,6 +2,7 @@ import type { FileOverlay } from "@pokemap/core/src/blockEdit/types.js";
 import type { OwnershipEntry } from "./blockEditOwnership.js";
 
 export interface OverlayState {
+  readonly instance: string;
   version: number;
   applied: ReadonlyMap<string, Buffer>;
   clearCaches(): void;

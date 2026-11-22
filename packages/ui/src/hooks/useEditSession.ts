@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { AddEventForm, EventKind as CreatedEventKind } from "@pokemap/core/src/addEvent/types.js";
 import { useEditSessionCore, type EditTicket, type EditUpdate, type BlockCheckReply, type BlockEditSession, type EventCreateSession } from "../shared/useEditSessionCore.js";
+import { useTilesetVersion } from "../shared/tilesetVersion.js";
 import type { Block } from "@pokemap/core/src/model/types.js";
 import type { Stamp } from "@pokemap/core/src/edit/paint.js";
 import type { MapData } from "@pokemap/core/src/load/maps.js";
@@ -257,16 +258,36 @@ export function useEditSession(mapName: string | null, initialBlocks?: Block[], 
     [post, apply],
   );
 
+  // Shared hydration tail for both reads below (mount/seed change and a tileset-version change): the
+  // server's reply carries the blocks, the live/static map split and the EFFECTIVE primary/secondary
+  // counts, so applying it through the core's ticket path is all either read needs.
+  const hydrate = useCallback((reply: { data: SessionResponse; ticket: EditTicket } | null) => {
+    if (!reply) return;
+    const d = reply.data;
+    if (!d || typeof d !== "object" || !Array.isArray(d.blocks) || !Array.isArray(d.border)
+      || typeof d.isDirty !== "boolean" || !d.map || typeof d.map !== "object" || Array.isArray(d.map)) return;
+    applySessionResponse(apply, d, reply.ticket);
+  }, [apply]);
+
   useEffect(() => {
     if (mapName === null) return;
-    void load<SessionResponse>().then((reply) => {
-      if (!reply) return;
-      const d = reply.data;
-      if (!d || typeof d !== "object" || !Array.isArray(d.blocks) || !Array.isArray(d.border)
-        || typeof d.isDirty !== "boolean" || !d.map || typeof d.map !== "object" || Array.isArray(d.map)) return;
-      applySessionResponse(apply, d, reply.ticket);
-    }).catch(() => {});
-  }, [load, apply, mapName, seed]);
+    void load<SessionResponse>().then(hydrate).catch(() => {});
+  }, [load, hydrate, mapName, seed]);
+
+  // Q7 (b): another map's append or undo on a SHARED tileset moves the hub's tileset version, and this
+  // map's effective counts change with it even though nothing was edited here. The hub announces that
+  // only through `tilesetVersion`, so re-read the session when it moves -- the reply carries the fresh
+  // counts through the same hydration path above. The first value this hook sees is its mount value, not
+  // a change, so it triggers no read; errors are swallowed (this is a passive refresh, not an action
+  // the player asked for).
+  const tilesetVersion = useTilesetVersion();
+  const seenTilesetVersion = useRef(tilesetVersion);
+  useEffect(() => {
+    if (seenTilesetVersion.current === tilesetVersion) return;
+    seenTilesetVersion.current = tilesetVersion;
+    if (mapName === null) return;
+    void load<SessionResponse>().then(hydrate).catch(() => {});
+  }, [tilesetVersion, load, hydrate, mapName]);
 
   const call = useCallback((path: string, body: unknown = {}) => callSession(path, body).then(() => {}), [callSession]);
   const blockCheck = useCallback((request: unknown, revision: string) =>

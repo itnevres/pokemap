@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
-import { currentTilesetVersion, resetTilesetVersion } from "../../src/shared/tilesetVersion.js";
+import { currentTilesetVersion, noteTilesetStamp, resetTilesetVersion, useTilesetVersion } from "../../src/shared/tilesetVersion.js";
 import { hasPendingSessionMutations, useEditSessionCore } from "../../src/shared/useEditSessionCore.js";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -17,6 +17,21 @@ function mount(map: string | null = "A") {
 }
 
 describe("useEditSessionCore", () => {
+  it.each(["post", "discard", "load"] as const)("%s moves to a fresh version when the handler restarted", async (operation) => {
+    resetTilesetVersion();
+    noteTilesetStamp({ tilesetVersion: 9, tilesetInstance: "old" });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ tilesetVersion: 1, tilesetInstance: "new" })));
+    const probe = renderHook(() => useTilesetVersion());
+    const { result } = mount();
+    expect(probe.result.current).toBe(9);
+    await act(async () => {
+      if (operation === "post") await result.current.post("/x");
+      else await result.current[operation]();
+    });
+    expect(probe.result.current).toBe(10); // above the old 9, never a repeat of a key this page used
+    resetTilesetVersion();
+  });
+
   it.each(["map", "seed"])("rejects a reply after its %s changes", async (changed) => {
     const pending = deferred();
     vi.stubGlobal("fetch", vi.fn(() => pending.promise));

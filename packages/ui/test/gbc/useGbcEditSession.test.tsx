@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { renderHook, act, waitFor, cleanup } from "@testing-library/react";
 import { useGbcEditSession } from "../../src/gbc/hooks/useGbcEditSession.js";
+import { noteTilesetVersion, resetTilesetVersion } from "../../src/shared/tilesetVersion.js";
 import type { GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
 
 // Keep mutation fixtures and call-order assertions scoped to their routes; hydration has no open session.
@@ -283,6 +284,31 @@ describe("Q1 passive session hydration", () => {
     await act(async () => { resolvers[1]!(response(staged)); });
     expect(result.current.blocks[0]?.metatileId).toBe(9);
     expect(result.current.isDirty).toBe(true);
+  });
+
+  // Plan H Q7 (b): a shared-tileset append/undo on ANOTHER map moves the hub's tileset version and this
+  // map's effective metatile count with it, so the session must be re-read (its reply carries the count
+  // through the same apply path) -- while the value this hook mounted with must not trigger a read.
+  it("re-reads the session when the tileset version moves and applies its metatile count", async () => {
+    resetTilesetVersion();
+    let served: unknown = staged;
+    const fetchMock = vi.fn((url: string) => url.endsWith("/session")
+      ? Promise.resolve(response(served))
+      : Promise.reject(new Error(`unexpected fetch ${url}`)));
+    vi.stubGlobal("fetch", fetchMock);
+    const reads = () => fetchMock.mock.calls.filter(([url]) => url.endsWith("/session")).length;
+
+    const { result } = renderHook(() => useGbcEditSession("A", seedBlocks, EV));
+    await waitFor(() => expect(result.current.metatileCount).toBe(41));
+    expect(reads()).toBe(1); // the mount read only: the mount value is not a change
+
+    served = body({ metatileCount: 55 });
+    act(() => noteTilesetVersion(1));
+    await waitFor(() => expect(result.current.metatileCount).toBe(55));
+    expect(reads()).toBe(2); // exactly one re-read per version change
+
+    act(() => noteTilesetVersion(1)); // the same value again is not a change
+    expect(reads()).toBe(2);
   });
 
 });

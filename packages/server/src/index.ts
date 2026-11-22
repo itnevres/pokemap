@@ -1,3 +1,4 @@
+import { BodyTooLarge, decodeSegment, readBody, refuseOversize, sendJson } from "./http.js";
 import { createGbaBlockEditRoutes } from "./blockEditRoutes.js";
 import { syncTilesetOverlay, type OverlayState } from "./tilesetOverlay.js";
 import { requireTilesetOwnership, refuseUnsavedBlockRefs } from "./blockEditOwnership.js";
@@ -86,21 +87,6 @@ export type ProjectHandler =
       dirtyMaps(): string[]; dispose(): void;
       warmUp(names?: string[]): Promise<WarmResult>;
     };
-
-/**
- * Buffers a request body to a string. `/api/world/placement` is the first
- * POST route this server has ever needed -- every route before it only ever
- * reads. Exported (Plan 6c A1) so `hub.ts`'s own `POST /api/hub/open` reuses
- * this instead of a second copy.
- */
-export function readBody(req: IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => chunks.push(c));
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-    req.on("error", reject);
-  });
-}
 
 /**
  * Shared by `/paint/apply`'s pencil and rect branches -- both need a
@@ -218,8 +204,11 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
     map: (name) => parseMap(readFileSync(project.paths.mapJson(name), "utf8")),
   });
 
-  const overlayState: OverlayState = { version: 0, applied: new Map(), clearCaches: () => pngCache.clear() };
+  const overlayState: OverlayState = { instance: randomUUID(), version: 0, applied: new Map(), clearCaches: () => pngCache.clear() };
   const syncOverlay = () => syncTilesetOverlay(editSessions.entries(), project, overlayState);
+  const overlayStamp = (): { tilesetVersion: number; tilesetInstance: string } => ({
+    tilesetVersion: syncOverlay(), tilesetInstance: overlayState.instance,
+  });
 
   const addEvents = createGbaAddEventRoutes(project, editSessions, hooks, symbols);
 
@@ -279,7 +268,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
   const sendSession = (send: (code: number, body: unknown) => void, code: number, entry: ReturnType<typeof editEntryFor>) => {
     // `syncOverlay()` first, then the counts: `project.tileset` is what the overlay replaces, so
     // a session with a staged tileset edit reports the GROWN count here (see the /api/map route).
-    const tilesetVersion = syncOverlay();
+    const stamp = overlayStamp();
     // Plan 14.2 fix hop A: the map payload's own `primaryCount`/`secondaryCount`, recomputed on
     // every session reply (`/api/map` lines above are the same computation) so the client's
     // MetatilePalette follows a block appended by the block editor's "Save as new" without a map
@@ -290,7 +279,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
           secondaryCount: project.tileset(layout.secondaryTileset).metatileCount }
       : {};
     return send(code, {
-      tilesetVersion,
+      ...stamp,
       blocks: entry.session.blocks, border: entry.session.border, map: entry.session.map, isDirty: entry.session.isDirty,
       canUndo: entry.stack.canUndo(), canRedo: entry.stack.canRedo(),
       ...counts,
@@ -335,8 +324,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
 
   const handle = (req: IncomingMessage, res: ServerResponse) => {
     if (disposed) {
-      res.writeHead(503, { "content-type": "application/json" });
-      res.end(JSON.stringify({ error: "project closed" }));
+      sendJson(res, 503, { error: "project closed" });
       return;
     }
     // ponytail: this guard only catches a request whose HEADERS arrive
@@ -349,11 +337,18 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
     // not just this guard). Upgrade path: re-check `disposed` after
     // `readBody` resolves, e.g. by having `readBody` itself reject with a
     // 503 when the handler that awaited it is no longer current.
+    //
+    // S3: refuse a body that already declares itself oversize before any
+    // route runs -- the cheap half of the cap. `readBody`'s own streaming
+    // limit is the backstop for a chunked body that declares no length: every
+    // `readBody` rejection path below answers 413 for `BodyTooLarge`, so a
+    // chunked oversize body gets the same 413. The connection is kept (see
+    // `refuseOversize`).
+    if (refuseOversize(req, res)) return;
     const url = new URL(req.url ?? "/", "http://localhost");
-    const send = (code: number, body: unknown) => {
-      res.writeHead(code, { "content-type": "application/json" });
-      res.end(JSON.stringify(body));
-    };
+    // One-line over `sendJson` so the `Send` type the route modules
+    // (addEventRoutes, gbcEditRoutes, blockEditRoutes) receive is unchanged.
+    const send = (code: number, body: unknown) => sendJson(res, code, body);
 
     try {
       if (blockEdits.handle(req, url, (code, body) => {
@@ -369,15 +364,17 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
       }
       const createEventMatch = /^\/api\/edit\/([^/]+)\/event\/create$/.exec(url.pathname);
       if (createEventMatch && req.method === "POST") {
-        let name: string;
-        try { name = decodeURIComponent(createEventMatch[1]!); }
-        catch { return send(400, { error: "malformed map name", code: "BAD_OPTION" }); }
+        const name = decodeSegment(createEventMatch[1]!);
+        if (name === undefined) return send(400, { error: "malformed percent-escape in path" });
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
         return void readBody(req).then(text => {
           if (disposed) return send(503, { error: "project closed" });
-          try { const body = addEvents.create(name, JSON.parse(text)); send(200, { ...body, tilesetVersion: syncOverlay() }); }
+          try { const body = addEvents.create(name, JSON.parse(text)); send(200, { ...body, ...overlayStamp() }); }
           catch (error) { send(400, eventFailure("gba", name, error)); }
-        }).catch(error => send(400, eventFailure("gba", name, error)));
+        }).catch(error => {
+          if (error instanceof BodyTooLarge) return send(413, { error: "request body too large" });
+          send(400, eventFailure("gba", name, error));
+        });
       }
       if (url.pathname === "/api/project") {
         return send(200, { family: "gba", root: project.paths.root } satisfies ProjectInfo);
@@ -389,15 +386,17 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
 
       const defectsMatch = /^\/api\/defects\/(.+)$/.exec(url.pathname);
       if (defectsMatch && req.method === "GET") {
-        const name = decodeURIComponent(defectsMatch[1]!);
+        const name = decodeSegment(defectsMatch[1]!);
+        if (name === undefined) return send(400, { error: "malformed percent-escape in path" });
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
         return send(200, symbols.check((index) => checkGbaMapDefects(project, name, { symbols: index })));
       }
 
       const mapMatch = /^\/api\/map\/(.+)$/.exec(url.pathname);
       if (mapMatch) {
-        const tilesetVersion = syncOverlay();
-        const name = decodeURIComponent(mapMatch[1]!);
+        const stamp = overlayStamp();
+        const name = decodeSegment(mapMatch[1]!);
+        if (name === undefined) return send(400, { error: "malformed percent-escape in path" });
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
         const map = project.map(name);
         const layout = project.layoutById(map.layout);
@@ -438,13 +437,14 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
         // MetatilePalette's primaryCount/secondaryCount props need to size
         // its grid; returning them here means the UI doesn't have to guess
         // or fetch tileset data separately.
-        return send(200, { tilesetVersion, map, layout, split, blocks, primaryCount: primary.metatileCount, secondaryCount: secondary.metatileCount });
+        return send(200, { ...stamp, map, layout, split, blocks, primaryCount: primary.metatileCount, secondaryCount: secondary.metatileCount });
       }
 
       const renderMatch = /^\/api\/render\/(.+)\.png$/.exec(url.pathname);
       if (renderMatch) {
         syncOverlay();
-        const name = decodeURIComponent(renderMatch[1]!);
+        const name = decodeSegment(renderMatch[1]!);
+        if (name === undefined) return send(400, { error: "malformed percent-escape in path" });
 
         // Same parser the CLI uses, so `?border=abc` and `?border=1.5` are
         // refused here exactly as `--border abc` is there. It throws
@@ -504,7 +504,8 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
       const metatileMatch = /^\/api\/metatile\/(.+)\/([^/]+)\.png$/.exec(url.pathname);
       if (metatileMatch) {
         syncOverlay();
-        const layoutName = decodeURIComponent(metatileMatch[1]!);
+        const layoutName = decodeSegment(metatileMatch[1]!);
+        if (layoutName === undefined) return send(400, { error: "malformed percent-escape in path" });
         const id = Number(metatileMatch[2]);
         const layout = project.layoutByName(layoutName);
         if (!layout) return send(404, { error: `no layout ${layoutName}` });
@@ -531,7 +532,12 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
       // from being silently swallowed into the capture.
       const speciesIconMatch = /^\/api\/species\/([^/]+)\/icon\.png$/.exec(url.pathname);
       if (speciesIconMatch) {
-        const species = decodeURIComponent(speciesIconMatch[1]!);
+        const species = decodeSegment(speciesIconMatch[1]!);
+        // S1: the name goes straight into `graphics/pokemon/<dir>/icon.png`,
+        // and `%2F` survives the route's `[^/]+` match -- so a decoded name
+        // outside `^\w+$` (a path separator, a traversal, anything but a
+        // species constant) is refused before any file is read.
+        if (species === undefined || !/^\w+$/.test(species)) return send(400, { error: "malformed species" });
 
         const sourceParam = url.searchParams.get("source");
         if (sourceParam !== null && sourceParam !== "icon" && sourceParam !== "overworld") {
@@ -574,7 +580,8 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
       // route's.
       const encountersMatch = /^\/api\/encounters\/(.+)$/.exec(url.pathname);
       if (encountersMatch) {
-        const name = decodeURIComponent(encountersMatch[1]!);
+        const name = decodeSegment(encountersMatch[1]!);
+        if (name === undefined) return send(400, { error: "malformed percent-escape in path" });
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
         const mapId = project.map(name).id;
         const enc = getEncounters();
@@ -619,7 +626,8 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
       // needed" posture as /api/map and /api/encounters.
       const warpsMatch = /^\/api\/warps\/(.+)$/.exec(url.pathname);
       if (warpsMatch) {
-        const name = decodeURIComponent(warpsMatch[1]!);
+        const name = decodeSegment(warpsMatch[1]!);
+        if (name === undefined) return send(400, { error: "malformed percent-escape in path" });
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
         // Same idToName enrichment /api/coverage and /api/where already
         // build for the identical reason: the client only ever works with
@@ -666,7 +674,8 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
       // `pokemap where` is.
       const whereMatch = /^\/api\/where\/([^/]+)$/.exec(url.pathname);
       if (whereMatch) {
-        const s = decodeURIComponent(whereMatch[1]!);
+        const s = decodeSegment(whereMatch[1]!);
+        if (s === undefined) return send(400, { error: "malformed percent-escape in path" });
         return send(200, whereSpecies(project, s.startsWith("SPECIES_") ? s : `SPECIES_${s.toUpperCase()}`));
       }
 
@@ -735,6 +744,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
           writeSidecar(project.paths.root, sidecar);
           return send(200, { acceptedConflicts: sidecar.acceptedConflicts });
         }).catch((e: unknown) => {
+          if (e instanceof BodyTooLarge) return send(413, { error: "request body too large" });
           console.error(e);
           send(500, { error: e instanceof Error ? e.message : String(e) });
         });
@@ -743,17 +753,35 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
       if (url.pathname === "/api/world/placement" && req.method === "POST") {
         return readBody(req)
           .then((body) => {
-            let parsed: { map?: unknown; x?: unknown; y?: unknown };
+            let parsed: unknown;
             try {
-              parsed = JSON.parse(body) as typeof parsed;
+              parsed = JSON.parse(body);
             } catch (e) {
               return send(400, { error: `invalid JSON body: ${(e as Error).message}` });
             }
-            if (typeof parsed.map !== "string" || typeof parsed.x !== "number" || typeof parsed.y !== "number") {
+            const placement = parsed as { map?: unknown; x?: unknown; y?: unknown };
+            // The GBC twin's guard (gbcRoutes.ts:561-565): `null`, a non-object
+            // and an array are all refused here rather than reaching
+            // `placement.map` and throwing, and `Number.isFinite` rejects the
+            // `1e999` JSON.parse turns into Infinity. The known-map check is
+            // GBA's addition -- without it `__proto__` (and any other unknown
+            // name) would be written as a `manualPlacements` key, and
+            // `manualPlacements["__proto__"] = ...` replaces only that object's
+            // own prototype and persists nothing, yet would answer a silent
+            // 200 `{ ok: true }`.
+            if (
+              parsed === null || typeof parsed !== "object" || Array.isArray(parsed)
+              || typeof placement.map !== "string"
+              || typeof placement.x !== "number" || !Number.isFinite(placement.x)
+              || typeof placement.y !== "number" || !Number.isFinite(placement.y)
+            ) {
               return send(400, { error: `expected { map: string, x: number, y: number }, got ${body}` });
             }
+            if (!project.mapNames().includes(placement.map)) {
+              return send(400, { error: `unknown map ${placement.map}` });
+            }
             const sidecar = readSidecar(project.paths.root);
-            sidecar.manualPlacements[parsed.map] = { x: parsed.x, y: parsed.y };
+            sidecar.manualPlacements[placement.map] = { x: placement.x, y: placement.y };
             writeSidecar(project.paths.root, sidecar);
             return send(200, { ok: true });
           })
@@ -763,6 +791,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
           // unhandled rejection and leave the request hanging forever
           // instead of answering it.
           .catch((e: unknown) => {
+            if (e instanceof BodyTooLarge) return send(413, { error: "request body too large" });
             console.error(e);
             send(500, { error: e instanceof Error ? e.message : String(e) });
           });
@@ -792,6 +821,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
             return send(200, { ok: true });
           })
           .catch((e: unknown) => {
+            if (e instanceof BodyTooLarge) return send(413, { error: "request body too large" });
             console.error(e);
             send(500, { error: e instanceof Error ? e.message : String(e) });
           });
@@ -841,6 +871,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
             return send(200, dungeon);
           })
           .catch((e: unknown) => {
+            if (e instanceof BodyTooLarge) return send(413, { error: "request body too large" });
             console.error(e);
             send(500, { error: e instanceof Error ? e.message : String(e) });
           });
@@ -848,7 +879,8 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
 
       const dungeonIdMatch = /^\/api\/dungeons\/(.+)$/.exec(url.pathname);
       if (dungeonIdMatch && req.method === "PATCH") {
-        const id = decodeURIComponent(dungeonIdMatch[1]!);
+        const id = decodeSegment(dungeonIdMatch[1]!);
+        if (id === undefined) return send(400, { error: "malformed percent-escape in path" });
         return readBody(req)
           .then((body) => {
             let parsed: { name?: unknown; maps?: unknown };
@@ -872,13 +904,15 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
             return send(200, dungeon);
           })
           .catch((e: unknown) => {
+            if (e instanceof BodyTooLarge) return send(413, { error: "request body too large" });
             console.error(e);
             send(500, { error: e instanceof Error ? e.message : String(e) });
           });
       }
 
       if (dungeonIdMatch && req.method === "DELETE") {
-        const id = decodeURIComponent(dungeonIdMatch[1]!);
+        const id = decodeSegment(dungeonIdMatch[1]!);
+        if (id === undefined) return send(400, { error: "malformed percent-escape in path" });
         const dungeons = readDungeons(project.paths.root);
         const before = dungeons.dungeons.length;
         dungeons.dungeons = dungeons.dungeons.filter((d) => d.id !== id);
@@ -893,7 +927,8 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
       // many HTTP requests.
       const paintBeginMatch = /^\/api\/edit\/(.+)\/paint\/begin$/.exec(url.pathname);
       if (paintBeginMatch && req.method === "POST") {
-        const name = decodeURIComponent(paintBeginMatch[1]!);
+        const name = decodeSegment(paintBeginMatch[1]!);
+        if (name === undefined) return send(400, { error: "malformed percent-escape in path" });
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
         const entry = editEntryFor(name);
         // A redundant begin() while a stroke is already in progress (no
@@ -911,7 +946,8 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
 
       const paintApplyMatch = /^\/api\/edit\/(.+)\/paint\/apply$/.exec(url.pathname);
       if (paintApplyMatch && req.method === "POST") {
-        const name = decodeURIComponent(paintApplyMatch[1]!);
+        const name = decodeSegment(paintApplyMatch[1]!);
+        if (name === undefined) return send(400, { error: "malformed percent-escape in path" });
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
         return readBody(req)
           .then((body) => {
@@ -996,6 +1032,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
             return sendSession(send, 200, entry);
           })
           .catch((e: unknown) => {
+            if (e instanceof BodyTooLarge) return send(413, { error: "request body too large" });
             if (e instanceof BlockEditRefusal) return send(409, { error: `${name}: ${e.message}`, code: e.code });
             console.error(e);
             send(500, { error: e instanceof Error ? e.message : String(e) });
@@ -1004,7 +1041,8 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
 
       const paintEndMatch = /^\/api\/edit\/(.+)\/paint\/end$/.exec(url.pathname);
       if (paintEndMatch && req.method === "POST") {
-        const name = decodeURIComponent(paintEndMatch[1]!);
+        const name = decodeSegment(paintEndMatch[1]!);
+        if (name === undefined) return send(400, { error: "malformed percent-escape in path" });
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
         const entry = editEntryFor(name);
         if (entry.strokeStartBlocks) {
@@ -1020,16 +1058,18 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
 
       const sessionMatch = /^\/api\/edit\/(.+)\/session$/.exec(url.pathname);
       if (sessionMatch && req.method === "GET") {
-        const name = decodeURIComponent(sessionMatch[1]!);
+        const name = decodeSegment(sessionMatch[1]!);
+        if (name === undefined) return send(400, { error: "malformed percent-escape in path" });
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
-        if (!editSessions.has(name)) return send(200, { tilesetVersion: syncOverlay(), blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false });
+        if (!editSessions.has(name)) return send(200, { ...overlayStamp(), blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false });
         return sendSession(send, 200, editEntryFor(name));
       }
 
       const undoMatch = /^\/api\/edit\/(.+)\/undo$/.exec(url.pathname);
       if (undoMatch && req.method === "POST") {
-        const name = decodeURIComponent(undoMatch[1]!);
-        if (!editSessions.has(name)) return send(200, { tilesetVersion: syncOverlay(), blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false }); // nothing open -- a no-op, not a 500
+        const name = decodeSegment(undoMatch[1]!);
+        if (name === undefined) return send(400, { error: "malformed percent-escape in path" });
+        if (!editSessions.has(name)) return send(200, { ...overlayStamp(), blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false }); // nothing open -- a no-op, not a 500
         const entry = editEntryFor(name);
         entry.stack.undo(entry.session);
         return sendSession(send, 200, entry);
@@ -1037,8 +1077,9 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
 
       const redoMatch = /^\/api\/edit\/(.+)\/redo$/.exec(url.pathname);
       if (redoMatch && req.method === "POST") {
-        const name = decodeURIComponent(redoMatch[1]!);
-        if (!editSessions.has(name)) return send(200, { tilesetVersion: syncOverlay(), blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false });
+        const name = decodeSegment(redoMatch[1]!);
+        if (name === undefined) return send(400, { error: "malformed percent-escape in path" });
+        if (!editSessions.has(name)) return send(200, { ...overlayStamp(), blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false });
         const entry = editEntryFor(name);
         try { entry.stack.redo(entry.session, candidate => {
           addEvents.checkHeaderOwnership(name, candidate);
@@ -1062,7 +1103,8 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
       // dialog-close, this is the real discard action.
       const discardMatch = /^\/api\/edit\/(.+)\/discard$/.exec(url.pathname);
       if (discardMatch && req.method === "POST") {
-        const name = decodeURIComponent(discardMatch[1]!);
+        const name = decodeSegment(discardMatch[1]!);
+        if (name === undefined) return send(400, { error: "malformed percent-escape in path" });
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
         editSessions.close(name);
         addEvents.invalidate();
@@ -1071,7 +1113,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
         // true. Idempotent: discarding an already-clean or never-opened
         // session is a harmless no-op with the same response, matching
         // close()'s own "always safe to drop" doc comment.
-        return send(200, { tilesetVersion: syncOverlay(), blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false });
+        return send(200, { ...overlayStamp(), blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false });
       }
 
       // Task 9: save/commit. planSave/commitSave both live in core (I8's
@@ -1080,7 +1122,8 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
       // about having saved.
       const planMatch = /^\/api\/edit\/(.+)\/plan$/.exec(url.pathname);
       if (planMatch && req.method === "GET") {
-        const name = decodeURIComponent(planMatch[1]!);
+        const name = decodeSegment(planMatch[1]!);
+        if (name === undefined) return send(400, { error: "malformed percent-escape in path" });
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
         try { return send(200, signPlan(name).body); }
         catch (error) { return send(200, { changes: [], ...signFailure(name, error), signNotices: [], fingerprint: null }); }
@@ -1088,7 +1131,8 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
 
       const commitMatch = /^\/api\/edit\/(.+)\/commit$/.exec(url.pathname);
       if (commitMatch && req.method === "POST") {
-        const name = decodeURIComponent(commitMatch[1]!);
+        const name = decodeSegment(commitMatch[1]!);
+        if (name === undefined) return send(400, { error: "malformed percent-escape in path" });
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
         return readBody(req).then(raw => {
           let parsed: unknown;
@@ -1131,7 +1175,10 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
           // one map serves both the border=0 and border=1 keys.
           pngCache.clear();
           return send(200, body);
-        }).catch(error => send(400, { error: error instanceof Error ? error.message : String(error) }));
+        }).catch(error => {
+          if (error instanceof BodyTooLarge) return send(413, { error: "request body too large" });
+          send(400, { error: error instanceof Error ? error.message : String(error) });
+        });
       }
 
       // Task 9: event move/add/delete. Each is its own undo step, the same
@@ -1141,7 +1188,8 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
       // snapshotCommand).
       const eventMoveMatch = /^\/api\/edit\/(.+)\/event\/move$/.exec(url.pathname);
       if (eventMoveMatch && req.method === "POST") {
-        const name = decodeURIComponent(eventMoveMatch[1]!);
+        const name = decodeSegment(eventMoveMatch[1]!);
+        if (name === undefined) return send(400, { error: "malformed percent-escape in path" });
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
         return readBody(req)
           .then((body) => {
@@ -1166,14 +1214,19 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
               } else entry.session.jsonEdits = [...entry.session.jsonEdits, ...jsonEdits];
               return { map: nextMap };
             });
-            return send(200, { tilesetVersion: syncOverlay(), map: result.map, isDirty: result.isDirty });
+            return send(200, { ...overlayStamp(), map: result.map, isDirty: result.isDirty });
           })
-          .catch((e: unknown) => { console.error(e); send(500, { error: e instanceof Error ? e.message : String(e) }); });
+          .catch((e: unknown) => {
+            if (e instanceof BodyTooLarge) return send(413, { error: "request body too large" });
+            console.error(e);
+            send(500, { error: e instanceof Error ? e.message : String(e) });
+          });
       }
 
       const eventAddMatch = /^\/api\/edit\/(.+)\/event\/add$/.exec(url.pathname);
       if (eventAddMatch && req.method === "POST") {
-        const name = decodeURIComponent(eventAddMatch[1]!);
+        const name = decodeSegment(eventAddMatch[1]!);
+        if (name === undefined) return send(400, { error: "malformed percent-escape in path" });
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
         return readBody(req)
           .then((body) => {
@@ -1188,14 +1241,19 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
               entry.session.insertOps = [...entry.session.insertOps, insertOp];
               return { map: nextMap };
             });
-            return send(200, { tilesetVersion: syncOverlay(), map: result.map, isDirty: result.isDirty });
+            return send(200, { ...overlayStamp(), map: result.map, isDirty: result.isDirty });
           })
-          .catch((e: unknown) => { console.error(e); send(500, { error: e instanceof Error ? e.message : String(e) }); });
+          .catch((e: unknown) => {
+            if (e instanceof BodyTooLarge) return send(413, { error: "request body too large" });
+            console.error(e);
+            send(500, { error: e instanceof Error ? e.message : String(e) });
+          });
       }
 
       const eventDeleteMatch = /^\/api\/edit\/(.+)\/event\/delete$/.exec(url.pathname);
       if (eventDeleteMatch && req.method === "POST") {
-        const name = decodeURIComponent(eventDeleteMatch[1]!);
+        const name = decodeSegment(eventDeleteMatch[1]!);
+        if (name === undefined) return send(400, { error: "malformed percent-escape in path" });
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
         return readBody(req)
           .then((body) => {
@@ -1213,14 +1271,19 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
                 : [];
               return { map: nextMap, extra: warpRenumberWarnings };
             });
-            return send(200, { tilesetVersion: syncOverlay(), map: result.map, isDirty: result.isDirty, warpRenumberWarnings: result.extra });
+            return send(200, { ...overlayStamp(), map: result.map, isDirty: result.isDirty, warpRenumberWarnings: result.extra });
           })
-          .catch((e: unknown) => { console.error(e); send(500, { error: e instanceof Error ? e.message : String(e) }); });
+          .catch((e: unknown) => {
+            if (e instanceof BodyTooLarge) return send(413, { error: "request body too large" });
+            console.error(e);
+            send(500, { error: e instanceof Error ? e.message : String(e) });
+          });
       }
 
       const indicatorSuggestMatch = /^\/api\/indicator\/(.+)\/suggestions$/.exec(url.pathname);
       if (indicatorSuggestMatch && req.method === "GET") {
-        const name = decodeURIComponent(indicatorSuggestMatch[1]!);
+        const name = decodeSegment(indicatorSuggestMatch[1]!);
+        if (name === undefined) return send(400, { error: "malformed percent-escape in path" });
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
         try {
           const names = gbaSpeciesNames(project);
@@ -1240,7 +1303,8 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
 
       const indicatorAtMatch = /^\/api\/edit\/(.+)\/indicator\/at$/.exec(url.pathname);
       if (indicatorAtMatch && req.method === "GET") {
-        const name = decodeURIComponent(indicatorAtMatch[1]!);
+        const name = decodeSegment(indicatorAtMatch[1]!);
+        if (name === undefined) return send(400, { error: "malformed percent-escape in path" });
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
         try {
           const raw = url.searchParams.get("index");
@@ -1258,7 +1322,8 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
 
       const signAtMatch = /^\/api\/edit\/(.+)\/sign\/at$/.exec(url.pathname);
       if (signAtMatch && req.method === "GET") {
-        const name = decodeURIComponent(signAtMatch[1]!);
+        const name = decodeSegment(signAtMatch[1]!);
+        if (name === undefined) return send(400, { error: "malformed percent-escape in path" });
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
         const xs = url.searchParams.get("x"), ys = url.searchParams.get("y");
         const x = Number(xs), y = Number(ys);
@@ -1279,7 +1344,8 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
 
       const signEditMatch = /^\/api\/edit\/(.+)\/sign\/(put|resolve)$/.exec(url.pathname);
       if (signEditMatch && req.method === "POST") {
-        const name = decodeURIComponent(signEditMatch[1]!);
+        const name = decodeSegment(signEditMatch[1]!);
+        if (name === undefined) return send(400, { error: "malformed percent-escape in path" });
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
         return readBody(req).then(raw => {
           let body: Record<string, unknown>;
@@ -1360,12 +1426,16 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
             if (JSON.stringify(prev) !== JSON.stringify(next)) entry.stack.push(entry.session, snapshotCommand(command, prev, next));
             return sendSession(send, 200, entry);
           } catch (error) { return send(400, signFailure(name, error)); }
-        }).catch((error: unknown) => send(400, signFailure(name, error)));
+        }).catch((error: unknown) => {
+          if (error instanceof BodyTooLarge) return send(413, { error: "request body too large" });
+          send(400, signFailure(name, error));
+        });
       }
 
       const indicatorEditMatch = /^\/api\/edit\/(.+)\/indicator\/(add|update)$/.exec(url.pathname);
       if (indicatorEditMatch && req.method === "POST") {
-        const name = decodeURIComponent(indicatorEditMatch[1]!);
+        const name = decodeSegment(indicatorEditMatch[1]!);
+        if (name === undefined) return send(400, { error: "malformed percent-escape in path" });
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
         return readBody(req).then(raw => {
           try {
@@ -1429,9 +1499,12 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
             }
             const next = snapshotOf(session);
             if (JSON.stringify(prev) !== JSON.stringify(next)) entry.stack.push(entry.session, snapshotCommand(update ? "update Indicator" : "place Indicator", prev, next));
-            return send(200, { tilesetVersion: syncOverlay(), map: entry.session.map, isDirty: entry.session.isDirty, ...(update ? {} : { scriptLabel }) });
+            return send(200, { ...overlayStamp(), map: entry.session.map, isDirty: entry.session.isDirty, ...(update ? {} : { scriptLabel }) });
           } catch (error) { return send(400, indicatorFailure(name, error)); }
-        }).catch(error => send(400, indicatorFailure(name, error)));
+        }).catch(error => {
+          if (error instanceof BodyTooLarge) return send(413, { error: "request body too large" });
+          send(400, indicatorFailure(name, error));
+        });
       }
 
       return send(404, { error: "not found" });
