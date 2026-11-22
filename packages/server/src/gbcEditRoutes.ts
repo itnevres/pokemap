@@ -540,8 +540,9 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
      *  A clean session's blocks equal disk, so it keeps using the render cache. */
     openBlocks: (name: string): Block[] | undefined => {
       if (!store.has(name)) return undefined;
-      const { session } = store.open(name);
-      return session.isDirty ? session.blocks : undefined;
+      const entry = store.open(name);
+      // An open paint stroke counts: its command is pushed only at /paint/end.
+      return entry.session.isDirty || entry.strokeStartBlocks !== null ? entry.session.blocks : undefined;
     },
     syncOverlay,
     overlayStamp,
