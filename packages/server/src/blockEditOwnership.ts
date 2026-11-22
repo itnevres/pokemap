@@ -1,10 +1,8 @@
 /**
  * Plan 14.2 Task 9 — hub ownership of staged tileset edits.
  *
- * This file is the Task 9 **oracle** stage: it carries the type contract the
- * tests and the two session stores compile against, with every body stubbed
- * to `throw new Error("not implemented (Task 9)")`. The behaviour is the
- * implementer's job (Task 9, plan `docs/superpowers/plans/archive/plan-14-2-block-editor.md`).
+ * Implements the shared ownership checks and staging operations used by the
+ * block-editor routes and both session stores.
  *
  * Contract highlights (binding, from the plan's Task 9 interface list and the
  * design spec, "Session ownership, Save and undo"):
@@ -15,15 +13,11 @@
  *   another open session; the caller's own paths are never refused, and paths
  *   are checked in sorted order so the refusal names the alphabetically
  *   first offender.
- * - **Ownership follows history, not bytes.** `ownedTilesetPaths` returns the
+ * - **Ownership follows current staged entries.** `ownedTilesetPaths` returns the
  *   paths in the current session's `tilesetEdits` (restored, i.e.
- *   `after === before`, entries included) **or in any snapshot on the undo
- *   side of its history** — staging an edit and its inverse still owns the
- *   file until the last change touching it is undone, saved or discarded.
- * - **Redo reacquires.** Before restoring, the redo path calls
- *   `requireTilesetOwnership` and core's `checkTilesetBaselines` for every
- *   path in the target snapshot; on refusal, history and bytes stay as they
- *   were.
+ *   `after === before`, entries included). Undo/redo restore `tilesetEdits`
+ *   through the snapshot command, so ownership reflects the restored state;
+ *   history is not scanned.
  * - `refuseUnsavedBlockRefs` refuses (`UNSAVED_BLOCK` naming the owner) any
  *   block id at or past a metatiles file's saved count while another map owns
  *   that file; it is wired into both families' paint/fill/stamp routes.
@@ -47,8 +41,7 @@ export type { BlockEditPlan } from "@pokemap/core/src/blockEdit/types.js";
 /** The one entry shape a staged-tileset check needs from either session store. */
 export interface OwnershipEntry {
   session: EditSession | GbcEditSession;
-  // `any` so one type covers both families' stacks; the implementation reads
-  // the undo side of the history through it.
+  // `any` so one type covers both families' stacks for staging commands.
   stack: EditCommandStack<any>;
 }
 
@@ -74,9 +67,8 @@ export interface SessionPayload {
 
 /**
  * Paths owned by one entry right now: the paths in its current session's
- * `tilesetEdits` (restored, `after === before`, entries included) **or** in
- * any snapshot on the undo side of its history — ownership follows history,
- * not bytes.
+ * `tilesetEdits` (restored, `after === before`, entries included). Undo/redo
+ * restore these entries through the snapshot command; history is not scanned.
  */
 export function ownedTilesetPaths(entry: OwnershipEntry): Set<string> {
   return new Set((entry.session.tilesetEdits ?? []).map(edit => edit.path));

@@ -1509,6 +1509,40 @@ export function suite(family: "gba" | "gbc") {
       expect(changedStaged(pair.a)).toEqual([]);
     }, 120_000);
 
+    it("Q2: check refuses another map's staged file as a NOT_OWNER refusal", async () => {
+      try {
+        stage(pair.b);
+        const depth = undoDepth(pair.b);
+        const staged = changedStaged(pair.b).map(edit => ({
+          ...edit, before: Buffer.from(edit.before), after: Buffer.from(edit.after),
+        }));
+        const id = await idFor();
+        const data = await block(pair.a, `block=${id}`);
+        expect(store.has(pair.a)).toBe(false);
+        const result = await blockCheck(pair.a, { request: changedDraft(data), revision: data.revision });
+        expect(result.status, JSON.stringify(result.body)).toBe(200);
+        expect(result.body).toEqual({
+          usage: null, confirm: false, warnings: [],
+          refusal: { code: "NOT_OWNER", error: expect.any(String) },
+        });
+        expect(result.body.refusal.error.startsWith(`${pair.a}: `)).toBe(true);
+        expect(result.body.refusal.error).toContain(`${pair.b} has unsaved block edits`);
+        expect(store.has(pair.a)).toBe(false);
+        expect(undoDepth(pair.a)).toBe(0);
+        expect(changedStaged(pair.a)).toEqual([]);
+        const ownerData = await block(pair.b, `block=${id}`);
+        const ownerCheck = await blockCheck(pair.b, { request: changedDraft(ownerData), revision: ownerData.revision });
+        expect(ownerCheck.status, JSON.stringify(ownerCheck.body)).toBe(200);
+        expect(ownerCheck.body.refusal).toBeUndefined();
+        expect(ownerCheck.body.usage).toEqual(ownerData.usage);
+        expect(typeof ownerCheck.body.confirm).toBe("boolean");
+        expect(ownerCheck.body.warnings).toEqual([]);
+        expect(store.entries().map(([name]) => name)).toEqual([pair.b]);
+        expect(undoDepth(pair.b)).toBe(depth);
+        expect(changedStaged(pair.b)).toEqual(staged);
+      } finally { store.closeAll(); }
+    }, 120_000);
+
     it("names the requesting map when another map owns the applied file", async () => {
       stage(pair.a);
       const data = await block(pair.b, `block=${await idFor()}`);
@@ -1690,6 +1724,51 @@ export function suite(family: "gba" | "gbc") {
         expect(undoDepth(name)).toBe(depth);
         expect(changedStaged(name)).toEqual([]);
       } finally { store.closeAll(); }
+    }, 120_000);
+
+    it("Q2: GET planner refusal answers 409 with the planner's code, both families", async () => {
+      const id = await idFor();
+      const path = family === "gba"
+        ? canonicalTilesetPath(gba.tilesetPaths(gba.layoutForMap(pair.a).primaryTileset).attributesBin)
+        : pair.path;
+      const collisionPath = family === "gbc"
+        ? canonicalTilesetPath(gbc.tileset(gbc.map(pair.a).tileset).collisionPath) : undefined;
+      const restore = restoreBytes([path, ...(collisionPath === undefined ? [] : [collisionPath])]
+        .map(file => resolve(root, file)));
+      try {
+        expect(store.entries()).toEqual([]);
+        let code: string, error: string;
+        if (family === "gba") {
+          // The loader accepts surplus whole attribute words, but the GET's
+          // planGbaBlockEdit(mode: "ok") requires one word per metatile.
+          const bytes = readFileSync(resolve(root, path));
+          const size = gba.profile.metatileAttributesSize;
+          writeFileSync(resolve(root, path), Buffer.concat([bytes, Buffer.alloc(size)]));
+          const count = readFileSync(resolve(root, pair.path)).length / 16;
+          code = "BAD_VALUE";
+          error = `${path}: ${bytes.length / size + 1} attribute words for ${count} metatiles`;
+        } else {
+          // The loader accepts 257 complete records if collisions cover them.
+          // The GET's own OK plan reaches patchGbcMetatiles, which enforces 256.
+          const bytes = readFileSync(resolve(root, path));
+          writeFileSync(resolve(root, path), Buffer.concat(Array.from({ length: 257 }, () => bytes.subarray(0, 16))));
+          const collision = readFileSync(resolve(root, collisionPath!), "utf8");
+          const line = collision.match(/^[ \t]*tilecoll\b.*$/gm)?.at(-1);
+          if (!line) throw new Error("fixture needs a GBC collision record");
+          writeFileSync(resolve(root, collisionPath!), `${collision.replace(/\s*$/, "\n")}${`${line}\n`.repeat(257)}`);
+          code = "BLOCK_CAP";
+          error = `${path}: block cap 256 exceeded (257 records)`;
+        }
+        const result = await request(`/api/edit/${encoded(pair.a)}/block?block=${id}${family === "gbc" ? "&time=day" : ""}`);
+        expect(result.status, JSON.stringify(result.body)).toBe(409);
+        expect(result.body).toEqual({ error, code });
+        expect(store.entries()).toEqual([]);
+        expect(undoDepth(pair.a)).toBe(0);
+        expect(changedStaged(pair.a)).toEqual([]);
+      } finally {
+        store.closeAll();
+        restore();
+      }
     }, 120_000);
 
     if (family === "gba") it.each([
