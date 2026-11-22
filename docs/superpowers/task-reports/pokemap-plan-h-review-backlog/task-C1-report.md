@@ -13,3 +13,15 @@ Tier: High (async ordering; save/discard ownership).
 
 - `packages/ui/test/shared/sessionBarrier.test.tsx`: paint-only wait, per-map scope, re-check after a create settles, rejecting/throwing source, unregister, null map.
 - `packages/ui/test/shell/strokeBarrier.test.tsx` (GBA and GBC): Discard, undo, Save plan and commit wait for the link; rejecting link does not block; a real in-flight `/paint/apply` lands before `/discard` and the fake hub holds no session afterwards.
+
+## Mutation checks (16 new tests; all green unmutated)
+
+- M1 barrier skips awaiting sources: 10 failed (Discard, undo, Save, real-paint in both families; paint-only and re-check unit tests).
+- M2 barrier skips the re-check after creates settle: 3 failed (re-check test, plus two later unit tests polluted by its leftover state).
+- M3 drop `registerSettledSource` in `FamilyApp`: 8 failed (Discard, undo, Save, real-paint, both families; unit tests unaffected).
+- Each mutant restored with `git checkout`; the committed tree is unmutated.
+
+## Judgment calls
+
+- Trap 6 (stroke in World-view context editing): no new test; registration is by `selected` and `useContextEditing.enter` selects the map first (`shared/useContextEditing.ts:50-55`).
+- Redo has no UI test (fixture has canRedo false); it shares the undo barrier line.
