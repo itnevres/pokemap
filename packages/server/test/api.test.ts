@@ -7,6 +7,14 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { norm } from "@pokemap/core/src/config/paths.js";
+import { createServer as createHttpServer, type Server as HttpServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import { openProject, type Project } from "@pokemap/core/src/project.js";
+import { canonicalTilesetPath } from "@pokemap/core/src/blockEdit/canonicalTilesetPath.js";
+import { copyGbaTilesetProject, removeGbaTemp } from "@pokemap/core/test/helpers/gbaTilesetProject.js";
+import { createProjectHandler } from "../src/index.js";
+import * as gbaSessions from "../src/editSessions.js";
+import { stageTilesetPlan } from "../src/blockEditOwnership.js";
 
 let s: PokemapServer;
 const get = async (path: string) => fetch(`http://127.0.0.1:${s.port}${path}`);
@@ -166,6 +174,46 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("server", () => {
     await post(`/api/edit/${map}/undo`, {});
     const afterUndo = Buffer.from(await (await get(`/api/render/${map}.png?border=0`)).arrayBuffer());
     expect(afterUndo.equals(disk)).toBe(true);
+  }, 300_000);
+
+  it("Plan H A1: an open but clean session (GET /plan, or undone back to clean) keeps the PNG cache; a dirty one bypasses it", async () => {
+    // Observability: the cached path never calls project.layoutById on a hit
+    // (cachedRender resolves the layout only on a miss); the live-render
+    // bypass resolves it on every request. The baseline is a map with no session.
+    const spy = vi.spyOn(s.project as Project, "layoutById");
+    const calls = async (map: string) => {
+      spy.mockClear();
+      const r = await get(`/api/render/${map}.png?border=0`);
+      expect(r.status).toBe(200);
+      return { n: spy.mock.calls.length, png: Buffer.from(await r.arrayBuffer()) };
+    };
+    try {
+      await calls("Route32"); // warm
+      const hit = (await calls("Route32")).n; // no session: the cache-hit baseline
+
+      const map = "Route31";
+      const disk = (await calls(map)).png; // miss, fills the cache
+      expect((await get(`/api/edit/${map}/plan`)).status).toBe(200); // opens a session as a side effect
+      const clean = await calls(map);
+      expect(clean.n, "open but clean session must keep hitting the cache").toBe(hit);
+      expect(clean.png.equals(disk)).toBe(true);
+
+      await post(`/api/edit/${map}/paint/begin`, {});
+      await post(`/api/edit/${map}/paint/apply`, {
+        tool: "pencil", targets: [{ x: 0, y: 0 }], stamp: { width: 1, height: 1, cells: [{ metatileId: 42 }] }, origin: { x: 0, y: 0 },
+      });
+      await post(`/api/edit/${map}/paint/end`, {});
+      const dirty = await calls(map);
+      expect(dirty.n, "dirty session must bypass the cache").toBeGreaterThan(hit);
+      expect(dirty.png.equals(disk)).toBe(false);
+
+      await post(`/api/edit/${map}/undo`, {});
+      const undone = await calls(map);
+      expect(undone.n, "undone back to clean must return to the cache").toBe(hit);
+      expect(undone.png.equals(disk)).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
   }, 300_000);
 
   it("an untouched map keeps rendering identically -- opening a session elsewhere doesn't disable its render", async () => {
@@ -536,4 +584,51 @@ describe("defects route parse failures (temporary project)", () => {
     expect(r.status).toBe(500);
     expect(await r.json()).toMatchObject({ error: expect.stringContaining("data/maps/Test/map.json") });
   });
+});
+
+describe.skipIf(!hasProject(SUBJECT_ROOT))("Plan H A1: a staged block edit alone still renders live", () => {
+  it("a session whose only change is a staged metatile edit reports isDirty and renders the staged pixels", async () => {
+    const root = copyGbaTilesetProject().replace(/\/g, "/");
+    let store!: ReturnType<typeof gbaSessions.createEditSessionStore>;
+    const factory = gbaSessions.createEditSessionStore;
+    vi.spyOn(gbaSessions, "createEditSessionStore").mockImplementation(project => (store = factory(project)));
+    const server: HttpServer = createHttpServer(createProjectHandler(root).handle);
+    try {
+      await new Promise<void>(done => server.listen(0, "127.0.0.1", done));
+      const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      const png = async (name: string) => Buffer.from(await (await fetch(`${base}/api/render/${name}.png?border=0`)).arrayBuffer());
+      const project = openProject(root);
+      // A map whose first block uses a primary-tileset metatile, and a second metatile with different bytes.
+      let picked: { name: string; path: string; id: number; other: number } | undefined;
+      for (const name of project.mapNames()) {
+        const layout = project.layoutForMap(name);
+        const path = canonicalTilesetPath(project.tilesetPaths(layout.primaryTileset).metatilesBin);
+        const bytes = readFileSync(join(root, path));
+        const count = bytes.length / 16;
+        const blocks = (await (await fetch(`${base}/api/map/${encodeURIComponent(name)}`)).json() as any).blocks as { metatileId: number }[];
+        const used = blocks[0]!.metatileId;
+        if (used >= count) continue;
+        const other = [...Array(count).keys()].find(j => !bytes.subarray(j * 16, j * 16 + 16).equals(bytes.subarray(used * 16, used * 16 + 16)));
+        if (other === undefined) continue;
+        picked = { name, path, id: used, other };
+        break;
+      }
+      expect(picked).toBeDefined();
+      const { name, path, id, other } = picked!;
+      const before = readFileSync(join(root, path));
+      const after = Buffer.from(before);
+      before.copy(after, id * 16, other * 16, other * 16 + 16);
+      const disk = await png(name);
+      stageTilesetPlan(store, name, {
+        edits: [{ path, before, after }], warnings: [], usage: { files: [], tilesets: [], maps: [], sharedGrids: [] },
+        confirm: false, revision: "",
+      }, "A1 staged-only oracle");
+      expect(store.open(name).session.isDirty).toBe(true);
+      expect((await png(name)).equals(disk)).toBe(false);
+    } finally {
+      vi.restoreAllMocks();
+      await new Promise<void>(done => server.close(() => done()));
+      removeGbaTemp(root);
+    }
+  }, 300_000);
 });

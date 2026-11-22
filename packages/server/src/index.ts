@@ -474,10 +474,16 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
         // request for the same map once the session eventually closes. Only
         // BROWSER caching is disabled by the response header below -- this
         // server's own process-lifetime Map needed its own bypass.
-        if (editSessions.has(name)) {
+        // Keyed on `isDirty`, not on the session merely existing: GET /plan
+        // opens a session as a side effect, and a clean session's blocks equal
+        // disk, so it can use the cache. A staged-only block edit pushes an
+        // undo command, so it is dirty too (the overlay sync above clears
+        // pngCache when staged tileset bytes change).
+        const liveEntry = editSessions.has(name) ? editEntryFor(name) : undefined;
+        if (liveEntry?.session.isDirty) {
           const layoutName = resolveLayoutName();
           if (!layoutName) return send(404, { error: `no layout or map ${name}` });
-          const png = encodePng(renderLayout(project, layoutName, { border, blocksOverride: editEntryFor(name).session.blocks }));
+          const png = encodePng(renderLayout(project, layoutName, { border, blocksOverride: liveEntry.session.blocks }));
           res.writeHead(200, { "content-type": "image/png", "cache-control": "no-cache" });
           return res.end(png);
         }
