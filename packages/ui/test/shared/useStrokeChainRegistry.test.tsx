@@ -30,14 +30,42 @@ describe("useStrokeChainRegistry", () => {
     expect(settled).toBe(true);
   });
 
-  it("does not wait for a chain after it unmounts", async () => {
-    const never: SettledChain = { settled: () => new Promise<void>(() => {}) };
+  it("keeps waiting for an unmounted chain until its links settle, then drops it", async () => {
+    const link = deferred();
+    let calls = 0;
+    const chain: SettledChain = { settled: () => { calls++; return link.promise; } };
+    const { result } = renderHook(() => useStrokeChainRegistry());
+    act(() => { result.current.onStrokeChain(chain, true); result.current.onStrokeChain(chain, false); });
+    let settled = false;
+    void result.current.strokeSettled().then(() => { settled = true; });
+    await act(async () => {});
+    expect(settled).toBe(false);
+    link.resolve();
+    await act(async () => {});
+    expect(settled).toBe(true);
+    const before = calls;
+    await result.current.strokeSettled();
+    expect(calls).toBe(before); // dropped from the registry
+  });
+
+  it("a remount (StrictMode effect re-run) keeps the chain registered after its old links settle", async () => {
+    let calls = 0;
+    const chain: SettledChain = { settled: () => { calls++; return Promise.resolve(); } };
+    const { result } = renderHook(() => useStrokeChainRegistry());
+    act(() => { result.current.onStrokeChain(chain, true); result.current.onStrokeChain(chain, false); result.current.onStrokeChain(chain, true); });
+    await act(async () => {});
+    const before = calls;
+    await result.current.strokeSettled();
+    expect(calls).toBe(before + 1);
+  });
+
+  it("a rejecting or throwing unmounted chain is dropped without an unhandled rejection", async () => {
     const { result } = renderHook(() => useStrokeChainRegistry());
     act(() => {
-      result.current.onStrokeChain(never, true);
-      result.current.onStrokeChain(never, false);
+      result.current.onStrokeChain({ settled: () => Promise.reject(new Error("x")) }, false);
+      result.current.onStrokeChain({ settled: () => { throw new Error("y"); } }, false);
     });
-    await expect(result.current.strokeSettled()).resolves.toBeUndefined();
+    await act(async () => {});
   });
 
   it("keeps its callbacks stable across a rerender", () => {

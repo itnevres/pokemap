@@ -16,11 +16,17 @@ export function hasPendingSessionMutations(map: string | null): boolean {
   return map !== null && (sessionMutations.get(map)?.size ?? 0) > 0;
 }
 // Stroke chains (shared/useStrokeChain.ts) are tracked apart from session mutations. The shell registers
-// the selected map's `strokeSettled` here, so every barrier caller (Discard, Save plan and commits, undo,
-// redo, map switch) also waits for a paint request still in flight.
-// Accepted ceiling: this orders ONE tab's own fire-and-forget chains. It does not close a network
-// reordering (a slower first request landing after a faster second one); that needs a server-side
-// generation tag on every paint/event route, which is deliberately not built.
+// the selected map's `strokeSettled` here, so Discard, the Save plan and commit, undo and redo also wait for a
+// paint request still in flight. The map-switch guard (FamilyApp guardedLeave) waits only when a create or
+// block apply is pending, so a switch made while the very first stroke is in flight does not wait.
+// Accepted ceilings:
+// - This orders ONE tab's own fire-and-forget chains. It does not close a network reordering (a slower first
+//   request landing after a faster second one); that needs a server-side generation tag on every paint/event
+//   route, which is deliberately not built.
+// - Sources are re-read only when a create or block apply was pending. A stroke started while the barrier is
+//   already waiting (the canvas stays live after the Discard confirm) is not awaited; its late /paint/apply can
+//   reopen a session. The later /paint/end reply carries a higher seq, so the UI normally recovers.
+// - There is no timeout: a paint request that never answers holds the barrier (and so Discard/Save/undo).
 const settledSources = new Map<string, Set<() => Promise<void>>>();
 export function registerSettledSource(map: string, settled: () => Promise<void>): () => void {
   let set = settledSources.get(map);

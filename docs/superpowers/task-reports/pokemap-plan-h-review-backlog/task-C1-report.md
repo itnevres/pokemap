@@ -25,3 +25,22 @@ Tier: High (async ordering; save/discard ownership).
 
 - Trap 6 (stroke in World-view context editing): no new test; registration is by `selected` and `useContextEditing.enter` selects the map first (`shared/useContextEditing.ts:50-55`).
 - Redo has no UI test (fixture has canRedo false); it shares the undo barrier line.
+
+## Review round 1 (spec + quality, Opus)
+
+Merged `origin/master` (670a295) into the C1 branch with no conflicts (the merge touched neither `useEditSessionCore.ts` nor `FamilyApp.tsx`).
+
+Findings:
+
+- Spec 1 / quality 1 (BLOCKING, trap-6 test): FIXED. `AppContextStroke.test.tsx` (GBA) and `gbc/GbcAppContextStroke.test.tsx` (GBC) each gain two cases: dirty the session, make a second World-context stroke with `/paint/apply` held, then (a) click the in-context Discard Changes, or (b) click Map and then Discard Changes. Both expect no `/discard` until the apply resolves, then exactly one `/discard` and a closed fake-hub session.
+- Spec 2 (IMPORTANT, unmounted chain leaves the barrier): FIXED. `useStrokeChainRegistry` keeps an unmounted chain `tracked` until its `settled()` resolves (deferred delete, guarded by a `live` set so a StrictMode remount keeps it). This also fixes quality 5 (the unmount's end link is now inside the wait). The old unit test "does not wait for a chain after it unmounts" was replaced by three tests: keeps until settled then drops, remount guard, rejecting/throwing chain.
+- Spec 3 (redo UI test): left, composition covers it (shares the undo barrier line).
+- Spec 4 / quality 3 (stroke started while Discard waits): LEFT, named in the ceiling comment in `useEditSessionCore.ts`. Looping until quiet cannot see a link a promise-only source has not yet issued.
+- Spec 5 (try/catch is new code): left, justified (registerSettledSource accepts any source).
+- Quality 4 (comment says map switch waits): FIXED in the comment (guardedLeave waits only for a pending create or block apply).
+- Quality 6 (no timeout): LEFT, named in the ceiling comment. A timeout would let Discard race a paint that is merely slow.
+- Quality 7 (cleanup not in finally): FIXED. `sessionBarrier.test.tsx` registers through a helper and unregisters every source in `afterEach`.
+- Quality 8: wrapper-independence test ADDED. The empty-map-entry removal is not observable from outside (an absent and an empty set read the same), so no test.
+- Quality 2 (gate evidence) and quality 9 (try/catch mutation): see Verification.
+
+Verification and mutation results: PENDING, see the end of this section.
