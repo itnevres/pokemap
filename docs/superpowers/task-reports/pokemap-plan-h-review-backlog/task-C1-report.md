@@ -43,4 +43,11 @@ Findings:
 - Quality 8: wrapper-independence test ADDED. The empty-map-entry removal is not observable from outside (an absent and an empty set read the same), so no test.
 - Quality 2 (gate evidence) and quality 9 (try/catch mutation): see Verification.
 
-Verification and mutation results: PENDING, see the end of this section.
+Verification (through the lock): `npm run typecheck` exit 0; vitest `--no-file-parallelism` over `packages/ui/test/shared`, `packages/ui/test/shell`, `AppContextStroke.test.tsx`, `gbc/GbcAppContextStroke.test.tsx`: 39 files passed. An earlier run of the context-stroke files plus `shared` passed 31 files / 589 tests. NOT run: the full repo gate and UI build (the lock was held by other sessions for over an hour; quality finding 2 stays open for the controller's gate run).
+
+Mutation results (each restored in `finally`; the committed tree is unmutated):
+
+- M4 unmounted chain dropped at once (revert of the fix): 3 tests red across 3 files (registry unit test and both Map-view-after-context Discard cases).
+- M5 remount guard (`live` check) removed: 1 file red (the remount test).
+- M6 shell registration dropped (trap-6 path): 3 files red (strokeBarrier plus both context-stroke files).
+- M7 try/catch in `sourcesSettled` removed: 2 files red (sessionBarrier and strokeBarrier rejecting-source tests).
