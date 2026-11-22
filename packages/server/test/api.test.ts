@@ -588,7 +588,7 @@ describe("defects route parse failures (temporary project)", () => {
 
 describe.skipIf(!hasProject(SUBJECT_ROOT))("Plan H A1: a staged block edit alone still renders live", () => {
   it("a session whose only change is a staged metatile edit reports isDirty and renders the staged pixels", async () => {
-    const root = copyGbaTilesetProject().replace(/\/g, "/");
+    const root = copyGbaTilesetProject().replaceAll("\\", "/");
     let store!: ReturnType<typeof gbaSessions.createEditSessionStore>;
     const factory = gbaSessions.createEditSessionStore;
     vi.spyOn(gbaSessions, "createEditSessionStore").mockImplementation(project => (store = factory(project)));
