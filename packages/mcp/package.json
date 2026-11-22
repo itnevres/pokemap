@@ -1,0 +1,10 @@
+{
+  "name": "@pokemap/mcp",
+  "version": "0.0.0",
+  "type": "module",
+  "comment": "Wraps the CLI (packages/cli) as MCP tools over stdio. Like the CLI it runs from TypeScript through tsx: node --import tsx packages/mcp/src/index.ts [--project <root>].",
+  "scripts": {
+    "mcp": "tsx src/index.ts"
+  },
+  "dependencies": { "@modelcontextprotocol/sdk": "^1.32.2", "zod": "^3.25.0" }
+}
