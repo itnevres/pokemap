@@ -12,3 +12,6 @@
 - Hops: chain `--tier sonnet`: DeepSeek V4.1 Flash x2, Ernie 5.5 x2, Inkling, Nemotron Ultra x2, Ling, Codex hops all marked failed or parked. Cause found: the Q8 worktree's `node_modules` junctions pointed at `C:\C:\Programming Projects\...`, so vitest ended with an unhandled ENOENT after every test passed ("verify exit 1"). Junctions recreated; DeepSeek's stashed diff (`051fd93`) then verified: typecheck clean, 96/96 in `gbcBlockEditRoutes` + `BlockEditorDialog`.
 - Review: self-review of the diff against the brief, plus Nemotron Ultra (OpenCode `--agent plan`) APPROVE (Codex at its usage limit, OpenCode Zen free quota exhausted). No mutation checks (Medium).
 - Lesson for later runs: after making a worktree, check `(Get-Item <wt>\node_modules -Force).Target` is a sane path.
+
+## Gate
+Gate at `1aaa4ed` (code identical to `7d7e947`): 5,163 pass / 1 fail / 273 files; typecheck pass, UI build pass; subjects unchanged. The one fail is the known `engine.test.ts > parses the subject repo's real porymap.project.cfg` env fail (RESUME lists it).
