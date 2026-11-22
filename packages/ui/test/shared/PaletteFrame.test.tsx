@@ -26,6 +26,11 @@ describe("PaletteFrame (Plan 9 addendum R-F5)", () => {
     fireEvent.change(screen.getByPlaceholderText("Search by hex id…"), { target: { value: "1a" } });
     expect(onQuery).toHaveBeenCalledWith("1a");
   });
+
+  it("names the search input by its accessible label", () => {
+    render(<PaletteFrame className="x" selection={null} query="" onQuery={() => {}} follow onFollow={() => {}}><span /></PaletteFrame>);
+    expect(screen.getByRole("textbox", { name: "Search by hex id" })).toBeTruthy();
+  });
 });
 
 describe("PaletteSelection (Plan 9 addendum R-F6)", () => {

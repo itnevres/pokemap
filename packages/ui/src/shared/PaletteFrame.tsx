@@ -24,7 +24,7 @@ export function PaletteFrame({ className, caption, selection, query, onQuery, fo
       <div className="palette__pinned">
         {caption !== undefined && <div className="palette__caption">{caption}</div>}
         {selection}
-        <input className="palette__search" placeholder="Search by hex id…" value={query} onChange={(e) => onQuery(e.target.value)} />
+        <input className="palette__search" aria-label="Search by hex id" placeholder="Search by hex id…" value={query} onChange={(e) => onQuery(e.target.value)} />
         <FollowHoverSwitch on={follow} onChange={onFollow} />
       </div>
       <div className="palette__scroll">{children}</div>
