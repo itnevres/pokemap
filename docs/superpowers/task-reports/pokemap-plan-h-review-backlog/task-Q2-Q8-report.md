@@ -16,7 +16,15 @@
 ## Gate
 Gate at `1aaa4ed` (code identical to `7d7e947`): 5,163 pass / 1 fail / 273 files; typecheck pass, UI build pass; subjects unchanged. The one fail is the known `engine.test.ts > parses the subject repo's real porymap.project.cfg` env fail (RESUME lists it).
 
+<<<<<<< HEAD
 ## Live check (2026-11-22, Q8 UI change, RULES §3b)
 Servers started from this branch's worktree (`npx tsx packages/server/src/serve.ts`, then `--gbc`; `npm run dev -w @pokemap/ui`); the Vite-served `BlockEditorDialog.tsx` contained the new `affected` list. Read-only steps only: nothing applied or saved, Save/Undo stayed disabled, both subject repos unchanged (`git status --porcelain` empty), servers stopped after.
 - **GBA** (Route29, Edit block tool, a primary-tileset tree block, Layer type COVERED → SPLIT, OK): the Confirm edit region read "Used 231 times on this map (+ border), 3986 times on 25 other maps; 26 maps affected", 8 `<li>` entries (CherrygroveCity … Route26) and `and 18 more`. Cancel, then Escape: no pending edit.
 - **GBC** (Route39, Edit block tool, a TILESET_JOHTO block of eight-by-two `$05` tiles, Palette GREEN): picked sheet tile `$8A`, placed it on square 0; the Palette select changed GREEN → RED with no scope prompt. The GET reply's `sheet.tilePalettes` (length 224) has `[0x8A]` = "RED" and `[5]` = "GREEN", matching; its `block.tilePalettes[0]` is "GREEN", so the old code would have kept GREEN.
+=======
+## Q8 live check (RULES 3b, real app, headless-free browser pane)
+Servers started from the #41 branch worktree (served `BlockEditorDialog.tsx` contained `paletteName`/`tilePalettes`); subjects read-only, both clean after (`git status --porcelain` 0 lines).
+- **GBA** (Route101, Edit block on a grass metatile, X flip ticked, OK): confirm section lists 8 maps then `and 41 more` (49 maps affected). Cancelled before Apply; nothing written.
+- **GBC** (Route38, Edit block, tile `$B7` from the sheet placed into square 2 whose loaded palette was GREEN): Palette select shows BROWN, equal to `sheet.tilePalettes[0xB7]`, not the old GREEN. `GET .../block` carries `sheet.tilePalettes` (224 entries). Dialog closed with Escape; Save/Undo stayed disabled.
+- Note: a first OK on GBA with an untouched draft (my form-input tick did not reach React state) went check, `confirm:false`, then apply as a no-op; subject stayed clean and Save stayed disabled.
+>>>>>>> origin/claude/plan-h-server-a0b19b
