@@ -30,7 +30,7 @@ Every plan in execution order. Open plans are in this folder; finished plans are
 | [14.1: Add Event](archive/plan-14-1-add-event.md) | Add Object, Warp, Coord and BG events from a placement popup, both families. | complete |
 | [14.2: Block editor](archive/plan-14-2-block-editor.md) | Polished-Map-style block editor: tiles, collision or behaviour, usage warning, Save as new block. | complete |
 | [H: Hardening and structure pass](plan-h-hardening.md) | Request boundary, path containment, save and session correctness, route modules, small UI fixes, tooling. All of it before 14A. Next: batch H0 (Task Q1). | open |
-| [18: HexManiacAdvance triage (#7)](plan-18-hma-triage.md) | Rate the 21 HMA features in issue #7 and turn the keepers into issues. Docs only; before Plan 19 is specced. | rated; issue drafts wait for the user |
+| [18: HexManiacAdvance triage (#7)](plan-18-hma-triage.md) | Rate the 21 HMA features in issue #7 and turn the keepers into issues. Docs only; before Plan 19 is specced. Rated; five issue drafts in the plan wait to be posted. | open |
 | [14A: Shared stamps and saved patterns](plan-14a-stamps-and-patterns.md) | Capture a map area, save it as a named pattern tied to its tilesets, and place it, both families; keyboard access to the map canvas. | open |
 | [19: Create new trainers](plan-19-new-trainers.md) | Create a trainer and its party by copying an existing one, from the Add Object popup, both families. | open |
 | [14B: Terrain painting](plan-14b-terrain-painting.md) | Water and path brushes that repair neighbouring edges; forests and cliffs in a later phase. | open |

@@ -196,6 +196,9 @@ input {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; }
+}
 
 .app {
   display: flex;
