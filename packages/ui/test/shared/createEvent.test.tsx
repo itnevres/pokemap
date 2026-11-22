@@ -19,6 +19,13 @@ function deferred() {
   const promise = new Promise<Response>((yes, no) => { resolve = yes; reject = no; });
   return { promise, resolve, reject };
 }
+// Keep mutation fixtures and call-order assertions scoped to their routes; hydration has no open session.
+function stubMutationFetch(fetcher: (url: string, init?: RequestInit) => unknown) {
+  vi.stubGlobal("fetch", (url: string, ...args: [RequestInit?]) => url.endsWith("/session")
+    ? Promise.resolve({ ok: true, status: 200, json: async () => ({ blocks: [], border: [], map: null, events: null, isDirty: false, canUndo: false, canRedo: false }) } as Response)
+    : fetcher(url, ...args));
+}
+
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 for (const family of ["gba", "gbc"] as const) {
@@ -33,7 +40,7 @@ for (const family of ["gba", "gbc"] as const) {
         ? { map: body.map, isDirty: true, canUndo: true, canRedo: false, created }
         : { ...body, events: nextEvents };
       const fetcher = vi.fn().mockResolvedValue(response(payload));
-      vi.stubGlobal("fetch", fetcher);
+      stubMutationFetch(fetcher);
       const { result } = mount();
       await act(async () => { expect(await result.current.createEvent(form)).toEqual(created); });
       expect(fetcher).toHaveBeenCalledTimes(1);
@@ -48,20 +55,20 @@ for (const family of ["gba", "gbc"] as const) {
       }
     });
     it("rejects a 400 with the server error text and code", async () => {
-      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ error: "A maps/A: name taken", code: "LABEL_TAKEN" }, 400)));
+      stubMutationFetch(vi.fn().mockResolvedValue(response({ error: "A maps/A: name taken", code: "LABEL_TAKEN" }, 400)));
       const { result } = mount();
       await expect(result.current.createEvent(form)).rejects.toMatchObject({ message: "A maps/A: name taken", code: "LABEL_TAKEN", stale: false });
       expect(result.current.isDirty).toBe(false);
     });
     it("rejects a refused redo with the server error text and code", async () => {
-      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ error: "B has an unsaved new constant in this file", code: "NO_FLAG_SLOT" }, 400)));
+      stubMutationFetch(vi.fn().mockResolvedValue(response({ error: "B has an unsaved new constant in this file", code: "NO_FLAG_SLOT" }, 400)));
       const { result } = mount();
       await expect(result.current.redo()).rejects.toMatchObject({ message: "B has an unsaved new constant in this file", code: "NO_FLAG_SLOT" });
     });
     it.each(["undo", "redo", "discard"] as const)("%s waits for pending create before its POST", async (action) => {
       const pending = deferred();
       const fetcher = vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValue(response(body));
-      vi.stubGlobal("fetch", fetcher);
+      stubMutationFetch(fetcher);
       const { result } = mount();
       const create = result.current.createEvent(form);
       const operation = result.current[action]();
@@ -74,7 +81,7 @@ for (const family of ["gba", "gbc"] as const) {
       const pending = deferred();
       const plan = { changes: [{ path: "A", kind: "text", summary: "created" }], refusals: [], fingerprint: "fresh" };
       const fetcher = vi.fn((url: string) => url.endsWith("/event/create") ? pending.promise : Promise.resolve(response(plan)));
-      vi.stubGlobal("fetch", fetcher);
+      stubMutationFetch(fetcher);
       const { result } = mount();
       const create = result.current.createEvent(form);
       render(<SaveDialog mapName="A" onCommitted={vi.fn()} onCancel={vi.fn()} />);
@@ -97,7 +104,7 @@ for (const family of ["gba", "gbc"] as const) {
     it("map switch waits for create, then prompts using its new dirty state before discard", async () => {
       const pending = deferred();
       const fetcher = vi.fn((url: string) => url.endsWith("/event/create") ? pending.promise : Promise.resolve(response(body)));
-      vi.stubGlobal("fetch", fetcher);
+      stubMutationFetch(fetcher);
       let create!: Promise<unknown>;
       const dungeon = { id: "unused", name: "unused", maps: [] };
       const useSession = family === "gba" ? useEditSession : useGbcEditSession;
@@ -139,7 +146,7 @@ for (const family of ["gba", "gbc"] as const) {
     it("barrier settles after a refused create and lets undo proceed", async () => {
       const pending = deferred();
       const fetcher = vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValue(response(body));
-      vi.stubGlobal("fetch", fetcher);
+      stubMutationFetch(fetcher);
       const { result } = mount();
       const caught = result.current.createEvent(form).catch((error: unknown) => error);
       const undo = result.current.undo();
@@ -154,7 +161,7 @@ for (const family of ["gba", "gbc"] as const) {
     });
     it("delayed success after A to B to A resolves null and applies nothing", async () => {
       const pending = deferred();
-      vi.stubGlobal("fetch", vi.fn(() => pending.promise));
+      stubMutationFetch(vi.fn(() => pending.promise));
       const { result, rerender } = mount();
       const create = result.current.createEvent(form);
       rerender({ map: "B" }); rerender({ map: "A" });
@@ -165,7 +172,7 @@ for (const family of ["gba", "gbc"] as const) {
     });
     it.each(["refusal", "network"])("delayed %s after A to B to A rejects with a stale marker", async (failure) => {
       const pending = deferred();
-      vi.stubGlobal("fetch", vi.fn(() => pending.promise));
+      stubMutationFetch(vi.fn(() => pending.promise));
       const { result, rerender } = mount();
       const caught = result.current.createEvent(form).catch((error: unknown) => error);
       rerender({ map: "B" }); rerender({ map: "A" });

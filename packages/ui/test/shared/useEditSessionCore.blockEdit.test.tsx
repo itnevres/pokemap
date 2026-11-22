@@ -33,6 +33,13 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
+// Keep mutation fixtures and call-order assertions scoped to their routes; hydration has no open session.
+function stubMutationFetch(fetcher: (url: string, init?: RequestInit) => unknown) {
+  vi.stubGlobal("fetch", (url: string, ...args: [RequestInit?]) => url.endsWith("/session")
+    ? Promise.resolve({ ok: true, status: 200, json: async () => ({ blocks: [], border: [], map: null, events: null, isDirty: false, canUndo: false, canRedo: false }) } as Response)
+    : fetcher(url, ...args));
+}
+
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 for (const family of ["gba", "gbc"] as const) {
@@ -45,7 +52,7 @@ for (const family of ["gba", "gbc"] as const) {
     it.each(["undo", "redo", "discard"] as const)("%s waits for a pending block apply", async (action) => {
       const pending = deferred();
       const fetcher = vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValue(response(body));
-      vi.stubGlobal("fetch", fetcher);
+      stubMutationFetch(fetcher);
       const { result } = mount();
       const apply = result.current.blockApply({ mode: "ok" }, "rev1");
       const operation = result.current[action]();
@@ -59,7 +66,7 @@ for (const family of ["gba", "gbc"] as const) {
       const pending = deferred();
       const plan = { changes: [{ path: "A", kind: "text", summary: "block edited" }], refusals: [], fingerprint: "fresh" };
       const fetcher = vi.fn((url: string) => url.endsWith("/block/apply") ? pending.promise : Promise.resolve(response(plan)));
-      vi.stubGlobal("fetch", fetcher);
+      stubMutationFetch(fetcher);
       const { result } = mount();
       const apply = result.current.blockApply({ mode: "ok" }, "rev1");
       render(<SaveDialog mapName="A" onCommitted={vi.fn()} onCancel={vi.fn()} />);
@@ -83,7 +90,7 @@ for (const family of ["gba", "gbc"] as const) {
     it("map switch waits for block apply", async () => {
       const pending = deferred();
       const fetcher = vi.fn((url: string) => url.endsWith("/block/apply") ? pending.promise : Promise.resolve(response(body)));
-      vi.stubGlobal("fetch", fetcher);
+      stubMutationFetch(fetcher);
       let apply!: Promise<boolean>;
       const dungeon = { id: "unused", name: "unused", maps: [] };
       const useSession = family === "gba" ? useEditSession : useGbcEditSession;
@@ -131,7 +138,7 @@ for (const family of ["gba", "gbc"] as const) {
         if (url.endsWith("/block/apply")) return pendingApply.promise;
         return Promise.resolve(response(body));
       });
-      vi.stubGlobal("fetch", fetcher);
+      stubMutationFetch(fetcher);
       const { result } = mount();
       const check = result.current.blockCheck({ mode: "ok" }, "rev1");
       expect(hasPendingSessionMutations("A")).toBe(false);
@@ -159,7 +166,7 @@ for (const family of ["gba", "gbc"] as const) {
       const fetcher = vi.fn()
         .mockResolvedValueOnce(response({ error: "revision: block edit is stale", code: "STALE" }, 409))
         .mockResolvedValueOnce(response({ error: "mode: bad", code: "BAD_VALUE" }, 400));
-      vi.stubGlobal("fetch", fetcher);
+      stubMutationFetch(fetcher);
       const { result } = mount();
       await act(async () => {
         const apply = result.current.blockApply({ mode: "ok" }, "rev1");
@@ -172,7 +179,7 @@ for (const family of ["gba", "gbc"] as const) {
     });
 
     it("a refused block preview rejects with EditSessionError code and error", async () => {
-      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ error: "mode: bad", code: "BAD_VALUE" }, 400)));
+      stubMutationFetch(vi.fn().mockResolvedValue(response({ error: "mode: bad", code: "BAD_VALUE" }, 400)));
       const { result } = mount();
       await act(async () => {
         const preview = result.current.blockPreview({ mode: "bad" });
@@ -183,7 +190,7 @@ for (const family of ["gba", "gbc"] as const) {
 
     it("a block apply reply arriving after a map switch is not applied", async () => {
       const pending = deferred();
-      vi.stubGlobal("fetch", vi.fn(() => pending.promise));
+      stubMutationFetch(vi.fn(() => pending.promise));
       const { result, rerender } = mount();
       const apply = result.current.blockApply({ mode: "ok" }, "rev1");
       rerender({ map: "B", blocks: [{ metatileId: 31, collision: 2, elevation: 3 }] });
@@ -195,7 +202,7 @@ for (const family of ["gba", "gbc"] as const) {
     it("a refused pending block apply releases undo and clears the registry", async () => {
       const pending = deferred();
       const fetcher = vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValue(response(body));
-      vi.stubGlobal("fetch", fetcher);
+      stubMutationFetch(fetcher);
       const { result, unmount } = mount();
       const apply = result.current.blockApply({ mode: "ok" }, "rev1").catch((error: unknown) => error);
       const undo = result.current.undo().catch((error: unknown) => error);
@@ -228,7 +235,7 @@ for (const family of ["gba", "gbc"] as const) {
       const a = deferred();
       const b = deferred();
       const fetcher = vi.fn().mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise).mockResolvedValue(response(body));
-      vi.stubGlobal("fetch", fetcher);
+      stubMutationFetch(fetcher);
       const { result } = mount();
       const first = result.current.blockApply({ mode: "ok" }, "rev1");
       const undo = result.current.undo();
@@ -246,7 +253,7 @@ for (const family of ["gba", "gbc"] as const) {
     it("a block apply that fails on the network releases the registry and undo", async () => {
       const pending = deferred();
       const fetcher = vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValue(response(body));
-      vi.stubGlobal("fetch", fetcher);
+      stubMutationFetch(fetcher);
       const { result } = mount();
       const apply = result.current.blockApply({ mode: "ok" }, "rev1");
       await act(async () => {
@@ -265,7 +272,7 @@ for (const family of ["gba", "gbc"] as const) {
       const fetcher = vi.fn()
         .mockResolvedValueOnce({ ok: false, status: 500, json: async () => { throw new SyntaxError("bad json"); } })
         .mockResolvedValue(response(body));
-      vi.stubGlobal("fetch", fetcher);
+      stubMutationFetch(fetcher);
       const { result } = mount();
       await act(async () => {
         const apply = result.current.blockApply({ mode: "ok" }, "rev1");
@@ -283,7 +290,7 @@ for (const family of ["gba", "gbc"] as const) {
       const pending = deferred();
       const plan = { changes: [{ path: "A", kind: "text", summary: "block edited" }], refusals: [], fingerprint: "fresh" };
       const fetcher = vi.fn((url: string) => url.endsWith("/block/check") ? pending.promise : Promise.resolve(response(plan)));
-      vi.stubGlobal("fetch", fetcher);
+      stubMutationFetch(fetcher);
       const { result } = mount();
       const check = result.current.blockCheck({ mode: "ok" }, "rev1");
       render(<SaveDialog mapName="A" onCommitted={vi.fn()} onCancel={vi.fn()} />);
@@ -297,7 +304,7 @@ for (const family of ["gba", "gbc"] as const) {
     it("a pending block check delays neither Save nor the map switch: map switch", async () => {
       const pending = deferred();
       const fetcher = vi.fn((url: string) => url.endsWith("/block/check") ? pending.promise : Promise.resolve(response(body)));
-      vi.stubGlobal("fetch", fetcher);
+      stubMutationFetch(fetcher);
       let apply!: Promise<boolean>;
       let check!: ReturnType<ReturnType<typeof useEditSession>["blockCheck"]>;
       const dungeon = { id: "unused", name: "unused", maps: [] };
@@ -348,7 +355,7 @@ for (const family of ["gba", "gbc"] as const) {
         url.endsWith("/block/check") ? { usage: { blocks: 1 }, confirm: false, warnings: [] }
           : url.endsWith("/block/preview") ? { png: "data:image/png;base64,AAAA" } : body,
       )));
-      vi.stubGlobal("fetch", fetcher);
+      stubMutationFetch(fetcher);
       const { result } = mount();
       await act(async () => { expect(await result.current.blockApply({ mode: "ok" }, "rev1")).toBe(true); });
       expect(fetcher).toHaveBeenCalledWith("/api/edit/A/block/apply", { method: "POST", body: JSON.stringify({ mode: "ok", revision: "rev1" }) });
@@ -382,7 +389,7 @@ for (const family of ["gba", "gbc"] as const) {
 describe("GBC block apply replies", () => {
   it("gbc blockApply rejects a malformed success reply and leaves state", async () => {
     const fetcher = vi.fn().mockResolvedValueOnce(response({ blocks: "nope" })).mockResolvedValue(response(body));
-    vi.stubGlobal("fetch", fetcher);
+    stubMutationFetch(fetcher);
     const { result } = renderHook(() => useGbcEditSession("A", initialBlocks));
     await act(async () => {
       const apply = result.current.blockApply({ mode: "ok" }, "rev1");
@@ -397,7 +404,7 @@ describe("GBC block apply replies", () => {
   });
 
   it("gbc blockApply resolves false when the server has no open session", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false })));
+    stubMutationFetch(vi.fn().mockResolvedValue(response({ blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false })));
     const { result } = renderHook(() => useGbcEditSession("A", initialBlocks));
     await act(async () => { expect(await result.current.blockApply({ mode: "ok" }, "rev1")).toBe(false); });
     expect(result.current.blocks).toEqual(initialBlocks);

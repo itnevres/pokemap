@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, waitFor, act, cleanup } from "@testing-library/react";
+import { render, renderHook, waitFor, act, cleanup } from "@testing-library/react";
 import { useEditSession } from "../src/hooks/useEditSession.js";
 import type { Block } from "@pokemap/core/src/model/types.js";
 import type { MapData } from "@pokemap/core/src/load/maps.js";
@@ -369,4 +369,63 @@ describe("effective block counts (Plan 14.2 Task 16)", () => {
     expect(last!.primaryCount).toBe(512);
     expect(last!.secondaryCount).toBe(40);
   });
+});
+
+
+describe("Q1 passive session hydration", () => {
+  const seedBlocks: Block[] = [{ metatileId: 1, collision: 0, elevation: 0 }];
+  const staged = { blocks: [{ metatileId: 9, collision: 0, elevation: 0 }], border: [], map: MAP_AFTER, isDirty: true, canUndo: true, canRedo: false, primaryCount: 512, secondaryCount: 41 };
+  const response = (data: unknown) => ({ ok: true, status: 200, json: async () => data }) as Response;
+
+  it("restores a staged session on mount without a mutation", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response(staged));
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = renderHook(() => useEditSession("A", seedBlocks, MAP_BEFORE));
+    await waitFor(() => expect(result.current.isDirty).toBe(true));
+    expect(result.current.canUndo).toBe(true);
+    expect(result.current.blocks[0]?.metatileId).toBe(9);
+    expect(result.current.map).toEqual(MAP_AFTER);
+    expect(result.current.secondaryCount).toBe(41);
+    expect(fetchMock.mock.calls).toEqual([["/api/edit/A/session"]]);
+  });
+
+  it.each([
+    ["nothing open", { blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false }],
+    ["wrong shape", { ...staged, blocks: "invalid" }],
+  ])("ignores %s and preserves the seed", async (_label, data) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(data)));
+    const { result } = renderHook(() => useEditSession("A", seedBlocks, MAP_BEFORE));
+    await act(async () => {});
+    expect(result.current.blocks).toBe(seedBlocks);
+    expect(result.current).toMatchObject({ isDirty: false, canUndo: false, canRedo: false });
+  });
+
+  it("a paint reply wins over an earlier slow session read", async () => {
+    let resolve!: (r: Response) => void;
+    const pending = new Promise<Response>((r) => { resolve = r; });
+    const painted = { ...staged, blocks: [{ ...staged.blocks[0], metatileId: 22 }], canUndo: false, canRedo: true };
+    vi.stubGlobal("fetch", vi.fn((url: string) => url.endsWith("/session") ? pending : Promise.resolve(response(painted))));
+    const { result } = renderHook(() => useEditSession("A", seedBlocks, MAP_BEFORE));
+    await act(() => result.current.applyPaint({ tool: "shift", dx: 1, dy: 0 }));
+    expect(result.current.blocks[0]?.metatileId).toBe(22);
+    await act(async () => { resolve(response(staged)); await pending; });
+    expect(result.current.blocks[0]?.metatileId).toBe(22);
+    expect(result.current).toMatchObject({ isDirty: true, canUndo: false, canRedo: true });
+  });
+  it("retries hydration when the fetched seed arrives", async () => {
+    const resolvers: ((r: Response) => void)[] = [];
+    const fetchMock = vi.fn(() => new Promise<Response>((resolve) => { resolvers.push(resolve); }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { result, rerender } = renderHook(({ blocks }) => useEditSession("A", blocks, MAP_BEFORE), { initialProps: { blocks: seedBlocks } });
+    const refreshed = seedBlocks.map(block => ({ ...block, metatileId: 3 }));
+    rerender({ blocks: refreshed });
+    expect(fetchMock.mock.calls).toEqual([["/api/edit/A/session"], ["/api/edit/A/session"]]);
+    await act(async () => { resolvers[0]!(response(staged)); });
+    expect(result.current.blocks).toBe(refreshed);
+    expect(result.current.isDirty).toBe(false);
+    await act(async () => { resolvers[1]!(response(staged)); });
+    expect(result.current.blocks[0]?.metatileId).toBe(9);
+    expect(result.current.isDirty).toBe(true);
+  });
+
 });

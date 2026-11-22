@@ -3,6 +3,13 @@ import { render, act } from "@testing-library/react";
 import { useEditSession } from "../src/hooks/useEditSession.js";
 import type { Block } from "@pokemap/core/src/model/types.js";
 
+// Keep mutation fixtures and call-order assertions scoped to their routes; hydration has no open session.
+function stubMutationFetch(fetcher: (url: string, init?: RequestInit) => unknown) {
+  vi.stubGlobal("fetch", (url: string, ...args: [RequestInit?]) => url.endsWith("/session")
+    ? Promise.resolve({ ok: true, status: 200, json: async () => ({ blocks: [], border: [], map: null, events: null, isDirty: false, canUndo: false, canRedo: false }) } as Response)
+    : fetcher(url, ...args));
+}
+
 afterEach(() => vi.unstubAllGlobals());
 
 const blk = (metatileId: number): Block => ({ metatileId, collision: 0, elevation: 0 });
@@ -16,7 +23,7 @@ function Host({ mapName, seed, onResult }: { mapName: string; seed: Block[]; onR
 
 function setup() {
   let release!: (body: unknown) => void;
-  vi.stubGlobal("fetch", vi.fn(() => new Promise((resolve) => {
+  stubMutationFetch(vi.fn(() => new Promise((resolve) => {
     release = (body) => resolve({ ok: true, status: 200, json: () => Promise.resolve(body) } as Response);
   })));
   let last!: ReturnType<typeof useEditSession>;

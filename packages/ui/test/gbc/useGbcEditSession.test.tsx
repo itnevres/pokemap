@@ -3,6 +3,13 @@ import { renderHook, act, waitFor, cleanup } from "@testing-library/react";
 import { useGbcEditSession } from "../../src/gbc/hooks/useGbcEditSession.js";
 import type { GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
 
+// Keep mutation fixtures and call-order assertions scoped to their routes; hydration has no open session.
+function stubMutationFetch(fetcher: (url: string, init?: RequestInit) => unknown) {
+  vi.stubGlobal("fetch", (url: string, ...args: [RequestInit?]) => url.endsWith("/session")
+    ? Promise.resolve({ ok: true, status: 200, json: async () => ({ blocks: [], border: [], map: null, events: null, isDirty: false, canUndo: false, canRedo: false }) } as Response)
+    : fetcher(url, ...args));
+}
+
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 const EV: GbcMapEvents = { warps: [], coords: [], bgs: [], objects: [], sceneScripts: [], callbacks: [], objectConsts: [] };
@@ -13,13 +20,14 @@ const reply = (b: unknown, status = 200) => Promise.resolve({ ok: status < 400, 
 
 function stub(b: unknown = body(), status = 200) {
   const f = vi.fn((_url: string, _init?: RequestInit) => reply(b, status));
-  vi.stubGlobal("fetch", f);
+  stubMutationFetch(f);
   return f;
 }
 const lastBody = (f: ReturnType<typeof stub>) => JSON.parse(String(f.mock.calls.at(-1)![1]!.body));
 
 describe("useGbcEditSession", () => {
   it("seeds blocks/events from the payload, clean", () => {
+    stub();
     const { result } = renderHook(() => useGbcEditSession("A", SEED_A, EV));
     expect(result.current.blocks).toBe(SEED_A);
     expect(result.current.events).toBe(EV);
@@ -104,7 +112,7 @@ describe("useGbcEditSession", () => {
 
   it("a response landing after the map changed is dropped", async () => {
     let resolve!: (r: Response) => void;
-    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((r) => { resolve = r; })));
+    stubMutationFetch(vi.fn(() => new Promise<Response>((r) => { resolve = r; })));
     const { result, rerender } = renderHook(({ n, s }: { n: string; s: typeof SEED_A }) => useGbcEditSession(n, s, EV), { initialProps: { n: "A", s: SEED_A } });
     let p!: Promise<void>;
     act(() => { p = result.current.applyPaint({ tool: "shift", dx: 1, dy: 0 }); });
@@ -157,14 +165,15 @@ describe("useGbcEditSession", () => {
   });
 
   it("with no map open every call is a no-op that never touches the network", async () => {
-    const f = stub();
+    const f = vi.fn();
+    vi.stubGlobal("fetch", f);
     const { result } = renderHook(() => useGbcEditSession(null));
     await act(() => result.current.beginStroke());
     expect(f).not.toHaveBeenCalled();
   });
   it("responses resolved out of order: only the newer request's response is applied", async () => {
     const resolvers: ((r: Response) => void)[] = [];
-    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((r) => { resolvers.push(r); })));
+    stubMutationFetch(vi.fn(() => new Promise<Response>((r) => { resolvers.push(r); })));
     const { result } = renderHook(() => useGbcEditSession("A", SEED_A, EV));
     let p1!: Promise<void>;
     let p2!: Promise<void>;
@@ -206,7 +215,7 @@ describe("effective block counts (Plan 14.2 Task 16)", () => {
         : url.endsWith("/undo") ? body({ metatileCount: 40 })
           : body(),
     ));
-    vi.stubGlobal("fetch", fetchMock);
+    stubMutationFetch(fetchMock);
     const { result } = renderHook(() => useGbcEditSession("A", SEED_A, EV));
     expect(result.current.metatileCount).toBeUndefined();
 
@@ -217,4 +226,63 @@ describe("effective block counts (Plan 14.2 Task 16)", () => {
     await act(async () => { await result.current.undo(); });
     expect(result.current.metatileCount).toBe(40);
   });
+});
+
+
+describe("Q1 passive session hydration", () => {
+  const seedBlocks = SEED_A;
+  const staged = body({ metatileCount: 41 });
+  const response = (data: unknown) => ({ ok: true, status: 200, json: async () => data }) as Response;
+
+  it("restores a staged session on mount without a mutation", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response(staged));
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = renderHook(() => useGbcEditSession("A", seedBlocks, EV));
+    await waitFor(() => expect(result.current.isDirty).toBe(true));
+    expect(result.current.canUndo).toBe(true);
+    expect(result.current.blocks[0]?.metatileId).toBe(9);
+    expect(result.current.events).toEqual(EV);
+    expect(result.current.metatileCount).toBe(41);
+    expect(fetchMock.mock.calls).toEqual([["/api/edit/A/session"]]);
+  });
+
+  it.each([
+    ["nothing open", { blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false }],
+    ["wrong shape", { ...staged, blocks: "invalid" }],
+  ])("ignores %s and preserves the seed", async (_label, data) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(data)));
+    const { result } = renderHook(() => useGbcEditSession("A", seedBlocks, EV));
+    await act(async () => {});
+    expect(result.current.blocks).toBe(seedBlocks);
+    expect(result.current).toMatchObject({ isDirty: false, canUndo: false, canRedo: false });
+  });
+
+  it("a paint reply wins over an earlier slow session read", async () => {
+    let resolve!: (r: Response) => void;
+    const pending = new Promise<Response>((r) => { resolve = r; });
+    const painted = { ...staged, blocks: [{ ...staged.blocks[0], metatileId: 22 }], canUndo: false, canRedo: true };
+    vi.stubGlobal("fetch", vi.fn((url: string) => url.endsWith("/session") ? pending : Promise.resolve(response(painted))));
+    const { result } = renderHook(() => useGbcEditSession("A", seedBlocks, EV));
+    await act(() => result.current.applyPaint({ tool: "shift", dx: 1, dy: 0 }));
+    expect(result.current.blocks[0]?.metatileId).toBe(22);
+    await act(async () => { resolve(response(staged)); await pending; });
+    expect(result.current.blocks[0]?.metatileId).toBe(22);
+    expect(result.current).toMatchObject({ isDirty: true, canUndo: false, canRedo: true });
+  });
+  it("retries hydration when the fetched seed arrives", async () => {
+    const resolvers: ((r: Response) => void)[] = [];
+    const fetchMock = vi.fn(() => new Promise<Response>((resolve) => { resolvers.push(resolve); }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { result, rerender } = renderHook(({ blocks }) => useGbcEditSession("A", blocks, EV), { initialProps: { blocks: seedBlocks } });
+    const refreshed = seedBlocks.map(block => ({ ...block, metatileId: 3 }));
+    rerender({ blocks: refreshed });
+    expect(fetchMock.mock.calls).toEqual([["/api/edit/A/session"], ["/api/edit/A/session"]]);
+    await act(async () => { resolvers[0]!(response(staged)); });
+    expect(result.current.blocks).toBe(refreshed);
+    expect(result.current.isDirty).toBe(false);
+    await act(async () => { resolvers[1]!(response(staged)); });
+    expect(result.current.blocks[0]?.metatileId).toBe(9);
+    expect(result.current.isDirty).toBe(true);
+  });
+
 });

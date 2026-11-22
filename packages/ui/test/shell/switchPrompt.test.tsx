@@ -72,6 +72,8 @@ for (const base of [gbaAdapter, gbcAdapter]) describe(`${base.family} switch pro
         if (options.discardFails) throw new Error("discard failed");
         return ok({ isDirty: false });
       }
+      // Q1: the hydration read; the hub has no session open for these maps.
+      if (url.endsWith("/session")) return ok({ blocks: [], border: [], map: null, events: null, isDirty: false, canUndo: false, canRedo: false });
       if (url.startsWith("/api/edit/")) return ok({ blocks: LAYOUT.blocks, map: LAYOUT.map, events: EMPTY_EVENTS, isDirty: true, canUndo: true, canRedo: false });
       if (url.startsWith("/api/defects/")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ defects: [], incomplete: [] }) } as Response);
       throw new Error(`unexpected fetch ${init?.method} ${url}`);

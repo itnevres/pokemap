@@ -137,6 +137,8 @@ async function setup(base: EngineAdapter, options: {
       refusals: [] });
     if (url.endsWith("/commit")) { committed = true; return ok({ changes: [], refusals: [] }); }
     if (url.endsWith("/discard")) return ok({ isDirty: false });
+    // Q1: the hydration read; the hub has no session open for these maps.
+    if (url.endsWith("/session")) return ok({ blocks: [], border: [], map: null, events: null, isDirty: false, canUndo: false, canRedo: false });
     if (url.startsWith("/api/edit/")) {
       if (url.endsWith("/paint/apply")) await options.paintWait;
       const name = url.split("/")[3]!;

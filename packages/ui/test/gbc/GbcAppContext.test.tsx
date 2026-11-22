@@ -69,6 +69,8 @@ function mockFetch() {
       for (const p of body.targets) blocks[p.y * 10 + p.x] = { metatileId: body.stamp.cells[0]!.metatileId };
       state = { ...state, blocks, isDirty: true, canUndo: true };
     }
+    // Q1: the hydration read; a closed session (the real hub answers this after a commit or discard).
+    if (/\/session$/.test(url)) return ok({ blocks: [], border: [], map: null, events: null, isDirty: false, canUndo: false, canRedo: false });
     if (/\/api\/edit\//.test(url)) return ok(state);
     return Promise.reject(new Error(`unexpected fetch: ${url}`));
   });
@@ -204,7 +206,8 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
         fireEvent.click(screen.getByRole("button", { name: "Done editing OlivinePort" }));
         await waitFor(() => expect(contextOverlay()).toBeNull());
       }
-      expect(calls.some((call) => call.includes("/api/edit/"))).toBe(false);
+      // The read-only session hydration (GET .../session) is allowed; nothing may mutate.
+      expect(calls.some((call) => call.includes("/api/edit/") && !call.endsWith("/session"))).toBe(false);
     } finally {
       HTMLCanvasElement.prototype.getContext = original;
     }
