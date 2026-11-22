@@ -169,6 +169,18 @@ describe("passive session load", () => {
     resetTilesetVersion();
   });
 
+  it("rejects a slow load that was issued before markClean (a commit closed the session)", async () => {
+    const pending = deferred();
+    vi.stubGlobal("fetch", vi.fn().mockReturnValueOnce(pending.promise));
+    const { result } = mount();
+    const loading = result.current.load<unknown>();
+    act(() => result.current.markClean());
+    pending.resolve(response({ isDirty: true }));
+    const landed = (await loading)!;
+    act(() => { expect(result.current.apply({ state: () => ({ n: 9 }), ...flags }, landed.ticket)).toBe(false); });
+    expect(result.current.isDirty).toBe(false);
+  });
+
   it.each(["post", "discard"])("rejects a slow load after %s wins", async (winner) => {
     const pending = deferred();
     vi.stubGlobal("fetch", vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValue(response()));

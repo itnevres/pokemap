@@ -183,6 +183,7 @@ export function useEditSessionCore<State>(base: string, mapName: string | null, 
 
   const markClean = useCallback(() => {
     invalidateEventOptions();
+    seq.current.applied = seq.current.issued; // a commit closed the session: a read or reply issued before it cannot re-dirty the view
     setStored((prev) => prev === null ? prev : { ...prev, isDirty: false, canUndo: false, canRedo: false });
   }, []);
 
