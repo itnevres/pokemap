@@ -11,6 +11,11 @@ import { transform } from "lightningcss";
 describe("styles.css", () => {
   const css = readFileSync(new URL("../src/styles.css", import.meta.url));
 
+  // Plan H M1: reduced motion zeroes transitions and animations globally.
+  it("zeroes transitions and animations under prefers-reduced-motion: reduce", () => {
+    expect(css.toString()).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{[^}]*transition-duration:\s*0s[^}]*animation-duration:\s*0s/);
+  });
+
   it("parses with no error recovery", () => {
     expect(() => transform({ filename: "styles.css", code: css, errorRecovery: false })).not.toThrow();
   });
