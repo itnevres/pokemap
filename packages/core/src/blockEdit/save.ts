@@ -1,5 +1,6 @@
 import type { Project } from "../project.js";
 import type { GbcProject } from "../gbc/project.js";
+import type { Layout } from "../model/types.js";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { AtomicEntry } from "../write/atomic.js";
@@ -58,7 +59,14 @@ export function gbaTilesetEffects(
       symbolsByPath.set(path, symbols);
     }
   }
-  const layouts = proj.mapNames().map((name) => ({ name, layout: proj.layoutForMap(name) }));
+  // Q4: skip a map whose layout id is not in layouts.json (a dangling id)
+  // instead of throwing, so one bad map does not disable the Save plan.
+  const layoutById = new Map(proj.layouts.map((layout) => [layout.id, layout]));
+  const layouts: { name: string; layout: Layout }[] = [];
+  for (const name of proj.mapNames()) {
+    const layout = layoutById.get(proj.map(name).layout);
+    if (layout !== undefined) layouts.push({ name, layout });
+  }
   return changed.map(({ path }) => {
     const symbols = symbolsByPath.get(path);
     const maps = layouts.filter(({ layout }) =>
