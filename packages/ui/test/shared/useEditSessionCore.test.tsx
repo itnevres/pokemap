@@ -17,7 +17,7 @@ function mount(map: string | null = "A") {
 }
 
 describe("useEditSessionCore", () => {
-  it.each(["post", "discard", "load"] as const)("%s accepts a restarted handler's lower version", async (operation) => {
+  it.each(["post", "discard", "load"] as const)("%s moves to a fresh version when the handler restarted", async (operation) => {
     resetTilesetVersion();
     noteTilesetStamp({ tilesetVersion: 9, tilesetInstance: "old" });
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ tilesetVersion: 1, tilesetInstance: "new" })));
@@ -28,7 +28,7 @@ describe("useEditSessionCore", () => {
       if (operation === "post") await result.current.post("/x");
       else await result.current[operation]();
     });
-    expect(probe.result.current).toBe(1);
+    expect(probe.result.current).toBe(10); // above the old 9, never a repeat of a key this page used
     resetTilesetVersion();
   });
 

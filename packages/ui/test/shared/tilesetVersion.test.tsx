@@ -30,17 +30,39 @@ const versionOf = (container: HTMLElement): number =>
   Number(container.querySelector('[data-testid="version"]')!.textContent);
 
 describe("tileset version store", () => {
-  it("keeps maxima within an instance and re-renders with a lower restarted version", () => {
+  it("keeps maxima within an instance and moves to a fresh key above every used one on a restart", () => {
     const container = mountProbe();
     act(() => noteTilesetStamp({ tilesetVersion: 9, tilesetInstance: "first" }));
     act(() => noteTilesetStamp({ tilesetVersion: 3, tilesetInstance: "first" }));
     expect(versionOf(container)).toBe(9);
     act(() => noteTilesetStamp({ tilesetVersion: 1, tilesetInstance: "restarted" }));
-    expect(versionOf(container)).toBe(1);
+    expect(versionOf(container)).toBe(10);
+    act(() => noteTilesetStamp({ tilesetVersion: 2, tilesetInstance: "restarted" }));
+    expect(versionOf(container)).toBe(11);
+    act(() => noteTilesetStamp({ tilesetVersion: 1, tilesetInstance: "restarted" }));
+    expect(versionOf(container)).toBe(11);
     act(() => noteTilesetStamp({ tilesetVersion: 0 }));
+    expect(versionOf(container)).toBe(11);
+    act(() => noteTilesetStamp({ tilesetVersion: 40 }));
+    expect(versionOf(container)).toBe(40);
+  });
+
+  it("a restart whose counter equals the stored one still changes the key", () => {
+    const container = mountProbe();
+    act(() => noteTilesetStamp({ tilesetVersion: 0, tilesetInstance: "a" }));
+    expect(versionOf(container)).toBe(0);
+    act(() => noteTilesetStamp({ tilesetVersion: 0, tilesetInstance: "b" }));
     expect(versionOf(container)).toBe(1);
-    act(() => noteTilesetStamp({ tilesetVersion: 4 }));
-    expect(versionOf(container)).toBe(4);
+  });
+
+  it("ignores a late reply from an instance that was already replaced", () => {
+    noteTilesetStamp({ tilesetVersion: 5, tilesetInstance: "a" });
+    noteTilesetStamp({ tilesetVersion: 0, tilesetInstance: "b" });
+    expect(currentTilesetVersion()).toBe(6);
+    noteTilesetStamp({ tilesetVersion: 5, tilesetInstance: "a" });
+    expect(currentTilesetVersion()).toBe(6);
+    noteTilesetStamp({ tilesetVersion: 1, tilesetInstance: "b" });
+    expect(currentTilesetVersion()).toBe(7);
   });
 
   it("adopts a first instance without lowering and reset clears the instance", () => {
@@ -51,6 +73,10 @@ describe("tileset version store", () => {
     noteTilesetVersion(7);
     noteTilesetStamp({ tilesetVersion: 1, tilesetInstance: "second" });
     expect(currentTilesetVersion()).toBe(7);
+    noteTilesetStamp({ tilesetVersion: 0, tilesetInstance: "third" });
+    resetTilesetVersion();
+    noteTilesetStamp({ tilesetVersion: 3, tilesetInstance: "second" }); // retired set cleared by reset
+    expect(currentTilesetVersion()).toBe(3);
   });
 
   it("drops a stale generation without changing the stored instance", () => {

@@ -108,8 +108,7 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
   // `NOTHING_OPEN` deliberately carries NO `metatileCount` (Plan 14.2 fix hop A): it answers a
   // closed session (discard, or undo/redo with nothing open), where nothing about the tileset
   // changed, so the client's last count is still the right one -- and its own `discard` resets
-  // the count anyway. Adding a field here would only churn the exact-shape tests that pin this
-  // "nothing open" body.
+  // the count anyway.
   const NOTHING_OPEN = () => ({
     ...overlayStamp(), blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false,
   });

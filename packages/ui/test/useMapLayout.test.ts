@@ -24,7 +24,7 @@ const BODY = {
 
 describe("useMapLayout", () => {
 
-  it("accepts a restarted map handler's lower version and updates subscribers", async () => {
+  it("moves to a fresh version when the map handler restarted and updates subscribers", async () => {
     noteTilesetStamp({ tilesetVersion: 9, tilesetInstance: "old" });
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: true, json: async () => ({ ...BODY, tilesetVersion: 1, tilesetInstance: "new" }),
@@ -33,7 +33,7 @@ describe("useMapLayout", () => {
     expect(probe.result.current).toBe(9);
     const map = renderHook(() => useMapLayout("Foo"));
     await waitFor(() => expect(map.result.current.data).not.toBeNull());
-    await waitFor(() => expect(probe.result.current).toBe(1));
+    await waitFor(() => expect(probe.result.current).toBe(10));
   });
 
   it("ignores a response from before reset and accepts a new-generation response", async () => {
