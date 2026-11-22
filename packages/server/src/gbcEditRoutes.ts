@@ -417,6 +417,7 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
       }
       return asSession(entry);
     } },
+    "GET session": { body: false, run: (name) => store.has(name) ? asSession(store.open(name)) : ok(NOTHING_OPEN()) },
     "POST discard": { body: false, run: (name) => { store.close(name); addEvents.invalidate(); return ok(NOTHING_OPEN()); } },
     "POST event/move": { body: true, run: (name, body) => {
       const [kind, index, x, y] = [kindOf(body), int(body, "index"), int(body, "x"), int(body, "y")];

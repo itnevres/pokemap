@@ -247,6 +247,56 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
     await post(`${NBT}/discard`);
   });
 
+  it("Q1: never-opened map returns nothing-open without opening a session", async () => {
+    const nothing = {
+      blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false, tilesetVersion: expect.any(Number),
+    };
+    const response = await get("/api/edit/ElmsLab/session");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(nothing);
+    expect(h.dirtyMaps()).toEqual([]);
+    // A clean but open session would return populated blocks/events from undo.
+    expect(await (await post("/api/edit/ElmsLab/undo")).json()).toEqual(nothing);
+  });
+
+  it("Q1: painted map returns staged blocks, events and undo state without changing them", async () => {
+    const before = await session(await post(`${NBT}/paint/begin`));
+    const metatileId = before.blocks[0]!.metatileId === 40 ? 41 : 40;
+    expect((await pencil(0, 0, metatileId)).status).toBe(200);
+    const ended = await session(await post(`${NBT}/paint/end`));
+    const response = await get(`${NBT}/session`);
+    expect(response.status).toBe(200);
+    const body = await session(response);
+    expect(body).toEqual(ended);
+    expect(body).toMatchObject({ isDirty: true, canUndo: true, canRedo: false });
+    expect(body.blocks[0]!.metatileId).toBe(metatileId);
+    expect(body.events).toMatchObject({ warps: expect.any(Array), objects: expect.any(Array) });
+    expect(await session(await get(`${NBT}/session`))).toEqual(body);
+    await post(`${NBT}/discard`);
+  });
+
+  it("Q1: discarded map returns nothing-open again", async () => {
+    const before = await session(await post(`${NBT}/paint/begin`));
+    const metatileId = before.blocks[0]!.metatileId === 40 ? 41 : 40;
+    expect((await pencil(0, 0, metatileId)).status).toBe(200);
+    expect((await post(`${NBT}/paint/end`)).status).toBe(200);
+    expect((await post(`${NBT}/discard`)).status).toBe(200);
+    const nothing = {
+      blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false, tilesetVersion: expect.any(Number),
+    };
+    const response = await get(`${NBT}/session`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(nothing);
+    expect(h.dirtyMaps()).toEqual([]);
+    expect(await (await post(`${NBT}/undo`)).json()).toEqual(nothing);
+  });
+
+  it("Q1: unknown map returns 404", async () => {
+    const response = await get("/api/edit/NoSuchMap/session");
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "no map NoSuchMap" });
+  });
+
   // --- events (spec tests 7, 8) -------------------------------------------
   interface EventsBody extends SessionBody {
     events: { warps: { x: number; y: number; mapConst: string; destWarp: number }[]; coords: unknown[]; bgs: unknown[]; objects: unknown[]; objectConsts: string[] };
