@@ -15,3 +15,9 @@
 
 ## Gate
 Gate at `1aaa4ed` (code identical to `7d7e947`): 5,163 pass / 1 fail / 273 files; typecheck pass, UI build pass; subjects unchanged. The one fail is the known `engine.test.ts > parses the subject repo's real porymap.project.cfg` env fail (RESUME lists it).
+
+## Q8 live check (RULES 3b, real app, headless-free browser pane)
+Servers started from the #41 branch worktree (served `BlockEditorDialog.tsx` contained `paletteName`/`tilePalettes`); subjects read-only, both clean after (`git status --porcelain` 0 lines).
+- **GBA** (Route101, Edit block on a grass metatile, X flip ticked, OK): confirm section lists 8 maps then `and 41 more` (49 maps affected). Cancelled before Apply; nothing written.
+- **GBC** (Route38, Edit block, tile `$B7` from the sheet placed into square 2 whose loaded palette was GREEN): Palette select shows BROWN, equal to `sheet.tilePalettes[0xB7]`, not the old GREEN. `GET .../block` carries `sheet.tilePalettes` (224 entries). Dialog closed with Escape; Save/Undo stayed disabled.
+- Note: a first OK on GBA with an untouched draft (my form-input tick did not reach React state) went check, `confirm:false`, then apply as a no-op; subject stayed clean and Save stayed disabled.
