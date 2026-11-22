@@ -74,14 +74,12 @@ describe("openGbcProject with decomp paths that leave the project", () => {
   /** Points the quoted path on the first line after `label` at `to`; returns its 1-based line. */
   function mutateLabel(file: string, label: string, to: string): number {
     const abs = join(root, file);
-    const rows = readFileSync(abs, "utf8").split("
-");
-    const at = rows.findIndex((l) => l.startsWith(label));
+    const rows = readFileSync(abs, "utf8").split("\n");
+    const at =rows.findIndex((l) => l.startsWith(label));
     const i = at < 0 ? -1 : rows.findIndex((l, n) => n > at && /"[^"]+"/.test(l));
     if (i < 0) throw new Error(`fixture shape changed: ${label} not found in ${file}`);
     rows[i] = rows[i]!.replace(/"[^"]+"/, `"${to}"`);
-    writeFileSync(abs, rows.join("
-"));
+    writeFileSync(abs, rows.join("\n"));
     return i + 1;
   }
   const other: Record<"gfx" | "coll" | "palMap", number> = { gfx: 0, coll: 0, palMap: 0 };
