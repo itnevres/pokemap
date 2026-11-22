@@ -42,4 +42,4 @@ Real first paint of the world view and 60 fps pan including fetches. The scripts
 
 ## Verification
 
-`npm run typecheck` through the lock: pass, before and after merging master. Full gate not run: only new files under `packages/core/bench/` changed.
+`npm run typecheck` through the lock: pass on the bench commit (master had not moved since, so no re-run was needed). Full gate not run: only new files under `packages/core/bench/` changed.
