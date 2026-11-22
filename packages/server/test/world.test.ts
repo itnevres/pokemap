@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { existsSync, readFileSync, writeFileSync, rmSync, mkdtempSync, mkdirSync, symlinkSync, copyFileSync, unlinkSync } from "node:fs";
+import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createServer, type PokemapServer } from "../src/index.js";
@@ -160,7 +161,23 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("world api", () => {
     const before = existsSync(sidecarPath) ? readFileSync(sidecarPath, "utf8") : null;
 
     try {
-      const name = "__pokemap_world_test_placement__";
+      // E2 (Plan H Task E) added a known-map guard to POST /api/world/placement:
+      // an unknown map is refused with 400 (acceptance 4), because writing one
+      // as a `manualPlacements` key is what let `__proto__` through. This test
+      // used to post a synthetic name precisely to reach applySidecar's
+      // unknown-map placeholder branch; that branch is now unreachable through
+      // the route, so the persistence check uses a real map instead. Route101
+      // is a real MAP_TYPE_ROUTE map -- the manual x/y override must win over
+      // its auto placement while its real geometry (width/height/component)
+      // and mapType are preserved.
+      const name = "Route101";
+      // Capture the auto placement first so the assertion below can stay an
+      // exact `toEqual` (the discipline this test already had) instead of a
+      // loosened `toMatchObject`: the manual override must change x/y/manual
+      // and nothing else -- width, height, component and mapType all come
+      // from the map's real placement and must survive untouched.
+      const auto = (await (await fetch(`http://127.0.0.1:${s.port}/api/world`)).json() as any).placements[name] as Record<string, unknown>;
+      expect(auto).toBeDefined();
       const post = await fetch(`http://127.0.0.1:${s.port}/api/world/placement`, {
         method: "POST",
         body: JSON.stringify({ map: name, x: 12345, y: 67890 }),
@@ -169,27 +186,9 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("world api", () => {
       expect(await post.json()).toEqual({ ok: true });
 
       const after = await (await fetch(`http://127.0.0.1:${s.port}/api/world`)).json() as any;
-      // Exact shape, not just presence: a name absent from both the base and
-      // auto sets falls through applySidecar's placeholder branch, which is
-      // documented (packages/core/test/world/sidecar.test.ts) to carry
-      // component: -1 and zero size -- pinning that here is what makes this
-      // test double as proof the server passes the sidecar's manual entries
-      // through untouched rather than reshaping them. mapType and manual
-      // (Feature A, added after this test was first written) are also
-      // pinned here: this synthetic name is absent from project.mapNames(),
-      // which is exactly the "stale/unknown map" case the /api/world route
-      // itself documents as falling back to MAP_TYPE_NONE, and it IS present
-      // in sidecar.manualPlacements, so manual must be true.
-      expect(after.placements[name]).toEqual({
-        map: name,
-        x: 12345,
-        y: 67890,
-        width: 0,
-        height: 0,
-        component: -1,
-        mapType: "MAP_TYPE_NONE",
-        manual: true,
-      });
+      // Exact, not a subset: only the manual x/y override and the manual flag
+      // may differ from the auto placement the same server computed above.
+      expect(after.placements[name]).toEqual({ ...auto, x: 12345, y: 67890, manual: true });
     } finally {
       if (before === null) rmSync(sidecarPath, { force: true });
       else writeFileSync(sidecarPath, before);
@@ -267,5 +266,75 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("world api", () => {
     // (the fixture includes Route119), so this test
     // cannot pass merely because manualPlacements happened to be empty.
     expect(Object.keys(body.sidecar.manualPlacements).length).toBeGreaterThan(0);
+  }, 300_000);
+
+  // E2 acceptance 3 (S3): a request that DECLARES an oversize body is refused
+  // before any route runs. `fetch` forbids setting its own `content-length`,
+  // so this goes through `node:http`'s own `request` -- same reason
+  // gbcRoutes.test.ts's E1b case does. Nothing is written: the declared
+  // length alone must trigger the 413.
+  const oversizePost = (path: string): Promise<number> =>
+    new Promise((resolve, reject) => {
+      const req = httpRequest(
+        { host: "127.0.0.1", port: s.port, path, method: "POST", headers: { "content-length": String(16777217) } },
+        (res) => {
+          res.resume();
+          res.on("end", () => resolve(res.statusCode ?? 0));
+          res.on("error", reject);
+        },
+      );
+      req.on("error", reject);
+      req.end(); // nothing written: the declared length alone must trigger the 413
+    });
+
+  it("413s a body declaring MAX_BODY_BYTES + 1 without creating or changing world.json", async () => {
+    const sidecarPath = projectPaths(fixtureRoot).sidecar;
+    const before = existsSync(sidecarPath) ? readFileSync(sidecarPath) : null;
+    expect(await oversizePost("/api/world/placement")).toBe(413);
+    const after = existsSync(sidecarPath) ? readFileSync(sidecarPath) : null;
+    if (before) expect(after).toEqual(before);
+    else expect(after).toBeNull();
+  }, 300_000);
+
+  // E2 acceptance 4: the placement guard the GBC twin already has, plus GBA's
+  // known-map check. Each body is refused with 400 and the sidecar's bytes are
+  // untouched -- a guard that answered 400 but still wrote would pass a
+  // status-only assertion.
+  it("400s null, array, __proto__, an unknown map and non-finite coordinates, writing nothing", async () => {
+    const sidecarPath = projectPaths(fixtureRoot).sidecar;
+    const before = existsSync(sidecarPath) ? readFileSync(sidecarPath) : null;
+    const postRaw = (body: string) => fetch(`http://127.0.0.1:${s.port}/api/world/placement`, { method: "POST", body });
+    try {
+      for (const body of [
+        "null",
+        "[]",
+        '{"map":"__proto__","x":0,"y":0}',
+        '{"map":"__pokemap_no_such_map__","x":0,"y":0}',
+        // The raw text matters: JSON.parse turns 1e999 into Infinity, which
+        // `Number.isFinite` is the only guard that rejects.
+        '{"map":"Route101","x":1e999,"y":0}',
+      ]) {
+        const r = await postRaw(body);
+        expect(r.status, `${body} answered ${r.status}`).toBe(400);
+      }
+      const after = existsSync(sidecarPath) ? readFileSync(sidecarPath) : null;
+      if (before) expect(after).toEqual(before);
+      else expect(after).toBeNull();
+    } finally {
+      if (before === null && existsSync(sidecarPath)) rmSync(sidecarPath, { force: true });
+      else if (before) writeFileSync(sidecarPath, before);
+    }
+  }, 300_000);
+
+  // E2 acceptance 5: every JSON reply disables content sniffing, on a 200 and
+  // on a 400 -- a guard added later could answer through a path that skips it.
+  it("sends x-content-type-options: nosniff on a JSON 200 and a JSON 400", async () => {
+    const ok = await fetch(`http://127.0.0.1:${s.port}/api/world`);
+    expect(ok.status).toBe(200);
+    expect(ok.headers.get("x-content-type-options")).toBe("nosniff");
+
+    const bad = await fetch(`http://127.0.0.1:${s.port}/api/world/placement`, { method: "POST", body: "null" });
+    expect(bad.status).toBe(400);
+    expect(bad.headers.get("x-content-type-options")).toBe("nosniff");
   }, 300_000);
 });
