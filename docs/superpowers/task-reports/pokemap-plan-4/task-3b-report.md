@@ -14,3 +14,7 @@ Tier: Low (isolated change to two tool handlers, fully specified, no concurrency
 `python -I C:/Users/Serve/.claude/locks/lockrun.py "npx vitest run --no-file-parallelism packages/mcp && npm run typecheck"`: exit 0.
 - vitest: 1 file passed, 14 of 14 tests passed.
 - typecheck: no errors (chain exit 0).
+
+## Gate (master)
+
+Gate at `18931e3` (under the machine-wide test lock): 5,244 pass / 1 fail / 277 files; typecheck pass, UI build pass; subjects unchanged. The fail is the known `core/test/config/engine.test.ts` env fail (RESUME). No review: Low tier, fully specified, covered by the PNG-signature assertions.
