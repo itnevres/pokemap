@@ -4,9 +4,11 @@ import { parseIncbins } from "./incbin.js";
 import { stripComment, stripMacroDefs, matchCall, parseNum } from "./asm.js";
 import { sizeDefect } from "../../defects/size.js";
 import { norm } from "../../config/paths.js";
+import { assertInsideRoot, brokenPathFor, PathEscapeError } from "./pathGuard.js";
 import type { Connection, DataDefect, GbcMap, Layout } from "../model/types.js";
 
 const DIRECTIONS = ["north", "south", "west", "east"] as const;
+const BLOCKS_ASM = "data/maps/blocks.asm";
 
 // `parseNum` moved to `asm.ts` (code-quality review, Task 6 fix round 2) --
 // it's a generic RGBDS-numeric-literal primitive, not map-specific.
@@ -264,9 +266,9 @@ export function loadGbcMaps(root: string): LoadedGbcMaps {
 
   const mapConstByConst = new Map(mapConsts.map((c) => [c.constName, c]));
   const headerByName = new Map(headers.map((h) => [h.name, h]));
-  const blkPathByLabel = new Map<string, string>();
+  const blkPathByLabel = new Map<string, { path: string; line: number }>();
   for (const entry of incbins) {
-    for (const label of entry.labels) blkPathByLabel.set(label, entry.path);
+    for (const label of entry.labels) blkPathByLabel.set(label, { path: entry.path, line: entry.line });
   }
 
   // The join below is attributes-driven; also refuse (G4) the other
@@ -288,8 +290,8 @@ export function loadGbcMaps(root: string): LoadedGbcMaps {
         `map ${attr.name}: constant ${attr.constName} not found in constants/map_constants.asm (join miss on constName)`,
       );
     }
-    const blkPath = blkPathByLabel.get(`${attr.name}_Blocks`);
-    if (!blkPath) {
+    const blk = blkPathByLabel.get(`${attr.name}_Blocks`);
+    if (!blk) {
       throw new Error(`map ${attr.name}: no "${attr.name}_Blocks" label found in data/maps/blocks.asm (join miss on blocks)`);
     }
     if (header.group !== mc.group || header.number !== mc.number) {
@@ -298,6 +300,11 @@ export function loadGbcMaps(root: string): LoadedGbcMaps {
           `constants/map_constants.asm says group ${mc.group} number ${mc.number}`,
       );
     }
+    // D25: an escaping blocks.asm INCBIN is a defect on THIS map alone -- the
+    // project still opens and every other map keeps loading. The defect is
+    // recorded with its file/line so `loadLayout` can refuse that one layout.
+    const broken = brokenPathFor(blk.path, { file: BLOCKS_ASM, line: blk.line, key: "INCBIN" });
+    if (broken) broken.message = `map ${attr.name}: ${broken.message}`;
     return {
       name: attr.name,
       constName: attr.constName,
@@ -305,7 +312,7 @@ export function loadGbcMaps(root: string): LoadedGbcMaps {
       number: mc.number,
       width: mc.width,
       height: mc.height,
-      blkPath,
+      blkPath: blk.path,
       tileset: header.tileset,
       environment: header.environment,
       landmark: header.landmark,
@@ -316,6 +323,7 @@ export function loadGbcMaps(root: string): LoadedGbcMaps {
       border: attr.border,
       connectionFlags: attr.connectionFlags,
       connections: attr.connections,
+      ...(broken ? { brokenPaths: [broken] } : {}),
     };
   });
 
@@ -338,10 +346,21 @@ export function loadGbcMaps(root: string): LoadedGbcMaps {
  * than the whole buffer. An undersize file has nothing sensible to copy, so
  * it refuses (throws) instead of guessing (G4).
  */
-export function loadLayout(root: string, map: Pick<GbcMap, "blkPath" | "width" | "height">): {
+export function loadLayout(
+  root: string,
+  map: Pick<GbcMap, "blkPath" | "width" | "height" | "brokenPaths">,
+): {
   layout: Layout;
   defects: DataDefect[];
 } {
+  // D25: a map whose blocks.asm INCBIN escaped already carries the defect
+  // (file/line recorded at open time) -- rethrow it before any read. A bare
+  // `Pick` without `brokenPaths` (a caller assembling one by hand) still gets
+  // the same guard from its own `blkPath`.
+  const broken = map.brokenPaths?.[0];
+  if (broken) throw new PathEscapeError(broken);
+  assertInsideRoot(map.blkPath, { file: BLOCKS_ASM, key: "INCBIN" });
+
   const r = norm(root);
   const buf = readFileSync(`${r}/${map.blkPath}`);
   const expected = map.width * map.height;

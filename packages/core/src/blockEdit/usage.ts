@@ -166,8 +166,13 @@ export function gbcBlockUsage(
     // Interior: use the effective grid of the representative (per R3, one grid per file)
     const repGrid = gbcEffectiveGrid(proj, relations, representative, grids, diskCache);
     let interior = 0;
-    for (const cell of repGrid) {
-      if (cell === blockId) interior++;
+    // Q5: a raw-0 cell draws the map's border block, never block 0 itself, so
+    // block id 0 has no interior cells (those are counted via border /
+    // block0AsBorder). Border logic below is unchanged.
+    if (blockId !== 0) {
+      for (const cell of repGrid) {
+        if (cell === blockId) interior++;
+      }
     }
 
     // R2a: border and block0AsBorder summed over EVERY consuming map of the grid file
@@ -251,7 +256,8 @@ export function gbcTileUsage(
     const ids = idsByFile.get(relations.tilesets.get(map.tileset)!.metatilesPath);
     if (ids === undefined) continue;
     const grid = gbcEffectiveGrid(proj, relations, map, grids, diskCache);
-    if (grid.some((cell) => ids.has(cell)) || ids.has(map.border)) found.push(map.name);
+    // Q5: a raw-0 cell draws the map's border block, never block 0 itself; `ids.has(map.border)` covers it.
+    if (grid.some((cell) => cell !== 0 && ids.has(cell)) || ids.has(map.border)) found.push(map.name);
   }
 
   return { blocks, maps: sorted(found) };
@@ -335,10 +341,12 @@ function gbaConsumingUses(relations: GbaRelations, symbol: string): GbaLayoutUse
 }
 
 /** R9's layout -> maps half, deferred so `gbaConsumingLayouts` does not read every map.json. */
-function gbaMapsByLayout(proj: Project, relations: GbaRelations): Map<string, string[]> {
+function buildGbaMapsByLayout(proj: Project, relations: GbaRelations): Map<string, string[]> {
   if (relations.mapsByLayout !== undefined) return relations.mapsByLayout;
   const byLayout = new Map<string, string[]>();
   for (const name of proj.mapNames()) {
+    // Key on the map's declared layout id (not layoutForMap, which throws on a
+    // dangling id): a map whose layout is missing simply never matches a layout.
     const layout = proj.map(name).layout;
     const list = byLayout.get(layout) ?? [];
     list.push(name);
@@ -350,9 +358,9 @@ function gbaMapsByLayout(proj: Project, relations: GbaRelations): Map<string, st
 }
 
 /** Blockdata file -> every map backed by it (consuming or not), for R3 and sharedGrids. */
-function gbaMapsByGridFile(proj: Project, relations: GbaRelations): Map<string, string[]> {
+function buildGbaMapsByGridFile(proj: Project, relations: GbaRelations): Map<string, string[]> {
   if (relations.mapsByGridFile !== undefined) return relations.mapsByGridFile;
-  const mapsByLayout = gbaMapsByLayout(proj, relations);
+  const mapsByLayout = buildGbaMapsByLayout(proj, relations);
   const byFile = new Map<string, string[]>();
   for (const layout of proj.layouts) {
     const list = byFile.get(layout.blockdataFilepath) ?? [];
@@ -362,6 +370,23 @@ function gbaMapsByGridFile(proj: Project, relations: GbaRelations): Map<string, 
   for (const list of byFile.values()) list.sort(compare);
   relations.mapsByGridFile = byFile;
   return byFile;
+}
+
+/**
+ * Layout id -> every map name using it, sorted. Skips a map whose layout id is
+ * not in layouts.json instead of throwing (Q4), so one dangling map does not
+ * disable planning for every other map.
+ */
+export function gbaMapsByLayout(proj: Project): Map<string, string[]> {
+  return buildGbaMapsByLayout(proj, gbaRelations(proj));
+}
+
+/**
+ * Blockdata file -> every map name backed by it, sorted. Derived from defined
+ * layouts only, so a dangling layout id contributes no maps (Q4).
+ */
+export function gbaMapsByGridFile(proj: Project): Map<string, string[]> {
+  return buildGbaMapsByGridFile(proj, gbaRelations(proj));
 }
 
 /**
@@ -411,8 +436,8 @@ export function gbaBlockUsage(
 
   const relations = gbaRelations(proj);
   const consuming = gbaConsumingUses(relations, tilesetSymbol);
-  const mapsByLayout = gbaMapsByLayout(proj, relations);
-  const mapsByGridFile = gbaMapsByGridFile(proj, relations);
+  const mapsByLayout = buildGbaMapsByLayout(proj, relations);
+  const mapsByGridFile = buildGbaMapsByGridFile(proj, relations);
 
   // R9a: per-file counting - collect every consuming use (layout, role) on each file
   // with its target id. Then sum over distinct targets for interior,

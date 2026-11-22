@@ -12,7 +12,7 @@ describe("parseIncbins", () => {
       '\tINCBIN "maps/Route32.blk"',
       "",
     ].join("\n");
-    expect(parseIncbins(text)).toEqual([{ labels: ["Route32_Blocks"], path: "maps/Route32.blk" }]);
+    expect(parseIncbins(text)).toMatchObject([{ labels: ["Route32_Blocks"], path: "maps/Route32.blk" }]);
   });
 
   it("attaches every stacked label to the one INCBIN that follows them", () => {
@@ -21,36 +21,36 @@ describe("parseIncbins", () => {
       "CeladonDeptStore1F_Blocks:",
       '\tINCBIN "maps/DeptStore1F.blk"',
     ].join("\n");
-    expect(parseIncbins(text)).toEqual([
+    expect(parseIncbins(text)).toMatchObject([
       { labels: ["GoldenrodDeptStore1F_Blocks", "CeladonDeptStore1F_Blocks"], path: "maps/DeptStore1F.blk" },
     ]);
   });
 
   it("keeps a trailing '; unreferenced' comment on the label line from breaking the label match", () => {
     const text = ["BetaPlayersHouse2F_Blocks: ; unreferenced", '\tINCBIN "maps/unused/BetaPlayersHouse2F.blk"'].join("\n");
-    expect(parseIncbins(text)).toEqual([
+    expect(parseIncbins(text)).toMatchObject([
       { labels: ["BetaPlayersHouse2F_Blocks"], path: "maps/unused/BetaPlayersHouse2F.blk" },
     ]);
   });
 
   it("accepts a double-colon label with no comment (gfx/tilesets.asm style)", () => {
     const text = ["TilesetKantoMeta::", '\tINCBIN "data/tilesets/kanto_metatiles.bin"'].join("\n");
-    expect(parseIncbins(text)).toEqual([{ labels: ["TilesetKantoMeta"], path: "data/tilesets/kanto_metatiles.bin" }]);
+    expect(parseIncbins(text)).toMatchObject([{ labels: ["TilesetKantoMeta"], path: "data/tilesets/kanto_metatiles.bin" }]);
   });
 
   it("accepts a final line with no trailing newline", () => {
     const text = 'Foo_Blocks:\n\tINCBIN "maps/Foo.blk"';
-    expect(parseIncbins(text)).toEqual([{ labels: ["Foo_Blocks"], path: "maps/Foo.blk" }]);
+    expect(parseIncbins(text)).toMatchObject([{ labels: ["Foo_Blocks"], path: "maps/Foo.blk" }]);
   });
 
   it("keeps a label across a blank line before its INCBIN (never occurs in the corpus, but a blank line must stay inert)", () => {
     const text = ["Foo_Blocks:", "", '\tINCBIN "maps/Foo.blk"'].join("\n");
-    expect(parseIncbins(text)).toEqual([{ labels: ["Foo_Blocks"], path: "maps/Foo.blk" }]);
+    expect(parseIncbins(text)).toMatchObject([{ labels: ["Foo_Blocks"], path: "maps/Foo.blk" }]);
   });
 
   it("resets the pending label list when a non-label, non-blank line intervenes", () => {
     const text = ["Foo_Blocks:", "; a stray comment", '\tINCBIN "maps/Foo.blk"'].join("\n");
-    expect(parseIncbins(text)).toEqual([{ labels: [], path: "maps/Foo.blk" }]);
+    expect(parseIncbins(text)).toMatchObject([{ labels: [], path: "maps/Foo.blk" }]);
   });
 
   it("does not match INCLUDE lines", () => {
@@ -60,7 +60,7 @@ describe("parseIncbins", () => {
 
   it("tolerates CRLF line endings", () => {
     const text = 'Foo_Blocks:\r\n\tINCBIN "maps/Foo.blk"\r\n';
-    expect(parseIncbins(text)).toEqual([{ labels: ["Foo_Blocks"], path: "maps/Foo.blk" }]);
+    expect(parseIncbins(text)).toMatchObject([{ labels: ["Foo_Blocks"], path: "maps/Foo.blk" }]);
   });
 
   describe("corpus", () => {
@@ -101,7 +101,7 @@ describe("parseIncbins", () => {
 describe("parseIncludes", () => {
   it("returns the path and preceding label for a single label", () => {
     const text = ["TilesetKantoColl::", '\tINCLUDE "data/tilesets/kanto_collision.asm"'].join("\n");
-    expect(parseIncludes(text)).toEqual([{ labels: ["TilesetKantoColl"], path: "data/tilesets/kanto_collision.asm" }]);
+    expect(parseIncludes(text)).toMatchObject([{ labels: ["TilesetKantoColl"], path: "data/tilesets/kanto_collision.asm" }]);
   });
 
   it("attaches every stacked label to the one INCLUDE that follows them", () => {
@@ -110,7 +110,7 @@ describe("parseIncludes", () => {
       "TilesetDarkCavePalMap:",
       '\tINCLUDE "gfx/tilesets/cave_palette_map.asm"',
     ].join("\n");
-    expect(parseIncludes(text)).toEqual([
+    expect(parseIncludes(text)).toMatchObject([
       { labels: ["TilesetCavePalMap", "TilesetDarkCavePalMap"], path: "gfx/tilesets/cave_palette_map.asm" },
     ]);
   });
@@ -122,11 +122,11 @@ describe("parseIncludes", () => {
 
   it("accepts a final line with no trailing newline", () => {
     const text = 'Foo:\n\tINCLUDE "foo.asm"';
-    expect(parseIncludes(text)).toEqual([{ labels: ["Foo"], path: "foo.asm" }]);
+    expect(parseIncludes(text)).toMatchObject([{ labels: ["Foo"], path: "foo.asm" }]);
   });
 
   it("tolerates CRLF line endings", () => {
     const text = 'Foo:\r\n\tINCLUDE "foo.asm"\r\n';
-    expect(parseIncludes(text)).toEqual([{ labels: ["Foo"], path: "foo.asm" }]);
+    expect(parseIncludes(text)).toMatchObject([{ labels: ["Foo"], path: "foo.asm" }]);
   });
 });

@@ -90,3 +90,18 @@ describe("GBC prepared saves", () => {
     expect(existsSync(asm)).toBe(false);
   });
 });
+
+describe("GBC commitGbcSave root containment (S2)", () => {
+  it("refuses a prepared entry outside the project root and writes nothing", () => {
+    const { proj, session, blk, asm } = changedFixture();
+    const plan = planGbcSave(proj, session);
+    const entries = prepareGbcSave(proj, session);
+    const stray = `${proj.root}/../pokemap-stray-${process.pid}.bin`;
+    const beforeBlk = readFileSync(blk);
+    const beforeAsm = readFileSync(asm);
+    expect(() => commitGbcSave(proj, plan, [...entries, { path: stray, before: null, after: Buffer.from("x") }])).toThrow(/outside the project/);
+    expect(existsSync(stray)).toBe(false);
+    expect(readFileSync(blk)).toEqual(beforeBlk);
+    expect(readFileSync(asm)).toEqual(beforeAsm);
+  });
+});

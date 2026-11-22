@@ -146,6 +146,15 @@ describe("Task 8 mergeTilesetEdits", () => {
     expect(error.message).toBe("./data/tilesets/a.bin: not a canonical repo-relative tileset path");
   });
 
+  it("refuses a canonical path that leaves the project (../, absolute, drive letter) with BAD_VALUE", () => {
+    for (const path of ["../x.bin", "../../outside/x.bin", "/abs/x.bin", "C:/x.bin"]) {
+      const error = caught(() => mergeTilesetEdits(undefined, [fileEdit(path)]));
+      expect(error, path).toBeInstanceOf(BlockEditRefusal);
+      expect((error as BlockEditRefusal).code, path).toBe("BAD_VALUE");
+      expect(error.message, path).toBe(`${path}: path leaves the project`);
+    }
+  });
+
   for (const duplicateIn of ["prior", "next"] as const) {
     it(`refuses a duplicate path inside ${duplicateIn} with BAD_VALUE`, () => {
       const edit = fileEdit("data/tilesets/duplicate.bin");

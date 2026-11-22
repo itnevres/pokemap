@@ -47,8 +47,8 @@ export interface TilesetFileEdit {
 export class BlockEditRefusal extends Error {
   readonly code: BlockEditCode;
 
-  constructor(code: BlockEditCode, message: string) {
-    super(message);
+  constructor(code: BlockEditCode, message: string, options?: { cause?: unknown }) {
+    super(message, options);
     this.name = "BlockEditRefusal";
     this.code = code;
   }

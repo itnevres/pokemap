@@ -333,7 +333,7 @@ export function commitSave(
   const entries = prepared ?? prepareSave(proj, session);
   assertPreparedTilesetEdits(proj.paths.root, session.mapName, session.tilesetEdits ?? [], entries);
   checkTilesetBaselines(proj.paths.root, session.tilesetEdits ?? []);
-  writeFilesAtomically(entries, io);
+  writeFilesAtomically(entries, proj.paths.root, io);
 }
 
 /** jsonEdits (scalar replace) first, then insertOps, then removeOps --

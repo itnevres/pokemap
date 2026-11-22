@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { norm } from "../../config/paths.js";
 import { codeLines, stripComment, stripMacroDefs, matchCall, parseConstDefs } from "./asm.js";
 import { readShadesPng } from "./png.js";
+import { assertInsideRoot } from "./pathGuard.js";
 import { sliceTiles } from "./tileset.js";
 
 /**
@@ -47,6 +48,12 @@ export interface ParsedRoofsAsm {
    *  `.2bpp` INCBIN via this module's own `roofPngPathFor`, never the `.2bpp`
    *  build artifact itself -- I3). */
   roofPngPaths: string[];
+  /** The original bare `.2bpp` INCBIN path for each roof, source order --
+   *  the build artifact itself (never read). D25's guard checks this path,
+   *  which is the one the source actually names. */
+  roofIncbinPaths: string[];
+  /** 1-based line of each roof's INCBIN in `source`, same order. */
+  roofIncbinLines: number[];
 }
 
 type Phase = "preMapGroupRoofs" | "mgrTableWidth" | "mgrDb" | "preRoofs" | "roofsTableWidth" | "roofsIncbin" | "done";
@@ -62,6 +69,8 @@ export function parseRoofsAsm(text: string, source: string = "<roofs>"): ParsedR
 
   const mapGroupRoofs: (number | null)[] = [];
   const roofPngPaths: string[] = [];
+  const roofIncbinPaths: string[] = [];
+  const roofIncbinLines: number[] = [];
   let phase: Phase = "preMapGroupRoofs";
 
   const fail = (lineIndex: number, msg: string): never => {
@@ -139,6 +148,8 @@ export function parseRoofsAsm(text: string, source: string = "<roofs>"): ParsedR
       } catch (e) {
         throw fail(lineIndex, (e as Error).message);
       }
+      roofIncbinPaths.push(inc[1]!);
+      roofIncbinLines.push(lineIndex + 1);
       continue;
     }
 
@@ -171,7 +182,7 @@ export function parseRoofsAsm(text: string, source: string = "<roofs>"): ParsedR
     );
   }
 
-  return { mapGroupRoofs, roofPngPaths };
+  return { mapGroupRoofs, roofPngPaths, roofIncbinPaths, roofIncbinLines };
 }
 
 /** `NUM_ROOFS` real roof PNGs, e.g. `gfx/tilesets/roofs/new_bark.png` --
@@ -205,7 +216,12 @@ function countNewgroups(text: string): number {
 export function loadGbcRoofs(root: string): GbcRoofs {
   const r = norm(root);
   const path = "data/maps/roofs.asm";
-  const { mapGroupRoofs, roofPngPaths } = parseRoofsAsm(readFileSync(`${r}/${path}`, "utf8"), path);
+  const { mapGroupRoofs, roofPngPaths, roofIncbinPaths, roofIncbinLines } = parseRoofsAsm(readFileSync(`${r}/${path}`, "utf8"), path);
+
+  // D25: refuse an escaping roof INCBIN before reading any roof PNG. The
+  // source path (the bare `.2bpp`) is what the guard reports; the `.png`
+  // sibling is only derived after it passes.
+  roofIncbinPaths.forEach((incbinPath, i) => assertInsideRoot(incbinPath, { file: path, line: roofIncbinLines[i], key: "INCBIN" }));
 
   const mapConstantsPath = "constants/map_constants.asm";
   const newgroupCount = countNewgroups(readFileSync(`${r}/${mapConstantsPath}`, "utf8"));
