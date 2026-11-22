@@ -378,9 +378,12 @@ function gbcUsageOracle(o: OracleGbc, metatilesPath: string, id: number, grids: 
 
     // Interior: use representative's effective grid only (per R3, one grid per file)
     const repGrid = effectiveGrid(o, rep, grids);
+    // Q5: a raw-0 cell draws the map's border block, never block 0 itself, so id 0 has no interior.
     let interior = 0;
-    for (const cell of repGrid) {
-      if (cell === id) interior++;
+    if (id !== 0) {
+      for (const cell of repGrid) {
+        if (cell === id) interior++;
+      }
     }
 
     // R2a: border and block0AsBorder summed over EVERY consuming map of the grid file
@@ -913,7 +916,7 @@ describe("GBC block usage", () => {
     expect(zeroEntry!.block0AsBorder).toBe(0);
   });
 
-  itWithGbcCorpus("a staged raw block 0 is interior for id 0 and block-0-as-border for the border block", () => {
+  itWithGbcCorpus("a staged raw block 0 is block-0-as-border for the border block and never interior for id 0 (Q5)", () => {
     const o = gbcOracle();
     // The subject stores no block-0 cells on disk, so this stages one: a raw
     // cell value of 0 must count as the border block only when the queried
@@ -943,9 +946,8 @@ describe("GBC block usage", () => {
     expect(zeroUsage.maps).toEqual(zeroExpected.maps);
     expect(zeroUsage.sharedGrids).toEqual(zeroExpected.sharedGrids);
     const zeroEntry = zeroUsage.maps.find((entry: UsageMap) => entry.map === map.name);
-    expect(zeroEntry, `an entry for ${map.name} at id 0`).toBeDefined();
-    expect(zeroEntry!.interior).toBe(area);
-    expect(zeroEntry!.block0AsBorder).toBe(0);
+    // Q5: raw-0 cells draw the border block, not block 0: editing block 0 changes nothing on this map.
+    expect(zeroEntry, `no entry for ${map.name} at id 0`).toBeUndefined();
   });
 
   itWithGbcCorpus("the whole maps list for a metatiles file matches the oracle", () => {

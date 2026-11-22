@@ -1,3 +1,11 @@
+import { posix } from "node:path";
+
+/** True when a project-relative path from decomp data stays inside the project root. False for ".." climbs (also after normalising), absolute paths, UNC, and drive letters; backslashes count as separators. */
+export function insideRoot(rel: string): boolean {
+  const n = posix.normalize(rel.replace(/\\/g, "/"));
+  return !(n === ".." || n.startsWith("../") || n.startsWith("/") || /^[A-Za-z]:/.test(n));
+}
+
 export interface ProjectPaths {
   root: string;
   layoutsJson: string;

@@ -223,3 +223,16 @@ describe("GBA prepared saves", () => {
     for (const entry of entries) expect(readFileSync(entry.path)).toEqual(entry.before);
   });
 });
+
+describe("GBA commitSave root containment (S2)", () => {
+  it("refuses a prepared entry outside the project root and writes nothing", () => {
+    const { root, proj, session } = changedFixture();
+    const plan = planSave(proj, session);
+    const entries = prepareSave(proj, session);
+    const stray = join(root, "..", `pokemap-stray-${process.pid}.bin`);
+    const before = entries.map((e) => readFileSync(e.path));
+    expect(() => commitSave(proj, plan, [...entries, { path: stray, before: null, after: Buffer.from("x") }])).toThrow(/outside the project/);
+    expect(existsSync(stray)).toBe(false);
+    entries.forEach((e, i) => expect(readFileSync(e.path)).toEqual(before[i]));
+  });
+});

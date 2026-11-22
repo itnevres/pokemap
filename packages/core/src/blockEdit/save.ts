@@ -1,11 +1,13 @@
 import type { Project } from "../project.js";
 import type { GbcProject } from "../gbc/project.js";
+import type { Layout } from "../model/types.js";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { AtomicEntry } from "../write/atomic.js";
 import type { Refusal } from "../write/guards.js";
 import { BlockEditRefusal, type TilesetFileEdit } from "./types.js";
 import { canonicalTilesetPath } from "./canonicalTilesetPath.js";
+import { insideRoot } from "../config/paths.js";
 import { gbcTilesetsForFile } from "./usage.js";
 
 export function mergeTilesetEdits(
@@ -22,6 +24,9 @@ export function mergeTilesetEdits(
       seen.add(edit.path);
       if (canonicalTilesetPath(edit.path) !== edit.path) {
         throw new BlockEditRefusal("BAD_VALUE", `${edit.path}: not a canonical repo-relative tileset path`);
+      }
+      if (!insideRoot(edit.path)) {
+        throw new BlockEditRefusal("BAD_VALUE", `${edit.path}: path leaves the project`);
       }
       const first = merged.get(edit.path);
       merged.set(edit.path, first ? { path: edit.path, before: first.before, after: edit.after } : edit);
@@ -54,7 +59,14 @@ export function gbaTilesetEffects(
       symbolsByPath.set(path, symbols);
     }
   }
-  const layouts = proj.mapNames().map((name) => ({ name, layout: proj.layoutForMap(name) }));
+  // Q4: skip a map whose layout id is not in layouts.json (a dangling id)
+  // instead of throwing, so one bad map does not disable the Save plan.
+  const layoutById = new Map(proj.layouts.map((layout) => [layout.id, layout]));
+  const layouts: { name: string; layout: Layout }[] = [];
+  for (const name of proj.mapNames()) {
+    const layout = layoutById.get(proj.map(name).layout);
+    if (layout !== undefined) layouts.push({ name, layout });
+  }
   return changed.map(({ path }) => {
     const symbols = symbolsByPath.get(path);
     const maps = layouts.filter(({ layout }) =>

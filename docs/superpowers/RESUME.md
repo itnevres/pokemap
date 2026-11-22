@@ -1,5 +1,7 @@
 # PokeMap: current state (2026-11-21, read first; **Plan 14.2 Block editor merged to `master` via [#32](https://github.com/itnevres/pokemap/pull/32) → `9d14637` (2026-11-21, merge commit; branch tip `e5f8b2f`)**: Tasks 0-16 done, Task 16 final Claude Opus review APPROVE WITH FIXES → fix round merged `7e66726` + `e4993ad`, Opus re-review approved; gate at `e4993ad`: 5,148 pass / 4 fail / 273 files (the known engine.test env fail and three load timeouts that pass alone), typecheck + UI build pass, subjects unchanged; per-task history in the Plan 14 row below. **All vitest runs use `--no-file-parallelism` (user, 2026-11-20, after four machine crashes).** Plans 10a-12b merged via #20-#29; Plan 13 (warp popups, #5/#6) via #30 → `7c68fc1`; Plan 14.1 Add Event via #31 → `3f4a762`. **Next: roadmap Plan H, batch H0 (Task Q1, F1), then H1.** The plans after 14.2 were granularized 2026-11-16 (`a533694`) and moved onto the merged code 2026-11-21.)
 
+**Plan H core stream (h-core, overnight 2026-11-22): F1, F1b, F2, F3, Q4, Q5 implemented on branch `claude/plan-h-core-f3ab32`, Opus spec + quality reviews done, review fixes applied, mutation checks killed; PR open for the user to merge. Evidence: `task-reports/pokemap-plan-h-review-backlog/task-F-Q45-evidence.md`. F1c (consumers of `brokenPaths` / `PathEscapeError`) not started.**
+
 PokeMap is a Porymap-parity map editor with two engine families:
 - **GBA:** pokeemerald-family decomps. Plans 0-5.
 - **GBC:** Pokémon Crystal now, Yellow later. Plans 6+, with its own roadmap and invariants G1-G7.

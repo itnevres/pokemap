@@ -88,7 +88,7 @@ export function planGbcBlockEdit(proj: GbcProject, req: GbcBlockEditRequest, sta
   } catch (error) {
     if (error instanceof BlockEditRefusal) throw error;
     // R1b: no native or plain Error escapes the planner.
-    return bad(`${req.map}: ${errorText(error)}`);
+    throw new BlockEditRefusal("BAD_VALUE", `${req.map}: ${errorText(error)}`, { cause: error });
   }
 }
 function planGbcBlockEditInner(proj: GbcProject, req: GbcBlockEditRequest, staged: FileOverlay, grids: StagedGrids): BlockEditPlan {
@@ -151,7 +151,7 @@ function planGbcBlockEditInner(proj: GbcProject, req: GbcBlockEditRequest, stage
     const tile = d.tiles[entry.square]!;
     const previous = entries.get(tile);
     if (previous && (previous.scope !== entry.scope || previous.palName !== entry.palName)) {
-      bad(`${palPath}: conflicting palette entries for tile ${tile}`);
+      bad(`${palPath}: conflicting palette entries for tile $${tile.toString(16).padStart(2, "0")}`);
     }
     entries.set(tile, entry);
   }
@@ -176,11 +176,11 @@ function planGbcBlockEditInner(proj: GbcProject, req: GbcBlockEditRequest, stage
   // R5a: every All rename lands before any Local entry is resolved, so a Local
   // result always shows the palette it asked for -- whatever the entry order.
   for (const [tile, entry] of all) {
-    if (initialPalette.names[tile] == null) bad(`${palPath}: tile ${tile} has no palette-map entry`);
+    if (initialPalette.names[tile] == null) bad(`${palPath}: tile $${tile.toString(16).padStart(2, "0")} has no palette-map entry`);
     paletteText = patchGbcPaletteMap(paletteText, tile, entry.palName, palPath);
   }
   for (const [tile, entry] of local) {
-    if (initialPalette.names[tile] == null) bad(`${palPath}: tile ${tile} has no palette-map entry`);
+    if (initialPalette.names[tile] == null) bad(`${palPath}: tile $${tile.toString(16).padStart(2, "0")} has no palette-map entry`);
     const sharing = gbcTilesetsForFile(proj, metaPath).map(c => proj.tileset(c))
       .filter(t => canon(t.metatilesPath) === metaPath);
     if (sharing.some(t => canon(t.gfxPath) !== gfxPath || canon(t.palMapPath) !== palPath)) {
@@ -191,7 +191,7 @@ function planGbcBlockEditInner(proj: GbcProject, req: GbcBlockEditRequest, stage
       throw new BlockEditRefusal("RESERVED_TILE", `tile $${tile.toString(16).padStart(2, "0")}: reserved by runtime`);
     }
     const sourceIndex = pngTileIndex(effectiveTs, tile);
-    if (sourceIndex === null) bad(`${gfxPath}: tile ${tile} has no sheet pixels`);
+    if (sourceIndex === null) bad(`${gfxPath}: tile $${tile.toString(16).padStart(2, "0")} has no sheet pixels`);
     const currentPalette = parse(palPath, () => effectivePalette(paletteText, palPath));
     let target: number | undefined;
     for (let s = 0; s < pixels.length; s++) {
@@ -247,7 +247,8 @@ function planGbcBlockEditInner(proj: GbcProject, req: GbcBlockEditRequest, stage
   if (edits.length && req.mode !== "saveAsNew") {
     confirm = proj.maps.some(other => other.name !== req.map &&
       canon(proj.tileset(other.tileset).metatilesPath) === metaPath &&
-      (other.border === req.blockId || effectiveGrid(proj, other, grids).includes(req.blockId)));
+      (other.border === req.blockId ||
+        (req.blockId !== 0 && effectiveGrid(proj, other, grids).includes(req.blockId))));
     if (!confirm && all.length) {
       // Usage's static relations are reusable, but its block views must use R1 bytes.
       const cache = new Map<string, GbcTileset>();

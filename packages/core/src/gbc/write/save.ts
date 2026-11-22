@@ -258,5 +258,5 @@ export function commitGbcSave(
   }
   assertPreparedTilesetEdits(proj.root, session.mapName, session.tilesetEdits ?? [], entries);
   checkTilesetBaselines(proj.root, session.tilesetEdits ?? []);
-  writeFilesAtomically(entries, io);
+  writeFilesAtomically(entries, proj.root, io);
 }

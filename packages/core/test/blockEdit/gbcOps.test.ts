@@ -354,7 +354,7 @@ function expectAllBadValueBeforeLocalRefusal(order: "localFirst" | "allFirst"): 
   const local = { square: 0, palName: alternate(palNames.get(source!)!), scope: "local" as const };
   const all = { square: 2, palName: "RED", scope: "all" as const };
   const both = { ...d, palettes: order === "localFirst" ? [local, all] : [all, local] };
-  refusal(() => planGbcBlockEdit(f.p, request(f.map, f.id, both), staged, new Map()), "BAD_VALUE", [f.ts.palMapPath]);
+  refusal(() => planGbcBlockEdit(f.p, request(f.map, f.id, both), staged, new Map()), "BAD_VALUE", [f.ts.palMapPath, "tile $60 has no palette-map entry"]);
   const localOnly = { ...d, palettes: [local] };
   const reservedMessage = `tile $${source!.toString(16).padStart(2, "0")}:`;
   refusal(() => planGbcBlockEdit(f.p, request(f.map, f.id, localOnly), staged, new Map()), "RESERVED_TILE", [reservedMessage], reservedMessage);

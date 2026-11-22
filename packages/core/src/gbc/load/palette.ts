@@ -48,6 +48,7 @@ import { norm } from "../../config/paths.js";
 import { matchCall, splitArgs, stripComment, stripMacroDefs, parseConstDefs, findDefEquLine } from "./asm.js";
 import { parseNum } from "./map.js";
 import { parseIncludes } from "./incbin.js";
+import { assertInsideRoot } from "./pathGuard.js";
 import type { RGB } from "../../model/types.js";
 
 /** `TILESET_*` constant -> the label its palette is INCLUDEd under in
@@ -429,13 +430,25 @@ export function resolveTimeOfDayPal(levels: BrightnessLevels, paletteIndex: numb
   return col;
 }
 
-/** `text`'s stacked `INCLUDE`d labels (`gfx/tilesets.asm`-style), as a plain label -> path map. */
-function includeLabelMap(text: string): Map<string, string> {
-  const out = new Map<string, string>();
+/** `text`'s stacked `INCLUDE`d labels (`gfx/tilesets.asm`-style), as a plain label -> path+line map. */
+function includeLabelMap(text: string): Map<string, LabeledPath> {
+  const out = new Map<string, LabeledPath>();
   for (const entry of parseIncludes(text)) {
-    for (const label of entry.labels) out.set(label, entry.path);
+    for (const label of entry.labels) out.set(label, { path: entry.path, line: entry.line });
   }
   return out;
+}
+
+interface LabeledPath {
+  path: string;
+  /** 1-based line of the INCLUDE that named it. */
+  line: number;
+}
+
+/** D25: the INCLUDE'd path, after refusing one that leaves the project (a PathEscapeError with file and line). */
+function guardedInclude(ref: LabeledPath, file: string): string {
+  assertInsideRoot(ref.path, { file, line: ref.line, key: "INCLUDE" });
+  return ref.path;
 }
 
 /** `roofs.pal`: 27 groups (0-26, index 0 unused), each 2 `RGB` lines --
@@ -461,12 +474,14 @@ function parseRoofPals(text: string, source: string): { mornDay: [RGB, RGB]; nit
  * has 9 palettes total, 0-indexed 0-8 -- read directly from the real asm, not
  * the findings doc's summary, per the task's own instruction).
  */
-function mansionPalette(root: string, includes: Map<string, string>, palBg: { water: number; yellow: number; roof: number }): RGB[][] {
-  const p1 = includes.get("MansionPalette1");
-  const p2 = includes.get("MansionPalette2");
-  if (!p1 || !p2) {
+function mansionPalette(root: string, includes: Map<string, LabeledPath>, palBg: { water: number; yellow: number; roof: number }): RGB[][] {
+  const ref1 = includes.get("MansionPalette1");
+  const ref2 = includes.get("MansionPalette2");
+  if (!ref1 || !ref2) {
     throw new Error(`mansionPalette: "MansionPalette1"/"MansionPalette2" INCLUDE labels not found in engine/tilesets/tileset_palettes.asm`);
   }
+  const p1 = guardedInclude(ref1, "engine/tilesets/tileset_palettes.asm");
+  const p2 = guardedInclude(ref2, "engine/tilesets/tileset_palettes.asm");
   const m1 = chunk4(parsePalColors(readFileSync(`${root}/${p1}`, "utf8"), p1), p1);
   const m2 = parsePalColors(readFileSync(`${root}/${p2}`, "utf8"), p2);
   if (m1.length < 9) {
@@ -585,10 +600,11 @@ export function loadPaletteTables(root: string): PaletteTables {
   const colorAsmIncludes = includeLabelMap(readFileSync(`${r}/engine/gfx/color.asm`, "utf8"));
   const specialIncludes = includeLabelMap(readFileSync(`${r}/engine/tilesets/tileset_palettes.asm`, "utf8"));
 
-  const bgTilesPalPath = colorAsmIncludes.get("TilesetBGPalette");
-  if (!bgTilesPalPath) {
+  const bgTilesPalRef = colorAsmIncludes.get("TilesetBGPalette");
+  if (!bgTilesPalRef) {
     throw new Error(`loadPaletteTables: no INCLUDE label "TilesetBGPalette" found in engine/gfx/color.asm`);
   }
+  const bgTilesPalPath = guardedInclude(bgTilesPalRef, "engine/gfx/color.asm");
   const bgTilesPal = chunk4(parsePalColors(readFileSync(`${r}/${bgTilesPalPath}`, "utf8"), bgTilesPalPath), bgTilesPalPath);
 
   // Bare `INCLUDE "data/maps/environment_colors.asm"` in color.asm has no
@@ -611,10 +627,11 @@ export function loadPaletteTables(root: string): PaletteTables {
 
   const specialPalettesByTileset = new Map<string, RGB[][]>();
   for (const [tilesetConst, label] of Object.entries(SPECIAL_TILESET_LABELS)) {
-    const path = specialIncludes.get(label);
-    if (!path) {
+    const ref = specialIncludes.get(label);
+    if (!ref) {
       throw new Error(`loadPaletteTables: no INCLUDE label "${label}" found in engine/tilesets/tileset_palettes.asm`);
     }
+    const path = guardedInclude(ref, "engine/tilesets/tileset_palettes.asm");
     specialPalettesByTileset.set(tilesetConst, chunk4(parsePalColors(readFileSync(`${r}/${path}`, "utf8"), path), path));
   }
 
