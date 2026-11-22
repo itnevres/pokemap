@@ -4,6 +4,11 @@
 import { useSyncExternalStore } from "react";
 
 let version = 0;
+let instance: string | null = null;
+/** Added to a stamped version so the published key never repeats a value this document already used. */
+let offset = 0;
+/** Instances replaced by a newer one; a late reply from one of them is ignored. */
+const retired = new Set<string>();
 let currentGeneration = 0;
 const listeners = new Set<() => void>();
 
@@ -27,9 +32,32 @@ export function noteTilesetVersion(v: unknown, generation?: number): void {
   if (v > version) setVersion(v);
 }
 
+/** Records a reply stamp. A handler restart (new `tilesetInstance`) restarts the server counter at 0, so the
+ *  published key moves to a fresh value above everything used so far instead of back down: tile URLs carry the
+ *  key only as a cache buster, and a lower value would repeat URLs this page already loaded. */
+export function noteTilesetStamp(body: unknown, generation?: number): void {
+  if (generation !== undefined && generation !== currentGeneration) return;
+  if (typeof body !== "object" || body === null) return;
+  const { tilesetVersion: next, tilesetInstance: nextInstance } = body as {
+    tilesetVersion?: unknown; tilesetInstance?: unknown;
+  };
+  if (typeof next !== "number" || !Number.isFinite(next)) return;
+  if (typeof nextInstance !== "string") { noteTilesetVersion(next, generation); return; }
+  if (retired.has(nextInstance)) return;
+  if (instance !== null && instance !== nextInstance) {
+    retired.add(instance);
+    offset = version + 1 - next;
+  }
+  instance = nextInstance;
+  noteTilesetVersion(next + offset, generation);
+}
+
 /** Production role: the FamilyApp unmount resets it, retiring the generation so late replies from the old project are dropped. Also used for test isolation. */
 export function resetTilesetVersion(): void {
   currentGeneration++;
+  instance = null;
+  offset = 0;
+  retired.clear();
   setVersion(0);
 }
 

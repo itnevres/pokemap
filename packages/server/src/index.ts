@@ -218,8 +218,11 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
     map: (name) => parseMap(readFileSync(project.paths.mapJson(name), "utf8")),
   });
 
-  const overlayState: OverlayState = { version: 0, applied: new Map(), clearCaches: () => pngCache.clear() };
+  const overlayState: OverlayState = { instance: randomUUID(), version: 0, applied: new Map(), clearCaches: () => pngCache.clear() };
   const syncOverlay = () => syncTilesetOverlay(editSessions.entries(), project, overlayState);
+  const overlayStamp = (): { tilesetVersion: number; tilesetInstance: string } => ({
+    tilesetVersion: syncOverlay(), tilesetInstance: overlayState.instance,
+  });
 
   const addEvents = createGbaAddEventRoutes(project, editSessions, hooks, symbols);
 
@@ -279,7 +282,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
   const sendSession = (send: (code: number, body: unknown) => void, code: number, entry: ReturnType<typeof editEntryFor>) => {
     // `syncOverlay()` first, then the counts: `project.tileset` is what the overlay replaces, so
     // a session with a staged tileset edit reports the GROWN count here (see the /api/map route).
-    const tilesetVersion = syncOverlay();
+    const stamp = overlayStamp();
     // Plan 14.2 fix hop A: the map payload's own `primaryCount`/`secondaryCount`, recomputed on
     // every session reply (`/api/map` lines above are the same computation) so the client's
     // MetatilePalette follows a block appended by the block editor's "Save as new" without a map
@@ -290,7 +293,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
           secondaryCount: project.tileset(layout.secondaryTileset).metatileCount }
       : {};
     return send(code, {
-      tilesetVersion,
+      ...stamp,
       blocks: entry.session.blocks, border: entry.session.border, map: entry.session.map, isDirty: entry.session.isDirty,
       canUndo: entry.stack.canUndo(), canRedo: entry.stack.canRedo(),
       ...counts,
@@ -375,7 +378,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
         return void readBody(req).then(text => {
           if (disposed) return send(503, { error: "project closed" });
-          try { const body = addEvents.create(name, JSON.parse(text)); send(200, { ...body, tilesetVersion: syncOverlay() }); }
+          try { const body = addEvents.create(name, JSON.parse(text)); send(200, { ...body, ...overlayStamp() }); }
           catch (error) { send(400, eventFailure("gba", name, error)); }
         }).catch(error => send(400, eventFailure("gba", name, error)));
       }
@@ -396,7 +399,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
 
       const mapMatch = /^\/api\/map\/(.+)$/.exec(url.pathname);
       if (mapMatch) {
-        const tilesetVersion = syncOverlay();
+        const stamp = overlayStamp();
         const name = decodeURIComponent(mapMatch[1]!);
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
         const map = project.map(name);
@@ -438,7 +441,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
         // MetatilePalette's primaryCount/secondaryCount props need to size
         // its grid; returning them here means the UI doesn't have to guess
         // or fetch tileset data separately.
-        return send(200, { tilesetVersion, map, layout, split, blocks, primaryCount: primary.metatileCount, secondaryCount: secondary.metatileCount });
+        return send(200, { ...stamp, map, layout, split, blocks, primaryCount: primary.metatileCount, secondaryCount: secondary.metatileCount });
       }
 
       const renderMatch = /^\/api\/render\/(.+)\.png$/.exec(url.pathname);
@@ -1022,14 +1025,14 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
       if (sessionMatch && req.method === "GET") {
         const name = decodeURIComponent(sessionMatch[1]!);
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
-        if (!editSessions.has(name)) return send(200, { tilesetVersion: syncOverlay(), blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false });
+        if (!editSessions.has(name)) return send(200, { ...overlayStamp(), blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false });
         return sendSession(send, 200, editEntryFor(name));
       }
 
       const undoMatch = /^\/api\/edit\/(.+)\/undo$/.exec(url.pathname);
       if (undoMatch && req.method === "POST") {
         const name = decodeURIComponent(undoMatch[1]!);
-        if (!editSessions.has(name)) return send(200, { tilesetVersion: syncOverlay(), blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false }); // nothing open -- a no-op, not a 500
+        if (!editSessions.has(name)) return send(200, { ...overlayStamp(), blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false }); // nothing open -- a no-op, not a 500
         const entry = editEntryFor(name);
         entry.stack.undo(entry.session);
         return sendSession(send, 200, entry);
@@ -1038,7 +1041,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
       const redoMatch = /^\/api\/edit\/(.+)\/redo$/.exec(url.pathname);
       if (redoMatch && req.method === "POST") {
         const name = decodeURIComponent(redoMatch[1]!);
-        if (!editSessions.has(name)) return send(200, { tilesetVersion: syncOverlay(), blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false });
+        if (!editSessions.has(name)) return send(200, { ...overlayStamp(), blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false });
         const entry = editEntryFor(name);
         try { entry.stack.redo(entry.session, candidate => {
           addEvents.checkHeaderOwnership(name, candidate);
@@ -1071,7 +1074,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
         // true. Idempotent: discarding an already-clean or never-opened
         // session is a harmless no-op with the same response, matching
         // close()'s own "always safe to drop" doc comment.
-        return send(200, { tilesetVersion: syncOverlay(), blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false });
+        return send(200, { ...overlayStamp(), blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false });
       }
 
       // Task 9: save/commit. planSave/commitSave both live in core (I8's
@@ -1166,7 +1169,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
               } else entry.session.jsonEdits = [...entry.session.jsonEdits, ...jsonEdits];
               return { map: nextMap };
             });
-            return send(200, { tilesetVersion: syncOverlay(), map: result.map, isDirty: result.isDirty });
+            return send(200, { ...overlayStamp(), map: result.map, isDirty: result.isDirty });
           })
           .catch((e: unknown) => { console.error(e); send(500, { error: e instanceof Error ? e.message : String(e) }); });
       }
@@ -1188,7 +1191,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
               entry.session.insertOps = [...entry.session.insertOps, insertOp];
               return { map: nextMap };
             });
-            return send(200, { tilesetVersion: syncOverlay(), map: result.map, isDirty: result.isDirty });
+            return send(200, { ...overlayStamp(), map: result.map, isDirty: result.isDirty });
           })
           .catch((e: unknown) => { console.error(e); send(500, { error: e instanceof Error ? e.message : String(e) }); });
       }
@@ -1213,7 +1216,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
                 : [];
               return { map: nextMap, extra: warpRenumberWarnings };
             });
-            return send(200, { tilesetVersion: syncOverlay(), map: result.map, isDirty: result.isDirty, warpRenumberWarnings: result.extra });
+            return send(200, { ...overlayStamp(), map: result.map, isDirty: result.isDirty, warpRenumberWarnings: result.extra });
           })
           .catch((e: unknown) => { console.error(e); send(500, { error: e instanceof Error ? e.message : String(e) }); });
       }
@@ -1429,7 +1432,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
             }
             const next = snapshotOf(session);
             if (JSON.stringify(prev) !== JSON.stringify(next)) entry.stack.push(entry.session, snapshotCommand(update ? "update Indicator" : "place Indicator", prev, next));
-            return send(200, { tilesetVersion: syncOverlay(), map: entry.session.map, isDirty: entry.session.isDirty, ...(update ? {} : { scriptLabel }) });
+            return send(200, { ...overlayStamp(), map: entry.session.map, isDirty: entry.session.isDirty, ...(update ? {} : { scriptLabel }) });
           } catch (error) { return send(400, indicatorFailure(name, error)); }
         }).catch(error => send(400, indicatorFailure(name, error)));
       }

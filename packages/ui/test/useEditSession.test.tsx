@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, renderHook, waitFor, act, cleanup } from "@testing-library/react";
 import { useEditSession } from "../src/hooks/useEditSession.js";
+import { noteTilesetVersion, resetTilesetVersion } from "../src/shared/tilesetVersion.js";
 import type { Block } from "@pokemap/core/src/model/types.js";
 import type { MapData } from "@pokemap/core/src/load/maps.js";
 
@@ -426,6 +427,32 @@ describe("Q1 passive session hydration", () => {
     await act(async () => { resolvers[1]!(response(staged)); });
     expect(result.current.blocks[0]?.metatileId).toBe(9);
     expect(result.current.isDirty).toBe(true);
+  });
+
+  // Plan H Q7 (b): a shared-tileset append/undo on ANOTHER map moves the hub's tileset version and this
+  // map's effective counts with it, so the session must be re-read (its reply carries the counts through
+  // the same apply path) -- while the value this hook mounted with must not trigger a read.
+  it("re-reads the session when the tileset version moves and applies its counts", async () => {
+    resetTilesetVersion();
+    let served: unknown = staged;
+    const fetchMock = vi.fn((url: string) => url.endsWith("/session")
+      ? Promise.resolve(response(served))
+      : Promise.reject(new Error(`unexpected fetch ${url}`)));
+    vi.stubGlobal("fetch", fetchMock);
+    const reads = () => fetchMock.mock.calls.filter(([url]) => url.endsWith("/session")).length;
+
+    const { result } = renderHook(() => useEditSession("A", seedBlocks, MAP_BEFORE));
+    await waitFor(() => expect(result.current.primaryCount).toBe(512));
+    expect(reads()).toBe(1); // the mount read only: the mount value is not a change
+
+    served = { ...staged, primaryCount: 600, secondaryCount: 42 };
+    act(() => noteTilesetVersion(1));
+    await waitFor(() => expect(result.current.primaryCount).toBe(600));
+    expect(reads()).toBe(2); // exactly one re-read per version change
+    expect(result.current.secondaryCount).toBe(42);
+
+    act(() => noteTilesetVersion(1)); // the same value again is not a change
+    expect(reads()).toBe(2);
   });
 
 });

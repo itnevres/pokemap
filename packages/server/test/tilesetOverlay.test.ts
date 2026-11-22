@@ -220,6 +220,40 @@ for (const family of ["gba", "gbc"] as const) {
       throw new Error(`${family}: no visible edit on a map with an event source file`);
     };
 
+    it("Q6: map and session stamps stay stable through edits and change with a new handler", async () => {
+      const [candidate] = await findEdits(1) as [VisibleEdit];
+      const initial = await mapGet(candidate.name);
+      expect(initial.tilesetInstance).toEqual(expect.any(String));
+      const session = await edit(candidate.name, "session");
+      expect(session.tilesetInstance).toBe(initial.tilesetInstance);
+      stage(candidate);
+      const staged = await stagedPayload(candidate.name);
+      expect(staged.tilesetInstance).toBe(initial.tilesetInstance);
+      expect(staged.tilesetVersion).toBeGreaterThan(initial.tilesetVersion);
+      const map = await mapGet(candidate.name);
+      expect(map.tilesetInstance).toBe(initial.tilesetInstance);
+      expect(map.tilesetVersion).toBe(staged.tilesetVersion);
+      expect((await edit(candidate.name, "session")).tilesetInstance).toBe(initial.tilesetInstance);
+
+      const freshHandler = family === "gba" ? createProjectHandler(root) : createGbcProjectHandler(root);
+      const freshServer = createServer(freshHandler.handle);
+      try {
+        await new Promise<void>(done => freshServer.listen(0, "127.0.0.1", done));
+        const freshBase = `http://127.0.0.1:${(freshServer.address() as AddressInfo).port}`;
+        const freshMapReply = await fetch(`${freshBase}/api/map/${encodeURIComponent(candidate.name)}`);
+        expect(freshMapReply.status).toBe(200);
+        const freshMap = await freshMapReply.json() as { tilesetInstance: string; tilesetVersion: number };
+        expect(freshMap.tilesetInstance).toEqual(expect.any(String));
+        expect(freshMap.tilesetInstance).not.toBe(initial.tilesetInstance);
+        expect(freshMap.tilesetVersion).toBe(0);
+        const freshSessionReply = await fetch(`${freshBase}/api/edit/${encodeURIComponent(candidate.name)}/session`);
+        expect(freshSessionReply.status).toBe(200);
+        expect(await freshSessionReply.json()).toMatchObject({ tilesetInstance: freshMap.tilesetInstance, tilesetVersion: 0 });
+      } finally {
+        await new Promise<void>(done => freshServer.close(() => done()));
+      }
+    }, 120_000);
+
     it("1: unions two owners of different files and restores both renders on discard", async () => {
       const [a, b] = await findEdits(2) as [VisibleEdit, VisibleEdit];
       expect(a.path).not.toBe(b.path);
@@ -518,7 +552,7 @@ describe("6: syncTilesetOverlay identity union", () => {
     const calls: FileOverlay[] = [];
     const project = { setTilesetOverlay: vi.fn((files: FileOverlay) => calls.push(files)) };
     const clearCaches = vi.fn();
-    const state: overlay.OverlayState = { version: 0, applied: new Map(), clearCaches };
+    const state: overlay.OverlayState = { instance: "test-overlay", version: 0, applied: new Map(), clearCaches };
     const [edit] = appendPlan("tilesets/example.bin", Buffer.alloc(16)).edits as [TilesetFileEdit];
     const first = overlay.syncTilesetOverlay(entries([edit]), project, state);
     expect(first).toBe(1);
@@ -557,7 +591,7 @@ describe("6: syncTilesetOverlay identity union", () => {
       const calls: FileOverlay[] = [];
       const project = { setTilesetOverlay: vi.fn((files: FileOverlay) => calls.push(files)) };
       const clearCaches = vi.fn();
-      const state: overlay.OverlayState = { version: 0, applied: new Map(), clearCaches };
+      const state: overlay.OverlayState = { instance: "test-overlay", version: 0, applied: new Map(), clearCaches };
       expect(overlay.syncTilesetOverlay(ordered, project, state)).toBe(1);
       expect(calls).toHaveLength(1);
       expect(calls[0]!.get(aEdit.path)).toBe(aEdit.after);

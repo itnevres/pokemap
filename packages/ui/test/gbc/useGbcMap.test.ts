@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { currentTilesetVersion, resetTilesetVersion } from "../../src/shared/tilesetVersion.js";
+import { currentTilesetVersion, noteTilesetStamp, resetTilesetVersion } from "../../src/shared/tilesetVersion.js";
 import { useGbcMap } from "../../src/gbc/hooks/useGbcMap.js";
 
 beforeEach(() => { resetTilesetVersion(); });
@@ -47,6 +47,33 @@ describe("useGbcMap", () => {
     const second = renderHook(() => useGbcMap("NewBarkTown"));
     await waitFor(() => expect(second.result.current.data).not.toBeNull());
     await waitFor(() => expect(currentTilesetVersion()).toBe(1));
+  });
+
+  it("moves to a fresh version when the hub restarted, on load and on reload", async () => {
+    noteTilesetStamp({ tilesetVersion: 9, tilesetInstance: "old" });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ ...VALID_BODY, tilesetVersion: 1, tilesetInstance: "new" }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ ...VALID_BODY, tilesetVersion: 2, tilesetInstance: "new" }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = renderHook(() => useGbcMap("NewBarkTown"));
+    await waitFor(() => expect(result.current.data).not.toBeNull());
+    expect(currentTilesetVersion()).toBe(10);
+    await act(async () => { await result.current.reload(); });
+    expect(currentTilesetVersion()).toBe(11);
+  });
+
+  it("reload() keeps the blocks and events identities when only the counts changed", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => structuredClone({ ...VALID_BODY, tilesetVersion: 0, paddingWidth: 3 }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => structuredClone({ ...VALID_BODY, tilesetVersion: 0, paddingWidth: 4 }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = renderHook(() => useGbcMap("NewBarkTown"));
+    await waitFor(() => expect(result.current.data).not.toBeNull());
+    const before = result.current.data!;
+    await act(async () => { await result.current.reload(); });
+    expect(result.current.data!.paddingWidth).toBe(4);
+    expect(result.current.data!.blocks).toBe(before.blocks);
+    expect(result.current.data!.events).toBe(before.events);
   });
 
   it("name === null fetches nothing and idles", () => {

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { AddEventForm, EventKind as CreatedEventKind } from "@pokemap/core/src/addEvent/types.js";
-import { useEditSessionCore, type BlockCheckReply, type BlockEditSession, type EventCreateSession } from "../../shared/useEditSessionCore.js";
+import { useEditSessionCore, type BlockCheckReply, type BlockEditSession, type EditTicket, type EventCreateSession } from "../../shared/useEditSessionCore.js";
+import { useTilesetVersion } from "../../shared/tilesetVersion.js";
 import type { Block, GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
 import type { GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
 import type { GbcEventKind, GbcWarpRenumberWarning } from "@pokemap/core/src/gbc/edit/events.js";
@@ -122,16 +123,33 @@ export function useGbcEditSession(mapName: string | null, initialBlocks?: Block[
   const { state, isDirty, canUndo, canRedo, post: corePost, load, apply, barrier, discard, markClean } = useEditSessionCore("/api/edit", mapName, seed, { readServerError: true });
   const { blocks, events, metatileCount } = state;
 
+  // Shared hydration tail for both reads below (mount/seed change and a tileset-version change).
+  const hydrate = useCallback((reply: { data: unknown; ticket: EditTicket } | null) => {
+    if (!reply || !isSessionBody(reply.data)) return;
+    const d = reply.data;
+    if (d.events === null) return;
+    const nextEvents = d.events;
+    apply({ state: (prev) => stateFrom(d, nextEvents, prev), isDirty: d.isDirty, canUndo: d.canUndo, canRedo: d.canRedo }, reply.ticket);
+  }, [apply]);
+
   useEffect(() => {
     if (mapName === null) return;
-    void load<unknown>().then((reply) => {
-      if (!reply || !isSessionBody(reply.data)) return;
-      const d = reply.data;
-      if (d.events === null) return;
-      const nextEvents = d.events;
-      apply({ state: (prev) => stateFrom(d, nextEvents, prev), isDirty: d.isDirty, canUndo: d.canUndo, canRedo: d.canRedo }, reply.ticket);
-    }).catch(() => {});
-  }, [load, apply, mapName, seed]);
+    void load<unknown>().then(hydrate).catch(() => {});
+  }, [load, hydrate, mapName, seed]);
+
+  // Q7 (b): another map's append or undo on a SHARED tileset moves the hub's tileset version, and this
+  // map's effective metatile count changes with it even though nothing was edited here. The hub announces
+  // that only through `tilesetVersion`, so re-read the session when it moves -- the reply carries the
+  // fresh count through the same hydration path above. The first value this hook sees is its mount value,
+  // not a change, so it triggers no read; errors are swallowed (passive refresh, not a player action).
+  const tilesetVersion = useTilesetVersion();
+  const seenTilesetVersion = useRef(tilesetVersion);
+  useEffect(() => {
+    if (seenTilesetVersion.current === tilesetVersion) return;
+    seenTilesetVersion.current = tilesetVersion;
+    if (mapName === null) return;
+    void load<unknown>().then(hydrate).catch(() => {});
+  }, [tilesetVersion, load, hydrate, mapName]);
 
   const postSession = useCallback(async (path: string, body?: unknown): Promise<{ data: SessionBody; applied: boolean } | null> => {
     const reply = await corePost<unknown>(path, body);
