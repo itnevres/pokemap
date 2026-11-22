@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import type { AddEventForm, EventKind as CreatedEventKind } from "@pokemap/core/src/addEvent/types.js";
 import { useEditSessionCore, type BlockCheckReply, type BlockEditSession, type EventCreateSession } from "../../shared/useEditSessionCore.js";
 import type { Block, GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
@@ -119,8 +119,19 @@ const stateFrom = (d: SessionBody, events: GbcMapEvents, prev: GbcSessionState):
  */
 export function useGbcEditSession(mapName: string | null, initialBlocks?: Block[], initialEvents?: GbcMapEvents): UseGbcEditSessionResult & EventCreateSession & BlockEditSession {
   const seed = useMemo<GbcSessionState>(() => ({ blocks: initialBlocks ?? [], events: initialEvents ?? NO_EVENTS }), [initialBlocks, initialEvents]);
-  const { state, isDirty, canUndo, canRedo, post: corePost, apply, barrier, discard, markClean } = useEditSessionCore("/api/edit", mapName, seed, { readServerError: true });
+  const { state, isDirty, canUndo, canRedo, post: corePost, load, apply, barrier, discard, markClean } = useEditSessionCore("/api/edit", mapName, seed, { readServerError: true });
   const { blocks, events, metatileCount } = state;
+
+  useEffect(() => {
+    if (mapName === null) return;
+    void load<unknown>().then((reply) => {
+      if (!reply || !isSessionBody(reply.data)) return;
+      const d = reply.data;
+      if (d.events === null) return;
+      const nextEvents = d.events;
+      apply({ state: (prev) => stateFrom(d, nextEvents, prev), isDirty: d.isDirty, canUndo: d.canUndo, canRedo: d.canRedo }, reply.ticket);
+    }).catch(() => {});
+  }, [load, apply, mapName, seed]);
 
   const postSession = useCallback(async (path: string, body?: unknown): Promise<{ data: SessionBody; applied: boolean } | null> => {
     const reply = await corePost<unknown>(path, body);

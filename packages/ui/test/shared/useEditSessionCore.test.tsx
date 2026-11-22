@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
-import { useEditSessionCore } from "../../src/shared/useEditSessionCore.js";
+import { currentTilesetVersion, resetTilesetVersion } from "../../src/shared/tilesetVersion.js";
+import { hasPendingSessionMutations, useEditSessionCore } from "../../src/shared/useEditSessionCore.js";
 
 afterEach(() => vi.unstubAllGlobals());
 const seed = { n: 1 };
@@ -145,4 +146,85 @@ describe("useEditSessionCore", () => {
     expect(result.current.state).toEqual({ n: 6 });
     expect(result.current).toMatchObject({ isDirty: false, canUndo: false, canRedo: false });
   });
+});
+
+
+describe("passive session load", () => {
+  it("does not fetch for a null map", async () => {
+    const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
+    const { result } = mount(null);
+    await expect(result.current.load()).resolves.toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("uses a single-argument GET and notes the tileset version", async () => {
+    resetTilesetVersion();
+    const fetchMock = vi.fn().mockResolvedValue(response({ tilesetVersion: 17 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = mount();
+    const loaded = await result.current.load<{ tilesetVersion: number }>();
+    expect(fetchMock.mock.calls).toEqual([["/api/edit/A/session"]]);
+    expect(loaded?.data).toEqual({ tilesetVersion: 17 });
+    expect(currentTilesetVersion()).toBe(17);
+    resetTilesetVersion();
+  });
+
+  it.each(["post", "discard"])("rejects a slow load after %s wins", async (winner) => {
+    const pending = deferred();
+    vi.stubGlobal("fetch", vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValue(response()));
+    const { result } = mount();
+    const loading = result.current.load();
+    if (winner === "post") {
+      const newer = (await result.current.post("/paint/apply"))!;
+      act(() => { expect(result.current.apply({ state: () => ({ n: 3 }), ...flags }, newer.ticket)).toBe(true); });
+    } else {
+      await act(() => result.current.discard());
+    }
+    pending.resolve(response());
+    const loaded = (await loading)!;
+    act(() => { expect(result.current.apply({ state: () => ({ n: 9 }), ...flags }, loaded.ticket)).toBe(false); });
+    expect(result.current.state).toEqual(winner === "post" ? { n: 3 } : seed);
+  });
+
+  it.each(["network", "status", "json"])("silently ignores %s failure", async (failure) => {
+    const fetchMock = failure === "network" ? vi.fn().mockRejectedValue(new Error("offline"))
+      : vi.fn().mockResolvedValue(failure === "status" ? response({}, 500)
+        : { ok: true, json: () => { throw new Error("bad JSON"); } });
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = mount();
+    await expect(result.current.load()).resolves.toBeNull();
+  });
+
+  it("drops a retired visit's load", async () => {
+    const pending = deferred();
+    vi.stubGlobal("fetch", vi.fn(() => pending.promise));
+    const { result, rerender } = mount();
+    const loading = result.current.load();
+    rerender({ map: "B", seed });
+    pending.resolve(response());
+    await expect(loading).resolves.toBeNull();
+  });
+  it("never registers a passive load with the mutation barrier", async () => {
+    const pending = deferred();
+    vi.stubGlobal("fetch", vi.fn(() => pending.promise));
+    const { result } = mount();
+    const loading = result.current.load();
+    expect(hasPendingSessionMutations("A")).toBe(false);
+    await result.current.barrier();
+    pending.resolve(response());
+    await loading;
+  });
+
+  it("does not announce a version from a retired project generation", async () => {
+    resetTilesetVersion();
+    const pending = deferred();
+    vi.stubGlobal("fetch", vi.fn(() => pending.promise));
+    const { result } = mount();
+    const loading = result.current.load();
+    resetTilesetVersion();
+    pending.resolve(response({ tilesetVersion: 99 }));
+    await loading;
+    expect(currentTilesetVersion()).toBe(0);
+  });
+
 });

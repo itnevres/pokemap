@@ -49,6 +49,8 @@ function mockFetch(maps: Record<string, GbcMapPayload>) {
     if (/\/discard$/.test(url)) return ok({ blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false });
     if (/\/plan$/.test(url)) return ok({ changes: [{ path: "maps/OlivineCity.blk", kind: "binary", summary: "1 block changed" }], refusals: [] });
     if (/\/commit$/.test(url)) return ok({ changes: [], refusals: [] });
+    // Q1: the hydration read; no session is open on the hub until the first edit.
+    if (/\/session$/.test(url)) return ok({ blocks: [], border: [], map: null, events: null, isDirty: false, canUndo: false, canRedo: false });
     if (/\/api\/edit\//.test(url)) return ok(DIRTY);
     return Promise.reject(new Error(`unexpected fetch: ${url}`));
   });

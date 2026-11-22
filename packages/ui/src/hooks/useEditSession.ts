@@ -1,6 +1,6 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import type { AddEventForm, EventKind as CreatedEventKind } from "@pokemap/core/src/addEvent/types.js";
-import { useEditSessionCore, type BlockCheckReply, type BlockEditSession, type EventCreateSession } from "../shared/useEditSessionCore.js";
+import { useEditSessionCore, type EditTicket, type EditUpdate, type BlockCheckReply, type BlockEditSession, type EventCreateSession } from "../shared/useEditSessionCore.js";
 import type { Block } from "@pokemap/core/src/model/types.js";
 import type { Stamp } from "@pokemap/core/src/edit/paint.js";
 import type { MapData } from "@pokemap/core/src/load/maps.js";
@@ -188,6 +188,24 @@ interface EventOpResponse {
   warpRenumberWarnings?: WarpRenumberWarning[];
 }
 
+/** Shared merge for mutation replies and passive session hydration. */
+function applySessionResponse(
+  apply: (update: EditUpdate<GbaSessionState>, ticket?: EditTicket) => boolean,
+  d: SessionResponse,
+  ticket: EditTicket,
+): boolean {
+  return apply({
+    // Omitted counts preserve the last known palette size.
+    state: (prev) => ({
+      ...prev,
+      blocks: d.blocks, border: d.border, map: d.map === undefined ? prev.map : d.map ?? undefined,
+      ...(d.primaryCount === undefined ? {} : { primaryCount: d.primaryCount }),
+      ...(d.secondaryCount === undefined ? {} : { secondaryCount: d.secondaryCount }),
+    }),
+    isDirty: d.isDirty, canUndo: d.canUndo ?? false, canRedo: d.canRedo ?? false,
+  }, ticket);
+}
+
 /**
  * The client-side face of Task 8/9's `/api/edit/:map/*` routes -- mirrors
  * every other data hook's own "fetch, hold in state, expose setters that
@@ -226,7 +244,7 @@ interface EventOpResponse {
  */
 export function useEditSession(mapName: string | null, initialBlocks?: Block[], initialMap?: MapData): UseEditSessionResult & EventCreateSession & BlockEditSession {
   const seed = useMemo<GbaSessionState>(() => ({ blocks: initialBlocks ?? [], border: [] as Block[], map: initialMap }), [initialBlocks, initialMap]);
-  const { state, isDirty, canUndo, canRedo, post, apply, barrier, discard, markClean } = useEditSessionCore("/api/edit", mapName, seed);
+  const { state, isDirty, canUndo, canRedo, post, load, apply, barrier, discard, markClean } = useEditSessionCore("/api/edit", mapName, seed);
   const { blocks, border, map, primaryCount, secondaryCount } = state;
 
   // The core derives the live view from map/seed identity and guards every reply with its issue ticket.
@@ -234,21 +252,21 @@ export function useEditSession(mapName: string | null, initialBlocks?: Block[], 
     async (path: string, body: unknown = {}) => {
       const reply = await post<SessionResponse>(path, body);
       if (!reply) return false;
-      const d = reply.data;
-      return apply({
-        // A reply without counts (an older server, or a route that does not route through
-        // sendSession) keeps whatever the last reply reported rather than blanking the palette.
-        state: (prev) => ({
-          ...prev,
-          blocks: d.blocks, border: d.border, map: d.map === undefined ? prev.map : d.map ?? undefined,
-          ...(d.primaryCount === undefined ? {} : { primaryCount: d.primaryCount }),
-          ...(d.secondaryCount === undefined ? {} : { secondaryCount: d.secondaryCount }),
-        }),
-        isDirty: d.isDirty, canUndo: d.canUndo ?? false, canRedo: d.canRedo ?? false,
-      }, reply.ticket);
+      return applySessionResponse(apply, reply.data, reply.ticket);
     },
     [post, apply],
   );
+
+  useEffect(() => {
+    if (mapName === null) return;
+    void load<SessionResponse>().then((reply) => {
+      if (!reply) return;
+      const d = reply.data;
+      if (!d || typeof d !== "object" || !Array.isArray(d.blocks) || !Array.isArray(d.border)
+        || typeof d.isDirty !== "boolean" || !d.map || typeof d.map !== "object" || Array.isArray(d.map)) return;
+      applySessionResponse(apply, d, reply.ticket);
+    }).catch(() => {});
+  }, [load, apply, mapName, seed]);
 
   const call = useCallback((path: string, body: unknown = {}) => callSession(path, body).then(() => {}), [callSession]);
   const blockCheck = useCallback((request: unknown, revision: string) =>
