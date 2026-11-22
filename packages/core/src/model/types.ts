@@ -13,6 +13,8 @@ export interface Split {
 /** A decomp-sourced path that leaves the project (D25). The owning layout or tileset cannot be rendered, edited or saved until it is fixed. */
 export interface BrokenPath {
   file: string;
+  /** 1-based line of the directive in `file`, when the loader knows it. */
+  line?: number;
   key: string;
   path: string;
   message: string;

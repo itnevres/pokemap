@@ -29,6 +29,7 @@ export interface Metatile {
  */
 export type { DataDefect } from "../../defects/types.js";
 import type { DataDefect } from "../../defects/types.js";
+import type { BrokenPath } from "../../model/types.js";
 
 /**
  * One `connection` line from `data/maps/attributes.asm`. The axis is the
@@ -79,6 +80,10 @@ export interface GbcMap {
   border: number;
   connectionFlags: string;
   connections: Connection[];
+  /** D25: a `data/maps/blocks.asm` INCBIN that leaves the project. Only this
+   *  map is affected -- the project still opens and every other map loads.
+   *  Omitted when the map's blockdata path stays inside the project. */
+  brokenPaths?: BrokenPath[];
 }
 
 /**

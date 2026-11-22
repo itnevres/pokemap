@@ -48,6 +48,7 @@ import { norm } from "../../config/paths.js";
 import { matchCall, splitArgs, stripComment, stripMacroDefs, parseConstDefs, findDefEquLine } from "./asm.js";
 import { parseNum } from "./map.js";
 import { parseIncludes } from "./incbin.js";
+import { assertInsideRoot } from "./pathGuard.js";
 import type { RGB } from "../../model/types.js";
 
 /** `TILESET_*` constant -> the label its palette is INCLUDEd under in
@@ -429,13 +430,29 @@ export function resolveTimeOfDayPal(levels: BrightnessLevels, paletteIndex: numb
   return col;
 }
 
-/** `text`'s stacked `INCLUDE`d labels (`gfx/tilesets.asm`-style), as a plain label -> path map. */
-function includeLabelMap(text: string): Map<string, string> {
-  const out = new Map<string, string>();
+/** `text`'s stacked `INCLUDE`d labels (`gfx/tilesets.asm`-style), as a plain label -> path+line map. */
+function includeLabelMap(text: string): Map<string, LabeledPath> {
+  const out = new Map<string, LabeledPath>();
   for (const entry of parseIncludes(text)) {
-    for (const label of entry.labels) out.set(label, entry.path);
+    for (const label of entry.labels) out.set(label, { path: entry.path, line: entry.line });
   }
   return out;
+}
+
+interface LabeledPath {
+  path: string;
+  /** 1-based line of the INCLUDE that named it. */
+  line: number;
+}
+
+/** 1-based line of the first `INCLUDE "<path>"` line in `text`, if any --
+ *  for the one path this module resolves literally (RoofPals, whose label is
+ *  separated from its INCLUDE by a `table_width` line the stacked-label
+ *  scanner doesn't tolerate), so its D25 guard still reports a real line. */
+function includeLineFor(text: string, path: string): number | undefined {
+  const lines = text.split(/\r\n|\n/);
+  const i = lines.findIndex((l) => l.match(/^\s*INCLUDE\s+"([^"]+)"/)?.[1] === path);
+  return i < 0 ? undefined : i + 1;
 }
 
 /** `roofs.pal`: 27 groups (0-26, index 0 unused), each 2 `RGB` lines --
