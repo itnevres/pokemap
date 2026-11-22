@@ -536,8 +536,14 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
       });
       return true;
     },
-    /** Current blocks of an open session for `name`, else undefined (the render route's override). */
-    openBlocks: (name: string): Block[] | undefined => (store.has(name) ? store.open(name).session.blocks : undefined),
+    /** Current blocks of a DIRTY open session for `name`, else undefined (the render route's override).
+     *  A clean session's blocks equal disk, so it keeps using the render cache. */
+    openBlocks: (name: string): Block[] | undefined => {
+      if (!store.has(name)) return undefined;
+      const entry = store.open(name);
+      // An open paint stroke counts: its command is pushed only at /paint/end.
+      return entry.session.isDirty || entry.strokeStartBlocks !== null ? entry.session.blocks : undefined;
+    },
     syncOverlay,
     overlayStamp,
     invalidateOptions: addEvents.invalidate,

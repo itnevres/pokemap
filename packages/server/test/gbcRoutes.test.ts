@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer as createHttpServer, request as httpRequest, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
 import { createServer, type PokemapServer } from "../src/index.js";
 import { createGbcProjectHandler } from "../src/gbcRoutes.js";
 import type { GbcWorldPayload } from "@pokemap/core/src/gbc/wire.js";
@@ -501,6 +501,46 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       expect(got.equals(wantDay)).toBe(true);
       expect(got.equals(wantNite)).toBe(false);
     });
+
+    it("Plan H A2: an open but clean session (GET /plan, or undone back to clean) keeps the render cache; a dirty one bypasses it", async () => {
+      // Observability: a cache hit never calls proj.map (cachedRender resolves it only on a miss, via
+      // renderGbcMap); the live-render bypass calls it on every request. Baseline: a map with no session.
+      const proj = s.project as { map: (name: string) => unknown };
+      const spy = vi.spyOn(proj, "map");
+      const calls = async (map: string) => {
+        spy.mockClear();
+        const r = await get(`/api/render/${map}.png?border=0&time=day`);
+        expect(r.status).toBe(200);
+        return { n: spy.mock.calls.length, png: Buffer.from(await r.arrayBuffer()) };
+      };
+      try {
+        await calls("CherrygroveCity"); // warm
+        const hit = (await calls("CherrygroveCity")).n; // no session: the cache-hit baseline
+
+        const map = "Route29";
+        const disk = (await calls(map)).png; // miss, fills the cache
+        expect((await get(`/api/edit/${map}/plan`)).status).toBe(200);
+        const clean = await calls(map);
+        expect(clean.n, "open but clean session must keep hitting the cache").toBe(hit);
+        expect(clean.png.equals(disk)).toBe(true);
+
+        await post(`/api/edit/${map}/paint/begin`, {});
+        await post(`/api/edit/${map}/paint/apply`, {
+          tool: "pencil", targets: [{ x: 0, y: 0 }], stamp: { width: 1, height: 1, cells: [{ metatileId: 3 }] }, origin: { x: 0, y: 0 },
+        });
+        await post(`/api/edit/${map}/paint/end`, {});
+        const dirty = await calls(map);
+        expect(dirty.n, "dirty session must bypass the cache").toBeGreaterThan(hit);
+        expect(dirty.png.equals(disk)).toBe(false);
+
+        await post(`/api/edit/${map}/undo`, {});
+        const undone = await calls(map);
+        expect(undone.n, "undone back to clean must return to the cache").toBe(hit);
+        expect(undone.png.equals(disk)).toBe(true);
+      } finally {
+        spy.mockRestore();
+      }
+    }, 120_000);
 
     it("cache-key proof: day, nite, day again -- the second day equals the first and differs from nite", async () => {
       const day1 = Buffer.from(await (await get("/api/render/NewBarkTown.png?time=day")).arrayBuffer());
