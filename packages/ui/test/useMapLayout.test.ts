@@ -274,8 +274,8 @@ describe("useMapLayout", () => {
 
   it("reload() keeps the blocks and map identities when only the counts changed", async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ ...BODY, primaryCount: 4 }) })
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ ...BODY, primaryCount: 5 }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => structuredClone({ ...BODY, primaryCount: 4 }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => structuredClone({ ...BODY, primaryCount: 5 }) })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ ...BODY, primaryCount: 5, blocks: [{ metatileId: 9, collision: 0, elevation: 3, behavior: 0 }] }) });
     vi.stubGlobal("fetch", fetchMock);
     const { result } = renderHook(() => useMapLayout("Foo"));

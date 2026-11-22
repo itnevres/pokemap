@@ -64,8 +64,8 @@ describe("useGbcMap", () => {
 
   it("reload() keeps the blocks and events identities when only the counts changed", async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ ...VALID_BODY, tilesetVersion: 0, paddingWidth: 3 }) })
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ ...VALID_BODY, tilesetVersion: 0, paddingWidth: 4 }) });
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => structuredClone({ ...VALID_BODY, tilesetVersion: 0, paddingWidth: 3 }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => structuredClone({ ...VALID_BODY, tilesetVersion: 0, paddingWidth: 4 }) });
     vi.stubGlobal("fetch", fetchMock);
     const { result } = renderHook(() => useGbcMap("NewBarkTown"));
     await waitFor(() => expect(result.current.data).not.toBeNull());
