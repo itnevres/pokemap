@@ -4,6 +4,13 @@ import { useEditSession } from "../src/hooks/useEditSession.js";
 import type { Block } from "@pokemap/core/src/model/types.js";
 import type { MapData } from "@pokemap/core/src/load/maps.js";
 
+// Keep mutation fixtures and call-order assertions scoped to their routes; hydration has no open session.
+function stubMutationFetch(fetcher: (url: string, init?: RequestInit) => unknown) {
+  vi.stubGlobal("fetch", (url: string, ...args: [RequestInit?]) => url.endsWith("/session")
+    ? Promise.resolve({ ok: true, status: 200, json: async () => ({ blocks: [], border: [], map: null, events: null, isDirty: false, canUndo: false, canRedo: false }) } as Response)
+    : fetcher(url, ...args));
+}
+
 afterEach(() => vi.unstubAllGlobals());
 type Session = ReturnType<typeof useEditSession>;
 function Host({ mapName, blocks, map, onResult }: { mapName: string; blocks: Block[]; map: MapData; onResult: (s: Session) => void }) {
@@ -24,7 +31,7 @@ function deferred() {
 describe("GBA shared edit-session witnesses", () => {
   it("discard throws on a failed response and keeps the dirtied session", async () => {
     const dirtied = painted(9);
-    vi.stubGlobal("fetch", vi.fn()
+    stubMutationFetch(vi.fn()
       .mockResolvedValueOnce(response(dirtied))
       .mockResolvedValueOnce({ ok: false, status: 500 }));
     let last!: Session;
@@ -45,7 +52,7 @@ describe("GBA shared edit-session witnesses", () => {
 
   it("keeps only the newer out-of-order paint reply", async () => {
     const a = deferred(); const b = deferred();
-    vi.stubGlobal("fetch", vi.fn().mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise));
+    stubMutationFetch(vi.fn().mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise));
     let last!: Session;
     render(<Host mapName="A" blocks={seed} map={mapA} onResult={(s) => { last = s; }} />);
     const first = last.applyPaint({ tool: "shift", dx: 1, dy: 0 });
@@ -56,7 +63,7 @@ describe("GBA shared edit-session witnesses", () => {
   });
 
   it("drops a moveEvent reply after switching maps", async () => {
-    const pending = deferred(); vi.stubGlobal("fetch", vi.fn(() => pending.promise));
+    const pending = deferred(); stubMutationFetch(vi.fn(() => pending.promise));
     let last!: Session; const onResult = (s: Session) => { last = s; };
     const { rerender } = render(<Host mapName="A" blocks={seed} map={mapA} onResult={onResult} />);
     const reply = last.moveEvent("object", 0, 2, 3);
@@ -67,7 +74,7 @@ describe("GBA shared edit-session witnesses", () => {
   });
 
   it("drops a paint reply issued before a same-map seed refetch", async () => {
-    const pending = deferred(); vi.stubGlobal("fetch", vi.fn(() => pending.promise));
+    const pending = deferred(); stubMutationFetch(vi.fn(() => pending.promise));
     let last!: Session; const onResult = (s: Session) => { last = s; };
     const { rerender } = render(<Host mapName="A" blocks={seed} map={mapA} onResult={onResult} />);
     const reply = last.applyPaint({ tool: "shift", dx: 1, dy: 0 });
@@ -80,7 +87,7 @@ describe("GBA shared edit-session witnesses", () => {
 
   it("does not resurrect an in-flight edit after discard", async () => {
     const pending = deferred();
-    vi.stubGlobal("fetch", vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValue(response({ blocks: [], map: null })));
+    stubMutationFetch(vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValue(response({ blocks: [], map: null })));
     let last!: Session;
     render(<Host mapName="A" blocks={seed} map={mapA} onResult={(s) => { last = s; }} />);
     const reply = last.applyPaint({ tool: "shift", dx: 1, dy: 0 });
@@ -91,7 +98,7 @@ describe("GBA shared edit-session witnesses", () => {
   });
 
   it("shows the new seed on the very first render after a map switch", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(painted(9))));
+    stubMutationFetch(vi.fn().mockResolvedValue(response(painted(9))));
     let last!: Session; const renders: Session[] = [];
     const onResult = (s: Session) => { last = s; renders.push(s); };
     const { rerender } = render(<Host mapName="A" blocks={seed} map={mapA} onResult={onResult} />);

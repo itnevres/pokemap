@@ -1018,6 +1018,14 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
         return sendSession(send, 200, entry);
       }
 
+      const sessionMatch = /^\/api\/edit\/(.+)\/session$/.exec(url.pathname);
+      if (sessionMatch && req.method === "GET") {
+        const name = decodeURIComponent(sessionMatch[1]!);
+        if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
+        if (!editSessions.has(name)) return send(200, { tilesetVersion: syncOverlay(), blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false });
+        return sendSession(send, 200, editEntryFor(name));
+      }
+
       const undoMatch = /^\/api\/edit\/(.+)\/undo$/.exec(url.pathname);
       if (undoMatch && req.method === "POST") {
         const name = decodeURIComponent(undoMatch[1]!);

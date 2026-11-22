@@ -1,10 +1,91 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createServer, type PokemapServer } from "../src/index.js";
 import { SUBJECT_ROOT, hasProject } from "@pokemap/core/test/helpers/corpus.js";
+import { createServer as createHttpServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import { createProjectHandler, type ProjectHandler } from "../src/index.js";
+import { copyGbaTilesetProject, removeGbaTemp } from "@pokemap/core/test/helpers/gbaTilesetProject.js";
 
 let s: PokemapServer;
 const post = async (path: string, body: unknown) =>
   fetch(`http://127.0.0.1:${s.port}${path}`, { method: "POST", body: JSON.stringify(body) });
+
+describe.skipIf(!hasProject(SUBJECT_ROOT))("Q1: GBA session snapshots (hermetic temp copy)", () => {
+  let root: string;
+  let handler: ProjectHandler;
+  let server: Server;
+  let base: string;
+  const nothing = {
+    tilesetVersion: expect.any(Number), blocks: [], border: [], map: null,
+    isDirty: false, canUndo: false, canRedo: false,
+  };
+  const get = (name: string) => fetch(`${base}/api/edit/${name}/session`);
+  const post = (name: string, action: string, body: unknown = {}) =>
+    fetch(`${base}/api/edit/${name}/${action}`, { method: "POST", body: JSON.stringify(body) });
+  const paint = async (name: string) => {
+    const begun = await post(name, "paint/begin");
+    expect(begun.status).toBe(200);
+    const before = await begun.json() as { blocks: { metatileId: number }[] };
+    const metatileId = before.blocks[0]!.metatileId === 42 ? 43 : 42;
+    expect((await post(name, "paint/apply", {
+      tool: "pencil", targets: [{ x: 0, y: 0 }],
+      stamp: { width: 1, height: 1, cells: [{ metatileId }] }, origin: { x: 0, y: 0 },
+    })).status).toBe(200);
+    const ended = await post(name, "paint/end");
+    expect(ended.status).toBe(200);
+    return { metatileId, body: await ended.json() };
+  };
+
+  beforeAll(async () => {
+    root = copyGbaTilesetProject();
+    handler = createProjectHandler(root);
+    server = createHttpServer(handler.handle);
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+  afterAll(async () => {
+    if (server) await new Promise<void>(resolve => server.close(() => resolve()));
+    handler?.dispose();
+    if (root) removeGbaTemp(root);
+  });
+
+  it("Q1: never-opened map returns nothing-open without opening a session", async () => {
+    const response = await get("VioletCity");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(nothing);
+    expect(handler.dirtyMaps()).toEqual([]);
+    // warmUp skips open sessions, including clean ones. A fresh cache render proves absence.
+    expect(await handler.warmUp(["VioletCity"])).toMatchObject({ rendered: 1, skipped: 0, failed: 0 });
+    expect(await (await post("VioletCity", "undo")).json()).toEqual(nothing);
+  }, 300_000);
+
+  it("Q1: painted map returns staged blocks and undo state without changing them", async () => {
+    const painted = await paint("Route101");
+    const response = await get("Route101");
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toEqual(painted.body);
+    expect(body).toMatchObject({ isDirty: true, canUndo: true, canRedo: false });
+    expect(body).toHaveProperty("blocks.0.metatileId", painted.metatileId);
+    expect(await (await get("Route101")).json()).toEqual(body);
+    await post("Route101", "discard");
+  }, 300_000);
+
+  it("Q1: discarded map returns nothing-open again", async () => {
+    await paint("NewBarkTown_Lab");
+    expect((await post("NewBarkTown_Lab", "discard")).status).toBe(200);
+    const response = await get("NewBarkTown_Lab");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(nothing);
+    expect(await (await post("NewBarkTown_Lab", "undo")).json()).toEqual(nothing);
+  }, 300_000);
+
+  it("Q1: unknown map returns 404", async () => {
+    const response = await get("NoSuchMap");
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "no map NoSuchMap" });
+  });
+});
 
 describe.skipIf(!hasProject(SUBJECT_ROOT))("paint routes", () => {
   beforeAll(async () => { s = await createServer({ projectPath: SUBJECT_ROOT, port: 0 }); });

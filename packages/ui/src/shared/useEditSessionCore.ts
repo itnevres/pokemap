@@ -46,6 +46,7 @@ export type EditUpdate<State> = { state?: (prev: State) => State } & Partial<Edi
 export interface EditTicket { readonly map: string; readonly seed: unknown; readonly seq: number; readonly isCurrent?: () => boolean }
 export interface EditSessionCore<State> extends EditFlags {
   state: State;
+  load<R>(): Promise<{ data: R; ticket: EditTicket } | null>;
   post<R>(path: string, body?: unknown): Promise<{ data: R; ticket: EditTicket } | null>;
   apply(update: EditUpdate<State>, ticket?: EditTicket): boolean;
   barrier(): Promise<void>;
@@ -124,6 +125,24 @@ export function useEditSessionCore<State>(base: string, mapName: string | null, 
     return pending;
   }, [base, mapName, seed, readServerError, barrier]);
 
+  const load = useCallback(async <R,>(): Promise<{ data: R; ticket: EditTicket } | null> => {
+    if (mapName === null) return null;
+    const owner = visitRef.current;
+    if (!owner.isCurrent()) return null;
+    const ticket: EditTicket = { map: mapName, seed, seq: ++seq.current.issued, isCurrent: owner.isCurrent };
+    try {
+      const generation = tilesetGeneration();
+      const r = await fetch(`${base}/${encodeURIComponent(mapName)}/session`);
+      if (!r.ok) return null;
+      const data: unknown = await r.json();
+      noteTilesetVersion((data as { tilesetVersion?: unknown } | null)?.tilesetVersion, generation);
+      if (!owner.isCurrent()) return null;
+      return { data: data as R, ticket };
+    } catch {
+      return null;
+    }
+  }, [base, mapName, seed]);
+
   const apply = useCallback((update: EditUpdate<State>, ticket?: EditTicket): boolean => {
     const current = latest.current;
     if (ticket) {
@@ -164,8 +183,9 @@ export function useEditSessionCore<State>(base: string, mapName: string | null, 
 
   const markClean = useCallback(() => {
     invalidateEventOptions();
+    seq.current.applied = seq.current.issued; // a commit closed the session: a read or reply issued before it cannot re-dirty the view
     setStored((prev) => prev === null ? prev : { ...prev, isDirty: false, canUndo: false, canRedo: false });
   }, []);
 
-  return { state: live ? live.state : seed, isDirty: live?.isDirty ?? false, canUndo: live?.canUndo ?? false, canRedo: live?.canRedo ?? false, post, apply, barrier, discard, markClean };
+  return { state: live ? live.state : seed, isDirty: live?.isDirty ?? false, canUndo: live?.canUndo ?? false, canRedo: live?.canRedo ?? false, post, load, apply, barrier, discard, markClean };
 }
