@@ -6,6 +6,7 @@ import type { AtomicEntry } from "../write/atomic.js";
 import type { Refusal } from "../write/guards.js";
 import { BlockEditRefusal, type TilesetFileEdit } from "./types.js";
 import { canonicalTilesetPath } from "./canonicalTilesetPath.js";
+import { insideRoot } from "../config/paths.js";
 import { gbcTilesetsForFile } from "./usage.js";
 
 export function mergeTilesetEdits(
@@ -22,6 +23,9 @@ export function mergeTilesetEdits(
       seen.add(edit.path);
       if (canonicalTilesetPath(edit.path) !== edit.path) {
         throw new BlockEditRefusal("BAD_VALUE", `${edit.path}: not a canonical repo-relative tileset path`);
+      }
+      if (!insideRoot(edit.path)) {
+        throw new BlockEditRefusal("BAD_VALUE", `${edit.path}: path leaves the project`);
       }
       const first = merged.get(edit.path);
       merged.set(edit.path, first ? { path: edit.path, before: first.before, after: edit.after } : edit);
