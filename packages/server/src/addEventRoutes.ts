@@ -296,8 +296,10 @@ export function createGbaAddEventRoutes(project: Project, store: GbaStore, hooks
       candidate.scriptAppends = [...(candidate.scriptAppends ?? []), ...built.scriptAppends];
       candidate.scriptReplaces = built.scriptReplaces; candidate.newNames = [...(candidate.newNames ?? []), ...built.newNames];
       // Re-parse the actual save candidate, rather than trusting the builder's parsed view.
-      let json = editJson(candidate.originalMapJson, candidate.jsonEdits);
+      // Same order as core's applyJsonOps (inserts, then edits, then removes).
+      let json = candidate.originalMapJson;
       for (const op of candidate.insertOps) json = insertArrayElement(json, op.path, op.index, op.value);
+      json = editJson(json, candidate.jsonEdits);
       const removes = new Map<string, number[]>();
       for (const op of candidate.removeOps) {
         const key = JSON.stringify(op.path); removes.set(key, [...(removes.get(key) ?? []), op.index]);

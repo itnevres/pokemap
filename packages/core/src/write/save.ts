@@ -336,17 +336,20 @@ export function commitSave(
   writeFilesAtomically(entries, proj.paths.root, io);
 }
 
-/** jsonEdits (scalar replace) first, then insertOps, then removeOps --
- *  scalar replacement never shifts array indices, so it is always safe to
- *  apply before any structural change; insertOps are applied in the order
- *  given (see EditSession.insertOps's own doc comment on index semantics);
+/** insertOps first, then jsonEdits (scalar replace), then removeOps. insertOps
+ *  are applied in the order given and only ever APPEND (see
+ *  EditSession.insertOps's own doc comment on index semantics), so an insert
+ *  never shifts an existing element's index and a jsonEdit aimed at a
+ *  pre-existing index is unaffected by running after it; a jsonEdit aimed at
+ *  an element added in the same session (add, then move) needs the insert
+ *  applied first or its index is not present yet (Plan H Task B, D30).
  *  removeOps last, highest index first within each distinct array path, so
  *  removing several elements from the same array in one commit does not
  *  invalidate a later removal's own index. */
 function applyJsonOps(session: EditSession): string {
   let text = session.originalMapJson;
-  if (session.jsonEdits.length > 0) text = editJson(text, session.jsonEdits);
   for (const op of session.insertOps) text = insertArrayElement(text, op.path, op.index, op.value);
+  if (session.jsonEdits.length > 0) text = editJson(text, session.jsonEdits);
   const removesByPath = new Map<string, number[]>();
   for (const op of session.removeOps) {
     const key = JSON.stringify(op.path);
