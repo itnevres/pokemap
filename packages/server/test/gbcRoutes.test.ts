@@ -16,7 +16,7 @@ import { wireConflicts } from "@pokemap/core/src/world/conflictAcceptance.js";
 import { placeNearWarps } from "@pokemap/core/src/world/nearWarp.js";
 import { gbcWarpLinks, gbcWarpConnectedMapsFrom } from "@pokemap/core/src/world/nearWarpAdapters.js";
 import type { WarpLink } from "@pokemap/core/src/world/nearWarp.js";
-import type { Sidecar } from "@pokemap/core/src/world/sidecar.js";
+import { readSidecar, type Sidecar } from "@pokemap/core/src/world/sidecar.js";
 import { gbcEncounterSources, gbcWhereSpecies, gbcCoverage, loadGbcSpeciesConstants } from "@pokemap/core/src/gbc/analyse/atlas.js";
 import { loadGbcFrontSprite } from "@pokemap/core/src/gbc/load/sprites.js";
 import { encodePng } from "@pokemap/cli/src/png.js";
@@ -1468,4 +1468,52 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("POST /api/world/dungeons (GBC
     expect(r.status).toBe(400);
     expect(existsSync(`${root}/.pokemap/world.json`)).toBe(false);
   });
+
+  // Plan H G3 pin. Recorded limit (Plan H trap 18): loadGbcMaps reads
+  // constants/map_constants.asm, data/maps/attributes.asm, maps.asm and blocks.asm
+  // once at open; no GBC save writes those four files yet. When Plan 14C or Plan 3
+  // Tasks 2/8 make a save write one of them, this test must also cover reading it
+  // back.
+  it("after a committed warp move, the map, warps and world routes (cached project data) report the SAVED values", async () => {
+    const MAP = "VioletCity", WARP_INDEX = 6, TO = { x: 3, y: 5 };
+    const getJson = async (path: string) => {
+      const r = await fetch(`${base}${path}`);
+      expect(r.status, path).toBe(200);
+      return await r.json() as any;
+    };
+    const postJson = (path: string, body: unknown = {}) => fetch(`${base}${path}`, { method: "POST", body: JSON.stringify(body) });
+    // Prime every cache with the pre-save state.
+    const mapBefore = await getJson(`/api/map/${MAP}`);
+    const warpsBefore = await getJson(`/api/warps/${MAP}`);
+    const worldBefore = await getJson("/api/world");
+    const from = mapBefore.events.warps[WARP_INDEX] as { x: number; y: number };
+    expect([from.x, from.y]).not.toEqual([TO.x, TO.y]);
+    expect(warpsBefore.warps[WARP_INDEX]).toMatchObject({ x: from.x, y: from.y });
+    try {
+      expect((await postJson(`/api/edit/${MAP}/paint/begin`)).status).toBe(200);
+      expect((await postJson(`/api/edit/${MAP}/event/move`, { kind: "warp", index: WARP_INDEX, ...TO })).status).toBe(200);
+      const plan = await getJson(`/api/edit/${MAP}/plan`);
+      expect(plan.refusals).toEqual([]);
+      const commit = await postJson(`/api/edit/${MAP}/commit`, { fingerprint: plan.fingerprint });
+      expect(commit.status, JSON.stringify(await commit.json())).toBe(200);
+    } finally {
+      await postJson(`/api/edit/${MAP}/discard`);
+    }
+
+    // Disk witness, read independently of the hub's cached project.
+    const fresh = openGbcProject(root);
+    const disk = loadGbcMapEvents(root, fresh.map(MAP)).events.warps[WARP_INDEX]!;
+    expect([disk.x, disk.y]).toEqual([TO.x, TO.y]);
+
+    const mapAfter = await getJson(`/api/map/${MAP}`);
+    expect(mapAfter.events.warps[WARP_INDEX]).toMatchObject(TO);
+    expect(mapAfter.events.warps).toEqual(JSON.parse(JSON.stringify(loadGbcMapEvents(root, fresh.map(MAP)).events.warps)));
+    const warpsAfter = await getJson(`/api/warps/${MAP}`);
+    expect(warpsAfter).toEqual(JSON.parse(JSON.stringify(buildGbcWarpsPayload(fresh, MAP))));
+    expect(warpsAfter.warps[WARP_INDEX]).toMatchObject(TO);
+    const worldAfter = await getJson("/api/world");
+    expect(worldAfter.placements.SproutTower1F).not.toEqual(worldBefore.placements.SproutTower1F);
+    expect(worldAfter.placements).toEqual(
+      JSON.parse(JSON.stringify(buildGbcWorldPayload(fresh, buildGbcWorld(fresh), readSidecar(root), gbcWarpLinks(fresh)).placements)));
+  }, 120_000);
 });
