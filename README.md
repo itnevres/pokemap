@@ -33,7 +33,7 @@ The invariants are in `docs/superpowers/plans/archive/plan-00-gba-roadmap.md`, s
 
 ## Start it
 
-Double-click `PokeMap.cmd` at the repo root. It is being added alongside this README and is not in the repo yet; see [LAUNCH.md](LAUNCH.md) for the current steps and for the manual launch. You need Node.js 20.19+ (or 22.12+) first.
+Double-click `PokeMap.cmd` at the repo root. It installs what it needs on the first run, builds the app page when needed, starts PokeMap and opens your browser. Keep its window open while you work; closing it stops PokeMap. See [LAUNCH.md](LAUNCH.md) for the details and the manual launch. You need Node.js 20.19+ (or 22.12+) first.
 
 ## What is in the repo
 

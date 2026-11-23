@@ -1,7 +1,7 @@
 import { BodyTooLarge, readBody, sendJson, isCrossOriginRequest, refuseOversize, decodeSegment } from "./http.js";
 import { existsSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { extname, isAbsolute, join, relative, resolve } from "node:path";
+import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { createServer as createHttp, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { detectEngineFamily, probeEngineFamily } from "@pokemap/core/src/family.js";
 import { norm } from "@pokemap/core/src/config/paths.js";
@@ -190,10 +190,13 @@ function serveUi(req: IncomingMessage, res: ServerResponse, uiReal: string, uiDi
 
   let file: string;
   try {
-    file = realpathSync(join(uiDir, ...segments));
+    // `.native` expands Windows 8.3 short names (`ENV~1` -> `.env`) to the real name, so the dotfile rule below sees it.
+    file = realpathSync.native(join(uiDir, ...segments));
     const rel = relative(uiReal, file);
     // A link or junction inside the folder that points outside it is not followed.
     if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return send(404, { error: "not found" });
+    // The real path is checked for dotfiles too, not only the requested name.
+    if (rel.split(sep).some((p) => p.startsWith("."))) return send(404, { error: "not found" });
     if (!statSync(file).isFile()) return send(404, { error: "not found" });
   } catch {
     return send(404, { error: "not found" });
@@ -223,17 +226,21 @@ export async function createHub(opts: { port?: number; home?: string; open?: str
   if (uiDir !== undefined) {
     try {
       if (!statSync(uiDir).isDirectory()) throw new Error("not a directory");
-      uiReal = realpathSync(uiDir);
+      uiReal = realpathSync.native(uiDir);
     } catch {
       throw new Error(`no such UI directory ${uiDir}`);
     }
   }
 
   const http: Server = createHttp((req, res) => {
-    const url = new URL(req.url ?? "/", "http://localhost");
     const send = (code: number, body: unknown) => sendJson(res, code, body);
 
     try {
+      // Inside the try: a request target `new URL` cannot parse (e.g. `//[`) must be a 400, never an uncaught
+      // exception that takes the whole hub down. Node's HTTP parser accepts such targets.
+      let url: URL;
+      try { url = new URL(req.url ?? "/", "http://localhost"); }
+      catch { return send(400, { error: "malformed URL" }); }
       if (isCrossOriginRequest({ origin: req.headers.origin, host: req.headers.host })) {
         return send(403, { error: "cross-origin request refused" });
       }

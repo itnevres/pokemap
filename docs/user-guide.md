@@ -10,7 +10,7 @@ You need Node.js 20.19 or later in the 20.x line, or 22.12 or later, and npm. Th
 npm ci
 ```
 
-To start PokeMap, double-click `PokeMap.cmd` at the repo root. It is being added alongside this guide and is not in the repo yet. Until it is, use the manual launch in [LAUNCH.md](../LAUNCH.md). That file is the source for every launch step, so this guide does not repeat them.
+To start PokeMap, double-click `PokeMap.cmd` at the repo root. It installs what it needs on the first run, builds the app page when needed, starts PokeMap and opens your browser. Keep its window open while you work; closing it stops PokeMap. For a manual launch, see [LAUNCH.md](../LAUNCH.md). That file is the source for every launch step, so this guide does not repeat them.
 
 PokeMap runs in your browser, on your own machine. It needs no internet connection to open a project.
 

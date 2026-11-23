@@ -167,7 +167,7 @@ Evidence: `task-reports/pokemap-plan-6c-hub-encounters-world/_archive/task-{E1,E
 
 ## Running it
 
-See the root [LAUNCH.md](../../LAUNCH.md) for manual PowerShell and Git Bash launch steps and the launch-guide maintenance rule.
+See the root [LAUNCH.md](../../LAUNCH.md) for the one-click launcher (`PokeMap.cmd`), manual PowerShell and Git Bash launch steps and the launch-guide maintenance rule.
 
 ```bash
 npx tsx packages/server/src/serve.ts        # the hub on 127.0.0.1:5174: reopens ~/.pokemap/recent.json's newest project, else the UI shows the project picker (POKEMAP_HOME overrides ~/.pokemap)

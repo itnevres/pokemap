@@ -26,6 +26,11 @@ async function main(): Promise<void> {
   // `--port <n>`: a whole number 0-65535 (0 = any free port). Default stays 5174.
   let port = 5174;
   const portAt = argv.indexOf("--port");
+  if (argv.some((a) => a.startsWith("--port="))) {
+    process.stderr.write("pokemap hub: write --port 5174 with a space, not --port=5174\n");
+    process.exitCode = 1;
+    return;
+  }
   if (portAt !== -1) {
     const v = argv[portAt + 1];
     if (v === undefined || !/^\d+$/.test(v) || Number(v) > 65535) {
