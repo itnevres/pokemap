@@ -15,8 +15,49 @@ const sessionMutations = new Map<string, Set<Promise<unknown>>>();
 export function hasPendingSessionMutations(map: string | null): boolean {
   return map !== null && (sessionMutations.get(map)?.size ?? 0) > 0;
 }
+// Stroke chains (shared/useStrokeChain.ts) are tracked apart from session mutations. The shell registers
+// the selected map's `strokeSettled` here, so Discard, the Save plan and commit, undo and redo also wait for a
+// paint request still in flight. The map-switch guard (FamilyApp guardedLeave) waits only when a create or
+// block apply is pending, so a switch made while the very first stroke is in flight does not wait.
+// Accepted ceilings:
+// - This orders ONE tab's own fire-and-forget chains. It does not close a network reordering (a slower first
+//   request landing after a faster second one); that needs a server-side generation tag on every paint/event
+//   route, which is deliberately not built.
+// - Sources are re-read only when a create or block apply was pending. A stroke started while the barrier is
+//   already waiting (the canvas stays live after the Discard confirm) is not awaited; its late /paint/apply can
+//   reopen a session. The later /paint/end reply carries a higher seq, so the UI recovers when /paint/end is
+//   issued after the /discard reply; if the whole stroke is issued before that reply, the UI shows clean while
+//   the hub holds a dirty session until the map is reloaded.
+// - There is no timeout: a paint request that never answers holds the barrier (Discard, Save, undo/redo, Done,
+//   the warp popup), even after its surface unmounts.
+// - The registry is one per shell and the shell registers it under the selected map, so the wait covers every
+//   tracked chain of this shell (an unmounted chain of another map included), not only the selected map's.
+const settledSources = new Map<string, Set<() => Promise<void>>>();
+export function registerSettledSource(map: string, settled: () => Promise<void>): () => void {
+  let set = settledSources.get(map);
+  if (!set) settledSources.set(map, (set = new Set()));
+  // A fresh wrapper per registration, so two registrations of one function unregister independently.
+  const entry = () => settled();
+  set.add(entry);
+  return () => {
+    const current = settledSources.get(map);
+    current?.delete(entry);
+    if (current?.size === 0) settledSources.delete(map);
+  };
+}
+async function sourcesSettled(map: string): Promise<void> {
+  // A source that rejects or throws counts as settled: the barrier must never deadlock on it.
+  await Promise.all([...(settledSources.get(map) ?? [])].map(async (source) => {
+    try { await source(); } catch { /* settled */ }
+  }));
+}
 export async function sessionMutationBarrier(map: string | null): Promise<void> {
-  while (map !== null && hasPendingSessionMutations(map)) {
+  if (map === null) return;
+  // Sources are awaited unconditionally (a paint-only session has no pending mutation), then creates and
+  // sources are re-checked until a pass finds no mutation pending after the sources settled.
+  for (;;) {
+    await sourcesSettled(map);
+    if (!hasPendingSessionMutations(map)) return;
     await Promise.all([...sessionMutations.get(map)!].map((pending) => pending.catch(() => undefined)));
   }
 }
