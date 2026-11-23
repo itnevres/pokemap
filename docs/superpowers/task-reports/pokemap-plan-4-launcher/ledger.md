@@ -10,3 +10,7 @@
 
 Killed: realpath not native (8.3 test), dotfile rule gone with its second guard (link test + 8.3 test), no containment and no real-path dotfile check, no segment check at all (4 tests), no segment check only (traversal test), UI served before `/api`, no method check, unguarded URL parse (`//[` test), listen error not rejected, static served before the cross-origin check.
 Survived, accepted: HEAD sends a body (Node drops a HEAD body itself: equivalent mutant); containment alone removed, and the requested-name dotfile rule alone removed (each is covered by the other layer; removing both is killed).
+
+## Gate
+
+Gate at 063772b: 5456 pass / 1 fail / 284 files; typecheck pass, UI build pass; subjects unchanged. The one failure is `engine.test.ts` "parses the subject repo's real porymap.project.cfg", the known environment failure listed in the overnight RULES section 10 (not caused by this branch).
