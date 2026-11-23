@@ -10,4 +10,4 @@ Tests: valid, malformed, shape mismatch, empty, content-type ignored, 413 over t
 
 Verify (through the lock): typecheck clean; `http.test.ts` 31 passed (24 existing + 7 new).
 
-Mutation checks: MUTATION_PLACEHOLDER
+Mutation checks: four mutants, each turned the `jsonBody` tests red (`-t jsonBody`): (1) malformed JSON no longer answers 400 (invalid-JSON test fails); (2) the shape guard removed (shape-mismatch test fails); (3) the `BodyTooLarge` -> 413 branch removed (413 test fails: 1 failed / 6 passed); (4) `return handler(parsed)` changed to a fire-and-forget call so a rejecting handler is lost (500 test fails plus an unhandled rejection). Baseline with `http.ts` restored: `http.test.ts` 31 passed. Script: conductor scratchpad `mut-ha.py`, run under the test lock.
