@@ -1,6 +1,6 @@
 import { Suspense, startTransition, useCallback, useRef, useState } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi, type Mock } from "vitest";
 import type { WireConflict } from "@pokemap/core/src/world/conflictAcceptance.js";
 import { WorldSurface, type WorldSurfaceProps } from "../../src/canvas/WorldSurface.js";
 import type { PlacementLedger } from "../../src/shared/placementLedger.js";
@@ -70,13 +70,13 @@ let initialWorld: World;
 let server: World;
 let ledger: PlacementLedger;
 let readWorld: () => World;
-let reloadSpy: ReturnType<typeof vi.fn>;
+let reloadSpy: Mock<(...args: any[]) => any>;
 let reloadError: string | null;
 let publishError: (error: string | null) => void;
 let reloadWorld: () => number;
 let posts: Array<{ map: string; x: number; y: number; outcome: ReturnType<typeof deferred<void>> }>;
 let reloads: Array<{ snapshot: ReturnType<PlacementLedger["snapshot"]>; finish(): void }>;
-let callbacks: { select: ReturnType<typeof vi.fn>; open: ReturnType<typeof vi.fn>; saved: ReturnType<typeof vi.fn> };
+let callbacks: { select: Mock<(...args: any[]) => any>; open: Mock<(...args: any[]) => any>; saved: Mock<(...args: any[]) => any> };
 let draws: Array<{ map: string; rect: number[] }>;
 class FakeImage {
   static instances: FakeImage[] = [];
@@ -738,7 +738,7 @@ it("does not fetch markers below LOD and fetches visible maps when zoom reaches 
   fireEvent.keyDown(canvas(host), { key: "+" });
   await settle();
   expect(adapter.fetchWarps).toHaveBeenCalled();
-  expect((adapter.fetchWarps as ReturnType<typeof vi.fn>).mock.calls.some(([name]) => name === "Far")).toBe(false);
+  expect((adapter.fetchWarps as Mock<(...args: any[]) => any>).mock.calls.some(([name]) => name === "Far")).toBe(false);
 });
 
 it("double-click edits here when supplied, otherwise opens Map view; Shift always opens Map view", () => {
