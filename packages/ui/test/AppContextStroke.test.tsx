@@ -198,3 +198,69 @@ it("dirty Map and Dungeon mode switches leave context without prompting and pres
   expect(screen.queryByRole("dialog", { name: "Save changes" })).toBeNull();
   expect(screen.queryByRole("dialog", { name: "Unsaved changes" })).toBeNull();
 });
+
+// Plan H C1 trap 6: a stroke made in World-view context editing is awaited by Discard, even after the overlay unmounts.
+async function contextStrokeFixture() {
+  let hold = false, release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  const hub = { open: false };
+  const fetchMock = makeFetchMock();
+  const base = fetchMock.getMockImplementation()!;
+  let state = { blocks: ROUTE1.blocks, border: [], map: ROUTE1.map, isDirty: false, canUndo: false, canRedo: false };
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    if (url === "/api/edit/Route1/paint/apply") {
+      if (hold) await held;
+      hub.open = true;
+      state = { ...state, isDirty: true, canUndo: true };
+      return ok(state);
+    }
+    if (url === "/api/edit/Route1/discard") { hub.open = false; return ok({ ...state, isDirty: false, canUndo: false }); }
+    if (url.startsWith("/api/edit/Route1/paint/")) return ok(state);
+    return base(url, init);
+  });
+  vi.stubGlobal("confirm", () => true);
+  await startApp(fetchMock);
+  const canvas = await enterWorld();
+  dblClickRoute1(canvas);
+  await waitFor(() => expect(contextOverlay()?.querySelector("canvas.map-canvas__stage")).toBeTruthy());
+  const stage = contextOverlay()!.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
+  stage.getBoundingClientRect = () => ({ ...RECT, left: 100, top: 100 });
+  fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
+  fireEvent.click(await screen.findByRole("button", { name: /metatile 0x1\b/i }));
+  const stroke = () => {
+    fireEvent.mouseDown(stage, { clientX: 283, clientY: 78, button: 0 });
+    fireEvent.mouseUp(stage, { clientX: 283, clientY: 78, button: 0 });
+  };
+  stroke();
+  await screen.findByTestId("dirty-indicator"); // Discard is now enabled
+  hold = true;
+  stroke();
+  await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => url.endsWith("/paint/apply"))).toHaveLength(2));
+  const discards = () => fetchMock.mock.calls.filter(([url]) => url.endsWith("/discard"));
+  return { hub, release: () => release(), discards };
+}
+
+it("context Discard waits for a held in-context stroke, then leaves no hub session", async () => {
+  const h = await contextStrokeFixture();
+  fireEvent.click(screen.getByRole("button", { name: "Discard Changes" }));
+  await act(async () => {});
+  expect(h.discards()).toHaveLength(0);
+  await act(async () => h.release());
+  await waitFor(() => expect(h.discards()).toHaveLength(1));
+  await waitFor(() => expect(h.hub.open).toBe(false));
+  expect(h.discards()).toHaveLength(1);
+});
+
+it("Discard after leaving context for Map still waits for the in-flight context stroke", async () => {
+  const h = await contextStrokeFixture();
+  fireEvent.click(screen.getByRole("button", { name: "Map" }));
+  await act(async () => {});
+  expect(contextOverlay()).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Discard Changes" }));
+  await act(async () => {});
+  expect(h.discards()).toHaveLength(0);
+  await act(async () => h.release());
+  await waitFor(() => expect(h.discards()).toHaveLength(1));
+  await waitFor(() => expect(h.hub.open).toBe(false));
+  expect(h.discards()).toHaveLength(1);
+});

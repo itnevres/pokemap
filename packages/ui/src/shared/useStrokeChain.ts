@@ -21,11 +21,20 @@ export interface StrokeChain<Body> {
 export type SettledChain = Pick<StrokeChain<unknown>, "settled">;
 
 export function useStrokeChainRegistry(): { onStrokeChain(chain: SettledChain, mounted: boolean): void; strokeSettled(): Promise<void> } {
-  const chains = useRef(new Set<SettledChain>());
+  // `tracked` = every chain the barrier waits on. `live` = chains whose surface is still mounted. An unmounted
+  // chain stays tracked until its issued links settle, because its in-flight paint request still lands on the hub.
+  const tracked = useRef(new Set<SettledChain>());
+  const live = useRef(new Set<SettledChain>());
   const onStrokeChain = useCallback((chain: SettledChain, mounted: boolean) => {
-    if (mounted) chains.current.add(chain); else chains.current.delete(chain);
+    if (mounted) { live.current.add(chain); tracked.current.add(chain); return; }
+    live.current.delete(chain);
+    // A remount of the same chain (StrictMode re-runs effects) re-adds it to `live`, so the deferred delete skips it.
+    const release = () => { if (!live.current.has(chain)) tracked.current.delete(chain); };
+    let pending: Promise<void>;
+    try { pending = chain.settled(); } catch { release(); return; }
+    void pending.then(release, release);
   }, []);
-  const strokeSettled = useCallback(() => Promise.all([...chains.current].map((chain) => chain.settled())).then(() => {}), []);
+  const strokeSettled = useCallback(() => Promise.all([...tracked.current].map((chain) => chain.settled())).then(() => {}), []);
   return { onStrokeChain, strokeSettled };
 }
 
