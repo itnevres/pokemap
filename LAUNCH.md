@@ -13,15 +13,15 @@ Double-click `PokeMap.cmd` in the repository root. A console window opens; leave
 2. If PokeMap is already running on port 5174, only opens the browser.
 3. Runs `npm ci` if `node_modules` is missing.
 4. Builds the app page (`packages/ui/dist`) if it is missing or older than the UI sources, `packages/core/src` or `package-lock.json`.
-5. Starts the hub with `packages/server/src/serve.ts`, which serves the built page and the API on one port. It waits until the hub answers, then opens <http://127.0.0.1:5174/>. The hub reopens the most recently used project.
+5. Starts the hub with `packages/server/src/serve.ts`, which serves the built page and the API on one port. It waits until the hub answers (and, when a recent project exists, until it has reopened, up to about 20 seconds), then opens <http://127.0.0.1:5174/>. The hub reopens the most recently used project.
 
 It never runs git and never writes into a game project. For a desktop shortcut, right-click `PokeMap.cmd`, then Send to, then Desktop (create shortcut).
 
-Launcher flags (for testing and unusual setups): `--port <n>` (default 5174; the value `0` lets the system choose, and the real port is printed), `--no-open` (do not open a browser), `--check` (start, wait until the hub answers, then stop), plus `--gbc` or a project path, passed to the hub. Run it from a terminal with `node scripts/launch.mjs`.
+Launcher flags (for testing and unusual setups): `--port <n>` (1-65535, default 5174), `--no-open` (do not open a browser), `--check` (start, wait until the hub answers, then stop), plus `--gbc` or a project path, passed to the hub. Run it from a terminal with `node scripts/launch.mjs`.
 
 ## Hub flags (`serve.ts`)
 
-`serve.ts` serves `packages/ui/dist` itself whenever `packages/ui/dist/index.html` exists, so with a built page the app is also at <http://127.0.0.1:5174/>. `--no-ui` turns that off; `--port <n>` picks the port (write it with a space, not `--port=`). During development a stale build in `dist` can show up on 5174 next to the live Vite page on 5173: run `npm run build --workspace=@pokemap/ui` to refresh it, or pass `--no-ui`.
+`serve.ts` serves `packages/ui/dist` itself whenever `packages/ui/dist/index.html` exists, so with a built page the app is also at <http://127.0.0.1:5174/>. `--no-ui` turns that off; `--port <n>` picks the port (0-65535, write it with a space, not `--port=`; `0` lets the system choose and the real port is printed). During development a stale build in `dist` can show up on 5174 next to the live Vite page on 5173: run `npm run build --workspace=@pokemap/ui` to refresh it, or pass `--no-ui`.
 
 ## Manual launch (PowerShell)
 

@@ -5,7 +5,7 @@
 //   3. `node_modules` missing -> `npm ci`.   UI build missing or older than its sources -> build it.
 //   4. Start the hub (serves the built UI), wait until it answers, open the browser.
 // Closing this window stops the hub. Never runs git, never writes into a game project.
-// Flags (for testing and odd setups): `--port <n>` (default 5174), `--no-open` (do not open a browser),
+// Flags (for testing and odd setups): `--port <n>` (1-65535, default 5174), `--no-open` (do not open a browser),
 // `--check` (start, wait until it answers, report, stop: a self-test), and `--gbc` / a project path, passed
 // straight to the hub.
 //
@@ -33,45 +33,57 @@ const fail = (m) => { throw new Stop(m); };
 
 /** Newest modification time of every file under `path` (0 when it does not exist); skips node_modules and dist. */
 function newestMtime(path) {
+  try {
+    return newestMtimeUnsafe(path);
+  } catch {
+    return Infinity; // unreadable: treat the build as stale rather than show a stack trace
+  }
+}
+function newestMtimeUnsafe(path) {
   if (!existsSync(path)) return 0;
   const st = statSync(path);
   if (!st.isDirectory()) return st.mtimeMs;
   let newest = 0;
   for (const name of readdirSync(path)) {
     if (name === "node_modules" || name === "dist") continue;
-    newest = Math.max(newest, newestMtime(join(path, name)));
+    newest = Math.max(newest, newestMtimeUnsafe(join(path, name)));
   }
   return newest;
 }
 
-/** One GET that always closes its connection and its timer, so nothing keeps the process alive afterwards. */
+/** One GET, headers and body, under one timer; always closes its connection so nothing keeps the process alive. */
 async function get(path) {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), 1500);
   try {
-    return await fetch(`${url}${path}`, { signal: ctl.signal, headers: { connection: "close" } });
+    const r = await fetch(`${url}${path}`, { signal: ctl.signal, headers: { connection: "close" } });
+    const text = await r.text();
+    return { ok: r.ok, type: r.headers.get("content-type") ?? "", text };
   } finally {
     clearTimeout(timer);
   }
 }
 
-/** "ui": a PokeMap hub serving the app page. "no-ui": a hub without the page. "other": something else. "down": nothing. */
+/**
+ * "ui": a PokeMap hub serving the app page. "no-ui": a hub without the page. "other": something else answered.
+ * "down": nothing answered. `loading` is true while a recent project exists but none is open yet.
+ */
 async function hubStatus() {
-  let r;
+  let hub;
   try {
-    r = await get("api/hub");
+    hub = await get("api/hub");
   } catch {
-    return "down"; // nothing answered
+    return { state: "down" }; // nothing answered
   }
   try {
-    if (!r.ok) return "other";
-    const j = await r.json();
-    if (!j || typeof j !== "object" || !("recent" in j)) return "other";
+    if (!hub.ok) return { state: "other" };
+    const j = JSON.parse(hub.text);
+    if (!j || typeof j !== "object" || !("recent" in j)) return { state: "other" };
     const page = await get("");
-    await page.arrayBuffer();
-    return page.ok && (page.headers.get("content-type") ?? "").startsWith("text/html") ? "ui" : "no-ui";
+    const loading = j.current == null && Array.isArray(j.recent) && j.recent.length > 0;
+    return { state: page.ok && page.type.startsWith("text/html") ? "ui" : "no-ui", loading };
   } catch {
-    return "other"; // something answered, but not like PokeMap
+    return { state: "other" }; // something answered, but not like PokeMap
   }
 }
 
@@ -79,7 +91,7 @@ function openBrowser() {
   if (flag("--no-open") || flag("--check")) return say(`PokeMap is at ${url}`);
   const [cmd, cmdArgs] = isWin ? ["cmd", ["/c", "start", "", url]] : process.platform === "darwin" ? ["open", [url]] : ["xdg-open", [url]];
   try {
-    spawn(cmd, cmdArgs, { stdio: "ignore", detached: true }).on("error", () => say(`Open ${url} in your browser.`)).unref();
+    spawn(cmd, cmdArgs, { stdio: "ignore", windowsHide: true }).on("error", () => say(`Open ${url} in your browser.`)).unref();
   } catch {
     say(`Open ${url} in your browser.`);
   }
@@ -98,10 +110,10 @@ async function main() {
   if (!((major === 20 && minor >= 19) || (major === 22 && minor >= 12) || major > 22)) {
     fail(`This computer has Node.js ${process.versions.node}. PokeMap needs 20.19 or newer (or 22.12+).\nInstall the current LTS from https://nodejs.org and double-click PokeMap again.`);
   }
-  if (!Number.isInteger(port) || port < 0 || port > 65535) fail("--port needs a whole number from 0 to 65535.");
+  if (!Number.isInteger(port) || port < 1 || port > 65535) fail("--port needs a whole number from 1 to 65535.");
 
   // 2. already running
-  const before = await hubStatus();
+  const before = (await hubStatus()).state;
   if (before === "ui") {
     say("PokeMap is already running. Opening it.");
     return openBrowser();
@@ -145,14 +157,21 @@ async function main() {
   const deadline = Date.now() + 90_000;
   let status = "down";
   while (Date.now() < deadline && !hubExited) {
-    status = await hubStatus();
+    const h = await hubStatus();
+    status = h.state;
     if (status !== "down") break;
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  // The hub listens first and then reopens the most recent project; give that a few seconds so the browser
+  // lands on the project, not the picker. A project that cannot be reopened costs this wait, then the picker shows.
+  for (let i = 0; status === "ui" && i < 50 && !hubExited; i++) {
+    if (!(await hubStatus()).loading) break;
     await new Promise((r) => setTimeout(r, 400));
   }
   if (status !== "ui") {
     stop();
     fail(
-      hubExited ? "PokeMap stopped before it was ready. See the messages above."
+      hubExited ? "PokeMap stopped before it was ready. If the messages above say the port is in use, close the program that uses it (or wait a moment if PokeMap was just started) and double-click PokeMap again."
         : status === "down" ? "PokeMap did not start within 90 seconds. See the messages above."
         : "PokeMap started but is not serving the app page.",
     );

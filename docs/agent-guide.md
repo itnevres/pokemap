@@ -103,7 +103,7 @@ Read tools always work.
 | `pokemap_coverage` | `coverage --json` | both | none |
 | `pokemap_indicator_suggest` | `indicator suggest` | GBA | `map` |
 | `pokemap_indicator_list` | `indicator list` | GBA | `map` |
-| `pokemap_diff` | `diff` | both | `map`, `tool`, `x`, `y`, optional `x1`, `y1`, `metatile` |
+| `pokemap_diff` | `diff` | both | `map`, `tool`, `x`, `y`, `metatile`, optional `x1`, `y1` |
 
 `pokemap_render` and `pokemap_render_world` return the PNG as image content, then the file path and size as text. The file is written into a fresh temp folder named `pokemap-mcp-*`. `pokemap_validate` returns findings as JSON; findings are a result, not an error. `pokemap_diff` never writes and does not see an open editor session's pending changes.
 
@@ -117,7 +117,7 @@ pokemap_paint: write tools are disabled; restart the MCP server with --allow-wri
 
 | Tool | CLI command | Families | Input (besides `map`) |
 |---|---|---|---|
-| `pokemap_paint` | `paint --yes` | both | `tool`, `x`, `y`, optional `x1`, `y1`, `metatile` |
+| `pokemap_paint` | `paint --yes` | both | `tool`, `x`, `y`, `metatile`, optional `x1`, `y1` |
 | `pokemap_indicator_add` | `indicator add --yes` | GBA | `species`, `text`, `x`, `y`, optional `elevation` |
 | `pokemap_event_move` | `event move --yes` | GBC | `kind`, `index`, `x`, `y` |
 | `pokemap_event_add` | `event add --yes` | GBC | `kind`, `args`, optional `const` |
