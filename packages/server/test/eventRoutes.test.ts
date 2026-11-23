@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createServer, type PokemapServer } from "../src/index.js";
 import { SUBJECT_ROOT, hasProject } from "@pokemap/core/test/helpers/corpus.js";
+import { readFileSync, writeFileSync } from "node:fs";
+import { openProject } from "@pokemap/core/src/project.js";
 
 let s: PokemapServer;
 const post = async (path: string, body: unknown = {}) =>
@@ -98,5 +100,78 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("event routes", () => {
     expect(addRes.status).toBe(404);
     const delRes = await post("/api/edit/__pokemap_no_such_map__/event/delete", { kind: "object", index: 0 });
     expect(delRes.status).toBe(404);
+  }, 300_000);
+});
+
+// Save-path sequences over event ops. The suite's SUBJECT_ROOT is the scratch
+// copy made by testRootsSetup; each test still restores the map.json it
+// commits and discards any left-over session.
+describe.skipIf(!hasProject(SUBJECT_ROOT))("event ops saved through plan and commit", () => {
+  beforeAll(async () => { s = await createServer({ projectPath: SUBJECT_ROOT, port: 0 }); });
+  afterAll(async () => { await s?.close(); });
+
+  const get = (path: string) => fetch(`http://127.0.0.1:${s.port}${path}`);
+  const commit = async (map: string) => {
+    const plan = await (await get(`/api/edit/${map}/plan`)).json() as { fingerprint: string | null };
+    return post(`/api/edit/${map}/commit`, { fingerprint: plan.fingerprint ?? "refused-plan" });
+  };
+  type RawEvent = { x: number; y: number; script: string };
+  const summary = (events: RawEvent[]) => events.map((e) => [e.script, e.x, e.y]);
+
+  it("an event added and then moved in the same session is saved at the moved coordinates", async () => {
+    const map = "Route29";
+    const jsonPath = openProject(SUBJECT_ROOT).paths.mapJson(map);
+    const before = readFileSync(jsonPath);
+    const original = JSON.parse(before.toString("utf8")).object_events as RawEvent[];
+    try {
+      const value = { graphics_id: "OBJ_EVENT_GFX_BOY_1", x: 0, y: 0, elevation: 0, movement_type: "MOVEMENT_TYPE_FACE_DOWN", movement_range_x: 0, movement_range_y: 0, trainer_type: "TRAINER_TYPE_NONE", trainer_sight_or_berry_tree_id: "0", script: "NULL", flag: "0" };
+      const added = await (await post(`/api/edit/${map}/event/add`, { kind: "object", value })).json() as any;
+      const newIndex = added.map.objectEvents.length - 1;
+      expect(newIndex).toBe(original.length);
+
+      const moveRes = await post(`/api/edit/${map}/event/move`, { kind: "object", index: newIndex, x: 5, y: 6 });
+      expect(moveRes.status).toBe(200);
+
+      const plan = await (await get(`/api/edit/${map}/plan`)).json() as any;
+      expect(plan.refusals).toEqual([]);
+      expect(plan.changes.some((c: any) => c.kind === "json")).toBe(true);
+
+      const commitRes = await commit(map);
+      expect(commitRes.status).toBe(200);
+      const written = JSON.parse(readFileSync(jsonPath, "utf8")).object_events as RawEvent[];
+      expect(written).toHaveLength(original.length + 1);
+      expect(summary(written.slice(0, original.length))).toEqual(summary(original));
+      expect([written[original.length]!.x, written[original.length]!.y]).toEqual([5, 6]);
+    } finally {
+      writeFileSync(jsonPath, before);
+      await post(`/api/edit/${map}/discard`);
+    }
+  }, 300_000);
+
+  it("after an earlier event is deleted, moving the event shown at index 4 saves the move on the event that was originally at index 5", async () => {
+    const map = "CherrygroveCity"; // 14 object events at distinct coordinates
+    const jsonPath = openProject(SUBJECT_ROOT).paths.mapJson(map);
+    const before = readFileSync(jsonPath);
+    const original = JSON.parse(before.toString("utf8")).object_events as RawEvent[];
+    expect(original.length).toBeGreaterThanOrEqual(6);
+    try {
+      const delRes = await post(`/api/edit/${map}/event/delete`, { kind: "object", index: 2 });
+      expect(delRes.status).toBe(200);
+      const moveRes = await post(`/api/edit/${map}/event/move`, { kind: "object", index: 4, x: 3, y: 4 });
+      expect(moveRes.status).toBe(200);
+      // The UI's index 4 is the original event 5 once event 2 is pending removal.
+      const shown = (await moveRes.json() as any).map.objectEvents;
+      expect(shown[4].script).toBe(original[5]!.script);
+      expect([shown[4].x, shown[4].y]).toEqual([3, 4]);
+
+      const commitRes = await commit(map);
+      expect(commitRes.status).toBe(200);
+      const written = JSON.parse(readFileSync(jsonPath, "utf8")).object_events as RawEvent[];
+      const expected = original.filter((_, i) => i !== 2).map((e, i) => (i === 4 ? { ...e, x: 3, y: 4 } : e));
+      expect(summary(written)).toEqual(summary(expected));
+    } finally {
+      writeFileSync(jsonPath, before);
+      await post(`/api/edit/${map}/discard`);
+    }
   }, 300_000);
 });
