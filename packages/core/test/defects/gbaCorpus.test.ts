@@ -18,7 +18,7 @@ itWithCorpus("GBA structural corpus equals the triaged real-defect allow-list", 
     message: "Metatile id(s) 876, 877, 879, 882, 883, 888, 892, 893, 894, 902, 915, 916, 919, 920, 921, 922, 923, 924 are out of range for this layout's split.",
     fix: "Replace these ids in data/layouts/Saffron_Temp/map.bin with ids in 0..639 or 640..869.",
   }]);
-}, 120_000);
+}, 1_800_000); // about 12 minutes on the scratch copy (vitest 2 never enforced this limit on sync code)
 
 itWithCorpus("Route101 has no defects, including its off-map light", () => {
   expect(gbaMapDefects(openProject(SUBJECT_ROOT), "Route101")).toEqual([]);
