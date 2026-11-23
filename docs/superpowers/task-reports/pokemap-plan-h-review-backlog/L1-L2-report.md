@@ -26,3 +26,7 @@ Earlier gate at `26310b9` (before merging master): 5,403 pass / 3 fail / 283 fil
 ## Review
 
 Combined spec + quality review, Sonnet `quality-reviewer` (DeepSeek free pool was capped): APPROVED, 2 Minor, both fixed. Report: `L1-L2-review.md`. Judgment calls: `decisions-plan-h-deps.md` in the overnight notes folder.
+
+## Follow-up: lockfile fix (`plan-h-deps-lockfile`)
+
+After #58 merged, `npm ci` failed on `master`: "Missing: @emnapi/wasi-threads@2.2.0 from lock file". The lockfile written by `npm install -D vitest vite` on this platform lacked that optional wasm-platform entry. Fix: `npm install --package-lock-only`; the diff adds only the `node_modules/@emnapi/wasi-threads` entry (11 lines, no version drift). Evidence: `npm ci --dry-run` and a real `npm ci` both pass in the worktree (through the lock). The `gate` skill text needed no flag change: `npm test -- --no-file-parallelism` is unchanged and still valid on vitest 5.
