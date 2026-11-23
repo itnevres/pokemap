@@ -20,3 +20,6 @@ Tier: all six **High** (save ownership; core write path). Process: tests first (
 1. Deleting a pending add leaves its `scriptAppends`, `newNames`, `scriptReplaces` and flag slot staged (unused script block in scripts.inc, lost flags.h slot). Pre-existing. Needs design: tie appends to the insert, or refuse the delete.
 2. `cli/src/writeCommands.ts:83` stamps `addEvent`'s raw index (harmless: fresh session per command; breaks the new doc rule if a session is ever reused).
 3. `eventRoutes.test.ts` restores map.json behind the running server; safe only while nothing reads `project.map` between commit and restore.
+
+## Gate
+Gate at 99a3d2b: 5440 pass / 1 fail / 284 files; typecheck pass, UI build pass; subjects unchanged. The one failure is the known `engine.test.ts` "parses the subject repo's real porymap.project.cfg" (env, listed in RESUME). The later commit adds docs only (plan row B4).
