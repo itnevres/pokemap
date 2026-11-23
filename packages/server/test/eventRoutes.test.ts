@@ -175,3 +175,129 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("event ops saved through plan and com
     }
   }, 300_000);
 });
+
+// Session ops are staged in original-file index space while the UI addresses
+// the current list (originals minus removed ones, then pending adds). These
+// sequences pin the saved result for mixed delete/add/move work.
+describe.skipIf(!hasProject(SUBJECT_ROOT))("event ops in original index space saved through plan and commit", () => {
+  beforeAll(async () => { s = await createServer({ projectPath: SUBJECT_ROOT, port: 0 }); });
+  afterAll(async () => { await s?.close(); });
+
+  const map = "CherrygroveCity"; // 14 object events at distinct coordinates
+  const get = (path: string) => fetch(`http://127.0.0.1:${s.port}${path}`);
+  const commit = async () => {
+    const plan = await (await get(`/api/edit/${map}/plan`)).json() as { fingerprint: string | null };
+    return post(`/api/edit/${map}/commit`, { fingerprint: plan.fingerprint ?? "refused-plan" });
+  };
+  type RawEvent = { x: number; y: number; script: string };
+  const summary = (events: RawEvent[]) => events.map((e) => [e.script, e.x, e.y]);
+  const newEvent = (script: string, x: number, y: number) => ({
+    graphics_id: "OBJ_EVENT_GFX_BOY_1", x, y, elevation: 0, movement_type: "MOVEMENT_TYPE_FACE_DOWN",
+    movement_range_x: 0, movement_range_y: 0, trainer_type: "TRAINER_TYPE_NONE",
+    trainer_sight_or_berry_tree_id: "0", script, flag: "0",
+  });
+  const withoutObjects = (json: Record<string, unknown>) => { const { object_events: _omit, ...rest } = json; return rest; };
+  const setup = () => {
+    const jsonPath = openProject(SUBJECT_ROOT).paths.mapJson(map);
+    const before = readFileSync(jsonPath);
+    const parsed = JSON.parse(before.toString("utf8")) as Record<string, unknown> & { object_events: RawEvent[] };
+    expect(parsed.object_events).toHaveLength(14);
+    return { jsonPath, before, parsed, original: parsed.object_events };
+  };
+  const restore = async (jsonPath: string, before: Buffer) => {
+    writeFileSync(jsonPath, before);
+    await post(`/api/edit/${map}/discard`);
+  };
+
+  it("two deletions at current indexes 2 and 4 save as the removal of original events 2 and 5 and nothing else", async () => {
+    const { jsonPath, before, parsed, original } = setup();
+    try {
+      expect((await post(`/api/edit/${map}/event/delete`, { kind: "object", index: 2 })).status).toBe(200);
+      const second = await post(`/api/edit/${map}/event/delete`, { kind: "object", index: 4 });
+      expect(second.status).toBe(200);
+      const shown = (await second.json() as any).map.objectEvents as RawEvent[];
+      expect(shown).toHaveLength(12);
+      expect(shown.map((e) => e.script)).toEqual(original.filter((_, i) => i !== 2 && i !== 5).map((e) => e.script));
+
+      expect((await commit()).status).toBe(200);
+      const written = JSON.parse(readFileSync(jsonPath, "utf8")) as Record<string, unknown> & { object_events: RawEvent[] };
+      expect(written.object_events).toEqual(original.filter((_, i) => i !== 2 && i !== 5));
+      expect(withoutObjects(written)).toEqual(withoutObjects(parsed));
+    } finally { await restore(jsonPath, before); }
+  }, 300_000);
+
+  it("after deleting original 0 and adding an event, moving current index 12 moves original event 13 and the added event stays last with its own coordinates", async () => {
+    const { jsonPath, before, parsed, original } = setup();
+    try {
+      expect((await post(`/api/edit/${map}/event/delete`, { kind: "object", index: 0 })).status).toBe(200);
+      const addRes = await post(`/api/edit/${map}/event/add`, { kind: "object", value: newEvent("PokeMap_B3_Added", 1, 2) });
+      expect(addRes.status).toBe(200);
+      const afterAdd = (await addRes.json() as any).map.objectEvents as RawEvent[];
+      expect(afterAdd).toHaveLength(14);
+      expect(afterAdd[12]!.script).toBe(original[13]!.script);
+      expect(afterAdd[13]!.script).toBe("PokeMap_B3_Added");
+
+      const moveRes = await post(`/api/edit/${map}/event/move`, { kind: "object", index: 12, x: 7, y: 8 });
+      expect(moveRes.status).toBe(200);
+      const shown = (await moveRes.json() as any).map.objectEvents as RawEvent[];
+      expect([shown[12]!.script, shown[12]!.x, shown[12]!.y]).toEqual([original[13]!.script, 7, 8]);
+      expect([shown[13]!.script, shown[13]!.x, shown[13]!.y]).toEqual(["PokeMap_B3_Added", 1, 2]);
+
+      expect((await commit()).status).toBe(200);
+      const written = JSON.parse(readFileSync(jsonPath, "utf8")) as Record<string, unknown> & { object_events: RawEvent[] };
+      expect(written.object_events).toHaveLength(14);
+      expect(written.object_events.slice(0, 12)).toEqual(original.slice(1, 13));
+      expect(written.object_events[12]).toEqual({ ...original[13]!, x: 7, y: 8 });
+      expect(written.object_events[13]).toMatchObject({ script: "PokeMap_B3_Added", x: 1, y: 2 });
+      expect(summary(written.object_events).some((e) => e[0] === original[0]!.script && e[1] === original[0]!.x && e[2] === original[0]!.y)).toBe(false);
+      expect(withoutObjects(written)).toEqual(withoutObjects(parsed));
+    } finally { await restore(jsonPath, before); }
+  }, 300_000);
+
+  it("an event added and then deleted leaves the session without that event and an empty plan, and map.json is unchanged", async () => {
+    const { jsonPath, before, original } = setup();
+    try {
+      const addRes = await post(`/api/edit/${map}/event/add`, { kind: "object", value: newEvent("PokeMap_B3_Gone", 3, 3) });
+      expect(addRes.status).toBe(200);
+      const addedIndex = ((await addRes.json() as any).map.objectEvents as RawEvent[]).length - 1;
+      expect(addedIndex).toBe(original.length);
+
+      const delRes = await post(`/api/edit/${map}/event/delete`, { kind: "object", index: addedIndex });
+      expect(delRes.status).toBe(200);
+      const shown = (await delRes.json() as any).map.objectEvents as RawEvent[];
+      expect(shown).toHaveLength(original.length);
+      expect(shown.some((e) => e.script === "PokeMap_B3_Gone")).toBe(false);
+
+      const plan = await (await get(`/api/edit/${map}/plan`)).json() as any;
+      expect(plan.refusals).toEqual([]);
+      expect(plan.changes).toEqual([]);
+      expect(readFileSync(jsonPath).equals(before)).toBe(true);
+    } finally { await restore(jsonPath, before); }
+  }, 300_000);
+
+  it("after adding two events, deleting the first added one and moving the second, exactly one new event is saved at the moved coordinates", async () => {
+    const { jsonPath, before, parsed, original } = setup();
+    try {
+      expect((await post(`/api/edit/${map}/event/add`, { kind: "object", value: newEvent("PokeMap_B3_First", 1, 1) })).status).toBe(200);
+      expect((await post(`/api/edit/${map}/event/add`, { kind: "object", value: newEvent("PokeMap_B3_Second", 2, 2) })).status).toBe(200);
+      const delRes = await post(`/api/edit/${map}/event/delete`, { kind: "object", index: original.length });
+      expect(delRes.status).toBe(200);
+      const afterDelete = (await delRes.json() as any).map.objectEvents as RawEvent[];
+      expect(afterDelete).toHaveLength(original.length + 1);
+      expect(afterDelete[original.length]!.script).toBe("PokeMap_B3_Second");
+
+      const moveRes = await post(`/api/edit/${map}/event/move`, { kind: "object", index: original.length, x: 9, y: 10 });
+      expect(moveRes.status).toBe(200);
+
+      const plan = await (await get(`/api/edit/${map}/plan`)).json() as any;
+      expect(plan.refusals).toEqual([]);
+      expect((await commit()).status).toBe(200);
+      const written = JSON.parse(readFileSync(jsonPath, "utf8")) as Record<string, unknown> & { object_events: RawEvent[] };
+      expect(written.object_events).toHaveLength(original.length + 1);
+      expect(written.object_events.slice(0, original.length)).toEqual(original);
+      expect(written.object_events[original.length]).toMatchObject({ script: "PokeMap_B3_Second", x: 9, y: 10 });
+      expect(written.object_events.some((e) => e.script === "PokeMap_B3_First")).toBe(false);
+      expect(withoutObjects(written)).toEqual(withoutObjects(parsed));
+    } finally { await restore(jsonPath, before); }
+  }, 300_000);
+});
