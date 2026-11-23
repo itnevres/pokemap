@@ -439,7 +439,7 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
         if ("error" in timeResult) return send(400, { error: timeResult.error });
         const { time } = timeResult;
 
-        // An open edit session renders its own, possibly unsaved, blocks --
+        // A dirty (or mid-stroke) edit session renders its own unsaved blocks --
         // and neither reads nor writes renderCache, which only ever holds the
         // on-disk state (a discard must show it again).
         const sessionBlocks = edit.openBlocks(name);

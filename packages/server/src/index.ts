@@ -1,11 +1,10 @@
 import { BodyTooLarge, decodeSegment, readBody, refuseOversize, sendJson } from "./http.js";
 import { createGbaBlockEditRoutes } from "./blockEditRoutes.js";
 import { syncTilesetOverlay, type OverlayState } from "./tilesetOverlay.js";
-import { requireTilesetOwnership, refuseUnsavedBlockRefs } from "./blockEditOwnership.js";
+import { requireTilesetOwnership, refuseUnsavedBlockRefs, savedMetatileCount } from "./blockEditOwnership.js";
 import { checkTilesetBaselines } from "@pokemap/core/src/blockEdit/save.js";
 import { canonicalTilesetPath } from "@pokemap/core/src/blockEdit/canonicalTilesetPath.js";
 import { BlockEditRefusal } from "@pokemap/core/src/blockEdit/types.js";
-import { resolve } from "node:path";
 import { createGbaAddEventRoutes, eventFailure, type AddEventHooks } from "./addEventRoutes.js";
 import { checkGbaMapDefects } from "@pokemap/core/src/defects/gba.js";
 import { createSymbolIndexCache } from "./projectSymbols.js";
@@ -14,7 +13,7 @@ import { parseMap } from "@pokemap/core/src/load/maps.js";
 import { findGbaSign, gbaSignScript, gbaSignText, nextGbaSignNumber, updateGbaSign } from "@pokemap/core/src/signs/gbaSign.js";
 import { formatMarker, signHash, type SignMode } from "@pokemap/core/src/signs/marker.js";
 import { effectiveGbaScripts, gbaSignLabels, gbaSignParagraphs, refreshGbaLinkedSigns, replaceGbaScripts } from "./signRefresh.js";
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { createServer as createHttp, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { openProject, type Project } from "@pokemap/core/src/project.js";
 import { detectEngineFamily } from "@pokemap/core/src/family.js";
@@ -465,8 +464,8 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
               ? project.layoutById(project.map(name).layout)?.name
               : undefined;
 
-        // A live edit session for this exact map name means disk state is
-        // stale (an edit never touches disk until a real commit, per I6) --
+        // A DIRTY (or mid-stroke) edit session for this exact map name means disk
+        // state is stale (an edit never touches disk until a real commit, per I6) --
         // render straight from the session's own in-memory blocks and skip
         // pngCache entirely. pngCache is keyed only on `name:border` with no
         // expiry of its own; writing a live render into it would serve that
@@ -474,10 +473,17 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
         // request for the same map once the session eventually closes. Only
         // BROWSER caching is disabled by the response header below -- this
         // server's own process-lifetime Map needed its own bypass.
-        if (editSessions.has(name)) {
+        // Keyed on `isDirty` (or an open paint stroke, whose command is pushed only
+        // at /paint/end), not on the session merely existing: GET /plan
+        // opens a session as a side effect, and a clean session's blocks equal
+        // disk, so it can use the cache. A staged-only block edit pushes an
+        // undo command, so it is dirty too (the overlay sync above clears
+        // pngCache when staged tileset bytes change).
+        const liveEntry = editSessions.has(name) ? editEntryFor(name) : undefined;
+        if (liveEntry && (liveEntry.session.isDirty || liveEntry.strokeStartBlocks !== null)) {
           const layoutName = resolveLayoutName();
           if (!layoutName) return send(404, { error: `no layout or map ${name}` });
-          const png = encodePng(renderLayout(project, layoutName, { border, blocksOverride: editEntryFor(name).session.blocks }));
+          const png = encodePng(renderLayout(project, layoutName, { border, blocksOverride: liveEntry.session.blocks }));
           res.writeHead(200, { "content-type": "image/png", "cache-control": "no-cache" });
           return res.end(png);
         }
@@ -979,7 +985,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
               ] as const) {
                 if (localIds.length === 0) continue;
                 const path = canonicalTilesetPath(project.tilesetPaths(symbol).metatilesBin);
-                const savedCount = Math.floor(statSync(resolve(project.paths.root, path)).size / 16);
+                const savedCount = savedMetatileCount(project.paths.root, path);
                 refuseUnsavedBlockRefs(editSessions.entries(), name, path, savedCount, localIds);
               }
             };

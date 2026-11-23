@@ -1,8 +1,8 @@
 import { Agent, createServer, request, type IncomingMessage, type RequestListener, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { PassThrough } from "node:stream";
-import { afterEach, describe, expect, it } from "vitest";
-import { BodyTooLarge, MAX_BODY_BYTES, declaresOversizeBody, decodeSegment, isCrossOriginRequest, readBody, refuseOversize, sendJson } from "../src/http.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { BodyTooLarge, MAX_BODY_BYTES, declaresOversizeBody, decodeSegment, isCrossOriginRequest, jsonBody, readBody, refuseOversize, sendJson } from "../src/http.js";
 
 let server: Server | undefined;
 async function listen(handler: RequestListener): Promise<number> {
@@ -182,5 +182,78 @@ describe("shared HTTP boundary (no corpus)", () => {
     [{}, true],
   ])("isCrossOriginRequest preserves the local-only guard for %j", (headers, expected) => {
     expect(isCrossOriginRequest(headers)).toBe(expected);
+  });
+
+  describe("jsonBody", () => {
+    const isShape = (v: unknown): v is { n: number } => typeof v === "object" && v !== null && typeof (v as { n?: unknown }).n === "number";
+    const mount = (onBody: (b: { n: number }) => unknown = (b) => ({ got: b.n })) =>
+      listen((req, res) => {
+        void jsonBody(req, (status, body) => sendJson(res, status, body), isShape, "{ n: number }", (b) => { sendJson(res, 200, onBody(b)); });
+      });
+
+    it("passes a valid body to the handler", async () => {
+      const port = await mount();
+      const r = await post(port, ['{"n":', "7}"]);
+      expect(r.status).toBe(200);
+      expect(JSON.parse(r.body)).toEqual({ got: 7 });
+    });
+
+    it("answers 400 with the parse message on malformed JSON, without calling the handler", async () => {
+      let called = false;
+      const port = await mount(() => { called = true; return {}; });
+      const r = await post(port, ["{nope"]);
+      expect(r.status).toBe(400);
+      expect(JSON.parse(r.body).error).toMatch(/^invalid JSON body: /);
+      expect(called).toBe(false);
+    });
+
+    it("answers 400 naming the expected shape and echoing the body, without calling the handler", async () => {
+      let called = false;
+      const port = await mount(() => { called = true; return {}; });
+      const r = await post(port, ['{"n":"x"}']);
+      expect(r.status).toBe(400);
+      expect(JSON.parse(r.body)).toEqual({ error: 'expected { n: number }, got {"n":"x"}' });
+      expect(called).toBe(false);
+    });
+
+    it("treats an empty body as invalid JSON (400)", async () => {
+      const port = await mount();
+      const r = await post(port, []);
+      expect(r.status).toBe(400);
+      expect(JSON.parse(r.body).error).toMatch(/^invalid JSON body: /);
+    });
+
+    it("ignores the content-type header", async () => {
+      const port = await mount();
+      const r = await post(port, ['{"n":1}'], { "content-type": "text/plain" });
+      expect(r.status).toBe(200);
+    });
+
+    it("answers 413 when the streamed body exceeds the cap, without calling the handler", async () => {
+      let called = false;
+      const port = await mount(() => { called = true; return {}; });
+      const r = await post(port, ["x".repeat(MAX_BODY_BYTES + 1)], { "transfer-encoding": "chunked" });
+      expect(r.status).toBe(413);
+      expect(JSON.parse(r.body)).toEqual({ error: "request body too large" });
+      expect(called).toBe(false);
+    }, 60_000);
+
+    it("answers 500 with the message when the handler throws (synchronously, or by rejecting)", async () => {
+      const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        const port = await listen((req, res) => {
+          void jsonBody(req, (s, b) => sendJson(res, s, b), isShape, "{ n: number }", (b) => {
+            if (b.n === 1) throw new Error("boom"); // synchronous throw
+            return Promise.reject("str"); // rejection with a non-Error
+          });
+        });
+        const a = await post(port, ['{"n":1}']);
+        expect(a.status).toBe(500);
+        expect(JSON.parse(a.body)).toEqual({ error: "boom" });
+        const b = await post(port, ['{"n":2}']);
+        expect(b.status).toBe(500);
+        expect(JSON.parse(b.body)).toEqual({ error: "str" });
+      } finally { spy.mockRestore(); }
+    });
   });
 });

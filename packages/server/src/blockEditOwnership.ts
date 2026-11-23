@@ -33,6 +33,8 @@ import type { EditSession } from "@pokemap/core/src/write/save.js";
 import type { GbcEditSession } from "@pokemap/core/src/gbc/write/save.js";
 import type { GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
 import type { EditCommandStack } from "@pokemap/core/src/edit/commands.js";
+import { statSync } from "node:fs";
+import { resolve } from "node:path";
 import { BlockEditRefusal, type BlockEditPlan, type TilesetFileEdit } from "@pokemap/core/src/blockEdit/types.js";
 import type { createEditSessionStore } from "./editSessions.js";
 import type { createGbcEditSessionStore } from "./gbcEditSessions.js";
@@ -41,6 +43,26 @@ import { mergeTilesetEdits } from "@pokemap/core/src/blockEdit/save.js";
 import { snapshotCommand } from "./editSessions.js";
 
 export type { BlockEditPlan } from "@pokemap/core/src/blockEdit/types.js";
+
+/**
+ * Number of 16-byte metatile records in the saved `metatilesPath` (project-relative).
+ * A tileset header that names a file that is not on disk (or a directory) is bad
+ * project data the operator can fix, not a server fault, so it answers 409
+ * `BAD_VALUE` naming the path. Any other fs error is an environment fault and stays a 500.
+ */
+export function savedMetatileCount(root: string, metatilesPath: string): number {
+  try {
+    const stat = statSync(resolve(root, metatilesPath));
+    // A directory stats fine with a made-up size; it would read as 0 or 256 metatiles.
+    if (!stat.isFile()) throw new BlockEditRefusal("BAD_VALUE", `${metatilesPath}: metatiles path is not a file`);
+    return Math.floor(stat.size / 16);
+  } catch (e) {
+    if (e instanceof BlockEditRefusal) throw e;
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR") throw new BlockEditRefusal("BAD_VALUE", `${metatilesPath}: metatiles file is missing`);
+    throw e;
+  }
+}
 
 /** The one entry shape a staged-tileset check needs from either session store. */
 export interface OwnershipEntry {
