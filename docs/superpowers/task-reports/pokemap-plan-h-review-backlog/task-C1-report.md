@@ -51,3 +51,8 @@ Mutation results (each restored in `finally`; the committed tree is unmutated):
 - M5 remount guard (`live` check) removed: 1 file red (the remount test).
 - M6 shell registration dropped (trap-6 path): 3 files red (strokeBarrier plus both context-stroke files).
 - M7 try/catch in `sourcesSettled` removed: 2 files red (sessionBarrier and strokeBarrier rejecting-source tests).
+
+## Re-review and gate (conductor, 2026-11-22)
+
+- Opus re-review of the round-1 fixes: APPROVE, no blocking or important findings, 7 minors (`overnight/review-C1-rereview-opus.md` in the shared notes folder). Fixed in `ac7cc1f`: ceiling comment wording (recovery case, blast radius of the no-timeout ceiling, shell-wide registry scope), a real assertion in the rejecting/throwing unmounted-chain test, and "exactly one /discard" assertions in the four context-stroke cases. Left: per-unmount generation counter (unreachable until `<Activity>` or an unstable `onStrokeChain` exists) and the M4/M6 per-test evidence wording.
+- Gate at `df76bc2` (+ `ac7cc1f`, comment and test only; its five touched test files re-run alone: 30 pass): 5,387 pass / 1 fail / 283 files; the 1 fail is the known `core/test/config/engine.test.ts` env fail; typecheck pass, UI build pass; subjects unchanged. This closes quality finding 2 (gate evidence).
