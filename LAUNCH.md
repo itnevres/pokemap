@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Node.js 22.12+ (22.x, 24.x or 26+), and npm installed. Vitest 5.1.1 declares `^22.12.0 || ^24.0.0 || >=26.0.0`; the UI's Vite 8.3.8 and `@vitejs/plugin-react` 6.1.1 accept `^20.19.0 || >=22.12.0`, so vitest sets the floor (the app itself still runs on 20.19+).
+- Node.js 20.19+ or 22.12+, and npm installed, to run the app. The UI's Vite 8.3.8 and `@vitejs/plugin-react` 6.1.1 declare `^20.19.0 || >=22.12.0`. Running the tests (`npm test`) needs Node 22.12+ (22.x, 24.x or 26+), because Vitest 5.1.1 declares `^22.12.0 || ^24.0.0 || >=26.0.0`.
 - From the repository root, install dependencies with `npm ci`.
 
 ## One-click launch (Windows)
