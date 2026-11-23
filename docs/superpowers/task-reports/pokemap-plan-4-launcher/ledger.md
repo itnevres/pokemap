@@ -1,0 +1,16 @@
+# Plan 4 launcher and docs: task ledger (rows 1a, 1b, 5)
+
+| Row | Tier and reason | Route | Evidence |
+|---|---|---|---|
+| 1a hub serves built UI | High: hub I/O, file path from a URL | Tests written first by the orchestrator (`2c325d0`). Free chain `chain.py --tier sonnet --no-codex`: deepseek-v4.1-flash failed verify, inkling no diff, rest capped/dead. Claude Sonnet subagent implemented from the brief (floor, Codex parked until Nov 25). | 42 hub tests pass. Two separate Opus reviews (`1a-spec-review.md`, `1a-quality-review.md`): 3 Important found and fixed (8.3 short names reach dotfiles; `GET //[` crashed the hub; "backslash" tests had no backslash), plus minors. Mutation checks below. |
+| 1b launcher | Medium: process start and stop, visible failures | Written inline by the orchestrator (a ~150-line script with live-check feedback loops; a brief would cost more than the edit). Combined review by Sonnet (`1b-review.md`; the DeepSeek hop could not run, `opencode` not on PATH): 1 Important (`--port 0` polled forever), 4 minor, all fixed. | Live checks on this machine, port 5199, temp `POKEMAP_HOME`, subject opened read-only: dist missing (builds), dist fresh (no build), hub running (only opens), relaunch reopens the last project, `PokeMap.cmd` itself, stale dist rebuilds, foreign program on the port (plain message), hub killed (launcher reports and exits), `--port 0` refused, Node missing message (PATH stripped). The built page loaded in the browser pane from the hub origin, map list shown, no console errors. |
+| 5 docs | Low: prose from the code | Claude Sonnet subagent wrote README, user guide, agent guide from a brief; Haiku fact-checked every command, flag, tool and link against the CLI/MCP source: 2 mismatches (`metatile` required), fixed. | Two TODO gaps marked in the text (Porymap primary evidence lives in the subject repo; per-layout map list is not shown by the UI). |
+
+## Mutation checks (row 1a, `hub.ts`, tests filtered to "hub serves the built UI")
+
+Killed: realpath not native (8.3 test), dotfile rule gone with its second guard (link test + 8.3 test), no containment and no real-path dotfile check, no segment check at all (4 tests), no segment check only (traversal test), UI served before `/api`, no method check, unguarded URL parse (`//[` test), listen error not rejected, static served before the cross-origin check.
+Survived, accepted: HEAD sends a body (Node drops a HEAD body itself: equivalent mutant); containment alone removed, and the requested-name dotfile rule alone removed (each is covered by the other layer; removing both is killed).
+
+## Gate
+
+Gate at 063772b: 5456 pass / 1 fail / 284 files; typecheck pass, UI build pass; subjects unchanged. The one failure is `engine.test.ts` "parses the subject repo's real porymap.project.cfg", the known environment failure listed in the overnight RULES section 10 (not caused by this branch).

@@ -47,6 +47,9 @@ export interface Project {
   /** Every tileset symbol resolved from headers.h, e.g. "gTileset_General". */
   tilesetSymbols(): string[];
   map(name: string): MapData;
+  /** Drop the cached parse of one map so the next `map(name)` re-reads its
+   *  map.json. A save that wrote the file calls this (Plan H Task G). */
+  forgetMap(name: string): void;
   mapNames(): string[];
   /** src/data/wild_encounters.json, parsed once and cached -- there is only
    *  one per project, unlike tilesets (one per symbol). */
@@ -215,6 +218,7 @@ export function openProject(root: string): Project {
     get tilesetGeneration() { return tilesetGeneration; },
     tilesetSymbols: () => [...tsPaths.keys()],
     map: getMap,
+    forgetMap: (name) => { mapCache.delete(name); },
     mapNames: () => groups.allMapNames(),
     encounters: () => {
       if (!encountersCache) {

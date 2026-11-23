@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
+import { execSync, spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, symlinkSync } from "node:fs";
 import { createServer as createHttp, request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -9,6 +11,8 @@ import { norm } from "@pokemap/core/src/config/paths.js";
 import { SUBJECT_ROOT, hasProject } from "@pokemap/core/test/helpers/corpus.js";
 import { GBC_SUBJECT_ROOT, hasGbcProject } from "@pokemap/core/test/gbc/helpers/corpus.js";
 
+const tsxCli = fileURLToPath(new URL("../../../node_modules/tsx/dist/cli.mjs", import.meta.url));
+const serveTs = fileURLToPath(new URL("../src/serve.ts", import.meta.url));
 const homes: string[] = [];
 function makeHome(): string {
   const h = mkdtempSync(join(tmpdir(), "pokemap-home-"));
@@ -602,4 +606,205 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("hub prewarm", () => {
       log.mockRestore();
     }
   }, 90000);
+});
+
+// Plan 4 row 1a: the hub serves the built UI (`uiDir`), so one process and one port host the whole app.
+describe("hub serves the built UI (uiDir)", () => {
+  const makeUi = (): string => {
+    // The secret lives next to `dist` inside a root this test owns (cleaned with the other roots), never in the shared temp folder.
+    const base = makeRoot();
+    const ui = join(base, "dist");
+    mkdirSync(ui);
+    writeFileSync(join(ui, "index.html"), "<!doctype html><title>PokeMap UI</title>");
+    mkdirSync(join(ui, "assets"), { recursive: true });
+    writeFileSync(join(ui, "assets", "app-abc123.js"), "console.log('app')");
+    writeFileSync(join(ui, "assets", "app-abc123.css"), "body{margin:0}");
+    writeFileSync(join(ui, "assets", "weird.bin"), "bin");
+    // A secret NEXT TO the UI folder: a traversal that works would read this.
+    writeFileSync(join(base, "pokemap-ui-secret.txt"), "SECRET");
+    return ui;
+  };
+  const withHub = async (fn: (port: number, ui: string) => Promise<void>, uiDir?: string): Promise<void> => {
+    const ui = uiDir ?? makeUi();
+    const hub = await createHub({ port: 0, home: makeHome(), uiDir: ui });
+    try { await fn(hub.port, ui); } finally { await hub.close(); }
+  };
+  it("port 0 binds an ephemeral port and reports the real one", async () => {
+    await withHub(async (port) => { expect(port).toBeGreaterThan(0); });
+  });
+
+  it("GET / and /index.html serve index.html as text/html with nosniff", async () => {
+    await withHub(async (port) => {
+      for (const p of ["/", "/index.html"]) {
+        const r = await fetch(`http://127.0.0.1:${port}${p}`);
+        expect(r.status).toBe(200);
+        expect(r.headers.get("content-type")).toMatch(/^text\/html/);
+        expect(r.headers.get("x-content-type-options")).toBe("nosniff");
+        expect(await r.text()).toContain("PokeMap UI");
+      }
+    });
+  });
+
+  it("serves assets with their content types; unknown extensions are octet-stream", async () => {
+    await withHub(async (port) => {
+      const js = await fetch(`http://127.0.0.1:${port}/assets/app-abc123.js`);
+      expect(js.status).toBe(200);
+      expect(js.headers.get("content-type")).toMatch(/^(text|application)\/javascript/);
+      expect(await js.text()).toBe("console.log('app')");
+      const css = await fetch(`http://127.0.0.1:${port}/assets/app-abc123.css`);
+      expect(css.headers.get("content-type")).toMatch(/^text\/css/);
+      const bin = await fetch(`http://127.0.0.1:${port}/assets/weird.bin`);
+      expect(bin.headers.get("content-type")).toBe("application/octet-stream");
+    });
+  });
+
+  it("HEAD returns headers and no body; POST/PUT/DELETE on a UI path are 405", async () => {
+    await withHub(async (port) => {
+      const head = await rawRequest(port, "/", { method: "HEAD" });
+      expect(head.status).toBe(200);
+      expect(head.body).toBe("");
+      // HEAD declares the same length a GET would send.
+      const get = await fetch(`http://127.0.0.1:${port}/`);
+      const headLen = (await fetch(`http://127.0.0.1:${port}/`, { method: "HEAD" })).headers.get("content-length");
+      expect(headLen).toBe(String((await get.text()).length));
+      for (const method of ["POST", "PUT", "DELETE"]) {
+        expect((await rawRequest(port, "/", { method })).status).toBe(405);
+      }
+    });
+  });
+
+  it("a missing file, a directory, and a dotfile are 404 (no SPA fallback, no listing)", async () => {
+    await withHub(async (port, ui) => {
+      writeFileSync(join(ui, ".env"), "TOKEN=1");
+      for (const p of ["/nope.js", "/assets", "/assets/", "/.env", "/assets/missing.css"]) {
+        expect((await rawRequest(port, p, {})).status, p).toBe(404);
+      }
+    });
+  });
+
+  it("path traversal never reaches a file outside uiDir (raw, encoded, doubly-encoded, backslash, drive, NUL)", async () => {
+    await withHub(async (port) => {
+      const attempts = [
+        "/../pokemap-ui-secret.txt",
+        "/assets/../../pokemap-ui-secret.txt",
+        "/%2e%2e/pokemap-ui-secret.txt",
+        "/%2E%2E%2Fpokemap-ui-secret.txt",
+        "/assets/%2e%2e/%2e%2e/pokemap-ui-secret.txt",
+        "/..%2Fpokemap-ui-secret.txt",
+        "/%252e%252e/pokemap-ui-secret.txt",
+        String.raw`/..\pokemap-ui-secret.txt`,
+        "/%5c..%5cpokemap-ui-secret.txt",
+        String.raw`/assets\..\..\pokemap-ui-secret.txt`,
+        "/C:/Windows/win.ini",
+        "/C%3A/Windows/win.ini",
+        "/%00/../pokemap-ui-secret.txt",
+        "/index.html%00.png",
+        "//pokemap-ui-secret.txt",
+        "/index.html::$DATA",
+      ];
+      for (const p of attempts) {
+        const r = await rawRequest(port, p, {});
+        expect(r.body, p).not.toContain("SECRET");
+        expect(r.body, p).not.toContain("for 16-bit app support");
+        expect([400, 403, 404], p).toContain(r.status);
+      }
+    });
+  });
+
+  it("a malformed percent escape is a 400, not a 500", async () => {
+    await withHub(async (port) => {
+      expect((await rawRequest(port, "/%E0%A4%A", {})).status).toBe(400);
+      expect((await rawRequest(port, "/%", {})).status).toBe(400);
+    });
+  });
+
+  it("a link inside uiDir that points outside it is not followed", async (ctx) => {
+    const outside = makeRoot();
+    writeFileSync(join(outside, "leak.txt"), "SECRET");
+    await withHub(async (port, ui) => {
+      try {
+        symlinkSync(outside, join(ui, "link"), process.platform === "win32" ? "junction" : "dir");
+      } catch { ctx.skip(); } // cannot create links on this machine: shown as skipped, not green
+      const r = await rawRequest(port, "/link/leak.txt", {});
+      expect(r.body).not.toContain("SECRET");
+      expect(r.status).toBe(404);
+    });
+  });
+
+  it("/api routes still win over the UI, even for a name that exists as a file", async () => {
+    const ui = makeUi();
+    mkdirSync(join(ui, "api"), { recursive: true });
+    writeFileSync(join(ui, "api", "hub"), "FILE");
+    await withHub(async (port) => {
+      expect(await getJson(port, "/api/hub")).toEqual({ current: null, recent: [] });
+      const r = await fetch(`http://127.0.0.1:${port}/api/project`);
+      expect(r.status).toBe(503);
+      expect(await r.json()).toEqual({ error: "no project open" });
+      expect((await fetch(`http://127.0.0.1:${port}/api/hub/nope`)).status).toBe(404);
+    }, ui);
+  });
+
+  it("the cross-origin refusal still applies to UI paths", async () => {
+    await withHub(async (port) => {
+      const evil = await rawRequest(port, "/", { headers: { host: "evil.example" } });
+      expect(evil.status).toBe(403);
+      const evilOrigin = await rawRequest(port, "/", { headers: { origin: "http://evil.example", host: `127.0.0.1:${port}` } });
+      expect(evilOrigin.status).toBe(403);
+    });
+  });
+
+  it("without uiDir a non-API path is not served from disk (503 with no project, as before)", async () => {
+    const hub = await createHub({ port: 0, home: makeHome() });
+    try {
+      expect((await fetch(`http://127.0.0.1:${hub.port}/`)).status).toBe(503);
+    } finally {
+      await hub.close();
+    }
+  });
+
+  it("a request target `new URL` cannot parse is a 400 and the hub keeps serving", async () => {
+    await withHub(async (port) => {
+      for (const p of ["//[", "//a:b@[x", "//"]) {
+        const r = await rawRequest(port, p, {});
+        expect([400, 404], p).toContain(r.status);
+      }
+      expect((await fetch(`http://127.0.0.1:${port}/`)).status).toBe(200);
+    });
+  });
+
+  it("a Windows 8.3 short name cannot reach a dotfile", async () => {
+    if (process.platform !== "win32") return;
+    await withHub(async (port, ui) => {
+      writeFileSync(join(ui, ".env-long-name"), "TOKEN=1");
+      const shortPath = execSync(`for %I in ("${join(ui, ".env-long-name")}") do @echo %~sI`, { encoding: "utf8" }).trim();
+      const short = shortPath.split("\\").pop() ?? "";
+      if (!short || short.toLowerCase() === ".env-long-name") return; // this volume does not generate short names
+      const r = await rawRequest(port, `/${encodeURIComponent(short)}`, {});
+      expect(r.status).toBe(404);
+      expect(r.body).not.toContain("TOKEN");
+    });
+  });
+
+  it("an unreadable --port value is refused by serve.ts", () => {
+    for (const args of [["--port"], ["--port", "x"], ["--port", "70000"], ["--port=5"]]) {
+      const r = spawnSync(process.execPath, [tsxCli, serveTs, ...args], { encoding: "utf8", timeout: 60000 });
+      expect(r.status, args.join(" ")).toBe(1);
+      expect(r.stderr, args.join(" ")).toMatch(/--port/);
+      expect(r.stderr).not.toMatch(/at .*\(/); // no stack trace
+    }
+  }, 120000);
+
+  it("a port that is already taken rejects createHub with EADDRINUSE instead of crashing the process", async () => {
+    const first = await createHub({ port: 0, home: makeHome() });
+    try {
+      await expect(createHub({ port: first.port, home: makeHome() })).rejects.toThrow(/EADDRINUSE|in use/i);
+    } finally {
+      await first.close();
+    }
+  });
+
+  it("a uiDir that does not exist is refused at startup, naming the folder", async () => {
+    await expect(createHub({ port: 0, home: makeHome(), uiDir: join(tmpdir(), "pokemap-no-such-ui-dir") }))
+      .rejects.toThrow(/pokemap-no-such-ui-dir/);
+  });
 });
