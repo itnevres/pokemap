@@ -4,7 +4,7 @@ Start PokeMap with one double-click, and give AI agents native tool access via M
 
 ## Status
 
-Open. Not started. In scope now: the launcher (1a, 1b; D32) and the MCP tools (3a-3c, approved by the user). Deferred, not cancelled: the Electron app and its installer (1c-1f, 2a, 2b; D32). Documentation (5) and the performance pass (6a, 6b) run now, with the launcher. Each task is independent of the others; this is not one plan to run top to bottom. Work from the Subtasks table: each row is one dispatch, and its brief also carries the traps for its task. Where a trap or a ruling disagrees with a Task requirement, the trap or ruling wins.
+Open. Rows 1a, 1b (launcher) and 5 (documentation) are done; 3a-3c and 6a are merged. In scope now: the launcher (1a, 1b; D32) and the MCP tools (3a-3c, approved by the user). Deferred, not cancelled: the Electron app and its installer (1c-1f, 2a, 2b; D32). Documentation (5) and the performance pass (6a, 6b) run now, with the launcher. Each task is independent of the others; this is not one plan to run top to bottom. Work from the Subtasks table: each row is one dispatch, and its brief also carries the traps for its task. Where a trap or a ruling disagrees with a Task requirement, the trap or ruling wins.
 
 ## Depends on
 
@@ -148,8 +148,8 @@ Demonstrated, not asserted:
 2. Claude Code can call `pokemap_render` and see the resulting image.
 
 - [ ] The `gate` skill passes (full suite, typecheck, UI build, subjects unchanged)
-- [ ] 1a: the hub serves the built UI and takes port 0
-- [ ] 1b: one double-click opens PokeMap on the last project with no terminal, with the hub stopped, with it running, and with `packages/ui/dist` deleted (criterion 1)
+- [x] 1a: the hub serves the built UI and takes port 0
+- [x] 1b: one double-click opens PokeMap on the last project with no terminal, with the hub stopped, with it running, and with `packages/ui/dist` deleted (criterion 1)
 - [ ] 3a, 3b: Claude Code calls `pokemap_render` and the image comes back visible in the transcript (criterion 2)
 - [ ] 3c: write tools, the GBC event tools included, refuse without `--allow-writes`, naming the flag
 - [ ] 5: a reader follows the guide on a scratch project
