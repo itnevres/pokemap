@@ -1,7 +1,8 @@
-import { BodyTooLarge, readBody, sendJson, isCrossOriginRequest, refuseOversize } from "./http.js";
-import { existsSync, readdirSync, statSync } from "node:fs";
-import { resolve } from "node:path";
-import { createServer as createHttp, type Server } from "node:http";
+import { BodyTooLarge, readBody, sendJson, isCrossOriginRequest, refuseOversize, decodeSegment } from "./http.js";
+import { existsSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { extname, isAbsolute, join, relative, resolve } from "node:path";
+import { createServer as createHttp, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { detectEngineFamily, probeEngineFamily } from "@pokemap/core/src/family.js";
 import { norm } from "@pokemap/core/src/config/paths.js";
 import type { BrowseEntry, BrowseResult, HubState, OpenConflict } from "@pokemap/core/src/hub/wire.js";
@@ -131,9 +132,102 @@ function logWarmUp(handler: ProjectHandler): void {
     .catch((e: unknown) => console.error("pokemap hub: warm-up failed:", e));
 }
 
-export async function createHub(opts: { port?: number; home?: string; open?: string; prewarm?: boolean }): Promise<Hub> {
+const UI_CONTENT_TYPES: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json",
+  ".map": "application/json",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".ico": "image/x-icon",
+  ".woff2": "font/woff2",
+  ".woff": "font/woff",
+  ".txt": "text/plain; charset=utf-8",
+};
+
+/**
+ * Answers one non-`/api` request from the built UI folder (Plan 4 row 1a).
+ * `uiReal` is the realpath of the folder, computed once at startup.
+ *
+ * The file path comes from the RAW request target, not from `new URL(...)`:
+ * `URL` silently normalizes `..` and `%2e%2e` away and would parse `//x` as a
+ * host, so it can neither see nor reject a traversal attempt. Each segment is
+ * decoded separately and refused if it could name anything but a plain file
+ * name. `:` is refused so a drive letter (`C:`) or an NTFS stream
+ * (`index.html::$DATA`) can never reach the filesystem. No directory
+ * listing and no SPA fallback: anything that is not a regular file is 404.
+ */
+function serveUi(req: IncomingMessage, res: ServerResponse, uiReal: string, uiDir: string): void {
+  const send = (code: number, body: unknown) => sendJson(res, code, body);
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    res.setHeader("allow", "GET, HEAD");
+    return send(405, { error: "method not allowed" });
+  }
+
+  const target = req.url ?? "/";
+  const cut = target.search(/[?#]/);
+  const raw = cut === -1 ? target : target.slice(0, cut);
+  if (!raw.startsWith("/")) return send(404, { error: "not found" });
+
+  let segments: string[];
+  if (raw === "/") {
+    segments = ["index.html"];
+  } else {
+    const parts = raw.slice(1).split("/");
+    if (parts.some((p) => p === "")) return send(404, { error: "not found" });
+    segments = [];
+    for (const part of parts) {
+      const decoded = decodeSegment(part);
+      if (decoded === undefined) return send(400, { error: "malformed URL" });
+      segments.push(decoded);
+    }
+    if (segments.some((s) => s === "" || s === "." || s === ".." || s.startsWith(".") || /[/\\:\0]/.test(s))) {
+      return send(404, { error: "not found" });
+    }
+  }
+
+  let file: string;
+  try {
+    file = realpathSync(join(uiDir, ...segments));
+    const rel = relative(uiReal, file);
+    // A link or junction inside the folder that points outside it is not followed.
+    if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return send(404, { error: "not found" });
+    if (!statSync(file).isFile()) return send(404, { error: "not found" });
+  } catch {
+    return send(404, { error: "not found" });
+  }
+
+  readFile(file).then(
+    (data) => {
+      res.writeHead(200, {
+        "content-type": UI_CONTENT_TYPES[extname(file).toLowerCase()] ?? "application/octet-stream",
+        "content-length": data.length,
+        "x-content-type-options": "nosniff",
+        "cache-control": "no-cache",
+      });
+      res.end(req.method === "HEAD" ? undefined : data);
+    },
+    () => send(404, { error: "not found" }),
+  );
+}
+
+export async function createHub(opts: { port?: number; home?: string; open?: string; prewarm?: boolean; uiDir?: string }): Promise<Hub> {
   const home = recentHome(opts.home);
   let current: ProjectHandler | null = null;
+
+  // Checked before anything is opened or listening, so a bad folder leaves nothing running.
+  const uiDir = opts.uiDir;
+  let uiReal = "";
+  if (uiDir !== undefined) {
+    try {
+      if (!statSync(uiDir).isDirectory()) throw new Error("not a directory");
+      uiReal = realpathSync(uiDir);
+    } catch {
+      throw new Error(`no such UI directory ${uiDir}`);
+    }
+  }
 
   const http: Server = createHttp((req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
@@ -144,6 +238,11 @@ export async function createHub(opts: { port?: number; home?: string; open?: str
         return send(403, { error: "cross-origin request refused" });
       }
       if (refuseOversize(req, res)) return;
+
+      // `/api` routes always win; every other path is the built UI when one is configured.
+      if (uiDir !== undefined && url.pathname !== "/api" && !url.pathname.startsWith("/api/")) {
+        return serveUi(req, res, uiReal, uiDir);
+      }
 
       if (url.pathname === "/api/hub") {
         return send(200, { current: current?.info ?? null, recent: readRecent(home) } satisfies HubState);
@@ -273,7 +372,19 @@ export async function createHub(opts: { port?: number; home?: string; open?: str
     }
   }
 
-  await new Promise<void>((r) => http.listen(opts.port ?? 5174, "127.0.0.1", r));
+  try {
+    // A listen failure (EADDRINUSE etc.) rejects instead of an uncaught 'error' event.
+    await new Promise<void>((ok, fail) => {
+      http.once("error", fail);
+      http.listen(opts.port ?? 5174, "127.0.0.1", () => {
+        http.off("error", fail);
+        ok();
+      });
+    });
+  } catch (e) {
+    current?.dispose(); // the project opened above must not outlive a hub that never started
+    throw e;
+  }
   const addr = http.address();
   const port = typeof addr === "object" && addr ? addr.port : (opts.port ?? 5174);
 

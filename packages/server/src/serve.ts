@@ -13,12 +13,35 @@
 // from there. `.claude/launch.json`'s `server` entry is already this file
 // with no args, so it now starts the hub; `server-gbc` (`--gbc`) is
 // unaffected.
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createHub } from "./hub.js";
 import { probeEngineFamily } from "@pokemap/core/src/family.js";
 import { readRecent, recentHome } from "./recent.js";
 
 async function main(): Promise<void> {
+  const argv = process.argv.slice(2);
+
+  // `--port <n>`: a whole number 0-65535 (0 = any free port). Default stays 5174.
+  let port = 5174;
+  const portAt = argv.indexOf("--port");
+  if (portAt !== -1) {
+    const v = argv[portAt + 1];
+    if (v === undefined || !/^\d+$/.test(v) || Number(v) > 65535) {
+      process.stderr.write("pokemap hub: --port needs a whole number from 0 to 65535\n");
+      process.exitCode = 1;
+      return;
+    }
+    port = Number(v);
+  }
+
+  // The built UI, served by the hub itself so one process and one port host
+  // the whole app. Absent (no build yet) or `--no-ui`: start without it, which
+  // is the dev workflow with the Vite server in front.
+  const uiPath = fileURLToPath(new URL("../../ui/dist", import.meta.url));
+  const uiDir = !argv.includes("--no-ui") && existsSync(join(uiPath, "index.html")) ? uiPath : undefined;
+
   // `pokemap.config.json` is read ONLY for `--gbc` below -- a hub user may
   // never have one (this file no longer needs a `projectPath` to start at
   // all), so reading it unconditionally the way the old, single-project
@@ -59,7 +82,8 @@ async function main(): Promise<void> {
     // start at `argv[2]`. Running `serve.ts --gbc` makes `argv[2]` the flag
     // itself, not a root, but the branch above already claims that case --
     // this `else` only ever sees a plain positional invocation or none.
-    openPath = process.argv.slice(2).find((a) => !a.startsWith("--"));
+    // The value after `--port` is skipped so `--port 0` is not read as a root.
+    openPath = argv.find((a, i) => !a.startsWith("--") && argv[i - 1] !== "--port");
   }
 
   // `open` given (either branch above) -> createHub opens it before ever
@@ -67,7 +91,7 @@ async function main(): Promise<void> {
   // refusal a positional-root invocation always gave). No args at all ->
   // start with nothing open; the block below then tries the most recent
   // project as a convenience, tolerating failure.
-  const hub = await createHub({ port: 5174, open: openPath, prewarm: true });
+  const hub = await createHub({ port, open: openPath, prewarm: true, uiDir });
 
   if (!openPath) {
     const mostRecent = readRecent(recentHome())[0];
@@ -98,6 +122,7 @@ async function main(): Promise<void> {
   const current = hub.current();
   const status = current ? `${current.family} ${current.info.root}` : "no project open";
   process.stdout.write(`pokemap hub on http://127.0.0.1:${hub.port} (${status})\n`);
+  if (uiDir) process.stdout.write(`pokemap hub: serving the built UI from ${uiDir}\n`);
 }
 
 // QR-F3: an uncaught rejection from main() (e.g. createHub({ open }) throwing
