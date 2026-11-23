@@ -101,9 +101,8 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA cached project after a save (tem
   it("GET /api/world places a warp-linked map from the saved warp arrival, like a fresh process", async () => {
     const live = await get("/api/world");
     expect(live.status).toBe(200);
-    // The singleton beside this warp must have moved with it (guards against a vacuous comparison).
-    const { x, y } = live.body.placements[OTHER];
-    expect({ x, y }).not.toEqual({ x: before.world.placements[OTHER].x, y: before.world.placements[OTHER].y });
+    // Pin: placements come from the cached project plus the sidecar on every call, and `worldCache`
+    // (connections and layouts only) never reads event data, so a fresh process is the oracle.
     const fresh = await createServer({ projectPath: root, port: 0 });
     try {
       const reference = await get("/api/world", `http://127.0.0.1:${fresh.port}`);

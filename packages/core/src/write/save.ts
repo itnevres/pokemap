@@ -121,12 +121,14 @@ export interface EditSession {
   originalMapJson: string;
   /** Scalar field replacements, applied via editJson. */
   jsonEdits: JsonEdit[];
-  /** Array insertions, applied via insertArrayElement, in the order given
-   *  (each one's own `index` is relative to the array's state AFTER every
-   *  earlier op in this same array has already applied -- callers building
-   *  a session incrementally, one op at a time, naturally produce indices
-   *  in this shape already; see Task 8's editSessions.ts). */
+  /** Array insertions, applied via insertArrayElement, in the order given,
+   *  BEFORE jsonEdits and removeOps. Every staged index (jsonEdits paths,
+   *  removeOps, insertOps) addresses the ORIGINAL file text: an add always
+   *  appends, so its `index` is the original array length plus the number
+   *  of earlier adds to the same array (`appendIndex` in edit/events.ts). */
   insertOps: InsertOp[];
+  /** Original-file indices, one op per removed element (`eventSlot` in
+   *  edit/events.ts translates the UI's current index to this one). */
   removeOps: RemoveOp[];
   /** Optional (Task 4 predates Task 17's wild-sign feature; every EARLIER
    *  task's own EditSession fixtures construct one without this field, so

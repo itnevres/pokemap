@@ -20,7 +20,7 @@ import { parseGbaCharmap, parseGbcCharmap } from "@pokemap/core/src/signs/charma
 import { parseMap } from "@pokemap/core/src/load/maps.js";
 import { parseMapEvents } from "@pokemap/core/src/gbc/load/events.js";
 import { scanCalls, codeLines, stripComment } from "@pokemap/core/src/gbc/load/asm.js";
-import { addEvent } from "@pokemap/core/src/edit/events.js";
+import { addEvent, appendIndex } from "@pokemap/core/src/edit/events.js";
 import { editJson, insertArrayElement, removeArrayElement } from "@pokemap/core/src/write/jsonEdit.js";
 import { createSymbolIndexCache } from "./projectSymbols.js";
 import { effectiveGbaScripts } from "./signRefresh.js";
@@ -292,7 +292,7 @@ export function createGbaAddEventRoutes(project: Project, store: GbaStore, hooks
         charmap: parseGbaCharmap(read(`${root}/charmap.txt`)),
       });
       const added = addEvent(candidate.map, form.kind, built.value);
-      candidate.map = added.map; candidate.insertOps = [...candidate.insertOps, added.insertOp];
+      candidate.map = added.map; candidate.insertOps = [...candidate.insertOps, { ...added.insertOp, index: appendIndex(candidate, form.kind) }];
       candidate.scriptAppends = [...(candidate.scriptAppends ?? []), ...built.scriptAppends];
       candidate.scriptReplaces = built.scriptReplaces; candidate.newNames = [...(candidate.newNames ?? []), ...built.newNames];
       // Re-parse the actual save candidate, rather than trusting the builder's parsed view.
