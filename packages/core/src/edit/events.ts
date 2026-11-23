@@ -95,7 +95,9 @@ export function setObjectGraphics(map: MapData, index: number, graphicsId: strin
  *  `kind`, never a caller-supplied index -- an explicit insertion point in
  *  the middle of an events array has no established meaning in this
  *  format (unlike connections, where order can matter), so "add" always
- *  means "append". */
+ *  means "append". The returned `insertOp.index` is a CURRENT-list index; a
+ *  caller staging it on an EditSession must restamp it with `appendIndex`
+ *  (original-file index space, see `IndexSpaceSession`). */
 export function addEvent(map: MapData, kind: EventKind, value: Record<string, unknown>): { map: MapData; insertOp: InsertOp } {
   const arrayKey = EVENT_ARRAY_KEY[kind];
   const camelKey = CAMEL_ARRAY_KEY[kind];

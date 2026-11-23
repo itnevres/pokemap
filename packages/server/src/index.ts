@@ -1176,7 +1176,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
               //   project.mapCache[name]  <- <map>/map.json            -> forgetMap(name)
               //   allMapsCache            <- every map's map.json      -> reset (warp renumber scan)
               //   worldCache              <- connections + layouts only, no event data; a commit edits events -> kept
-              //   pngCache                <- blocks, layouts, tilesets -> cleared after the finally, below
+              //   pngCache                <- blocks, layouts, tilesets -> cleared after the finally on success, below (a thrown commit returns 500 first; syncOverlay covers tileset bytes only)
               //   coverage/species/encounters caches <- wild_encounters.json, graphics/pokemon: a commit never writes them
               project.forgetMap(name); allMapsCache = undefined;
             }
@@ -1225,7 +1225,13 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
               if (slot.pending) {
                 entry.session.insertOps = entry.session.insertOps.map(op => op === slot.insert
                   ? { ...op, value: { ...(op.value as Record<string, unknown>), x: parsed.x as number, y: parsed.y as number, ...(parsed.elevation !== undefined ? { elevation: parsed.elevation as number } : {}) } } : op);
-              } else entry.session.jsonEdits = [...entry.session.jsonEdits, ...jsonEdits.map(edit => ({ ...edit, path: [edit.path[0]!, slot.original, ...edit.path.slice(2)] }))];
+              } else {
+                // A second move of the same original event replaces the first: editJson locates every edit in the
+                // ORIGINAL text, so two edits at one path would overlap and write garbage (e.g. 5 -> 12 -> 3 saved "32").
+                const moved = jsonEdits.map(edit => ({ ...edit, path: [edit.path[0]!, slot.original, ...edit.path.slice(2)] }));
+                const key = (path: readonly (string | number)[]) => JSON.stringify(path);
+                entry.session.jsonEdits = [...entry.session.jsonEdits.filter(old => !moved.some(edit => key(edit.path) === key(old.path))), ...moved];
+              }
               return { map: nextMap };
             });
             return send(200, { ...overlayStamp(), map: result.map, isDirty: result.isDirty });
