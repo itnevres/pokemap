@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer as createHttpServer, request as httpRequest, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
 import { createServer, type PokemapServer } from "../src/index.js";
 import { createGbcProjectHandler } from "../src/gbcRoutes.js";
 import type { GbcWorldPayload } from "@pokemap/core/src/gbc/wire.js";
@@ -16,7 +16,7 @@ import { wireConflicts } from "@pokemap/core/src/world/conflictAcceptance.js";
 import { placeNearWarps } from "@pokemap/core/src/world/nearWarp.js";
 import { gbcWarpLinks, gbcWarpConnectedMapsFrom } from "@pokemap/core/src/world/nearWarpAdapters.js";
 import type { WarpLink } from "@pokemap/core/src/world/nearWarp.js";
-import type { Sidecar } from "@pokemap/core/src/world/sidecar.js";
+import { readSidecar, type Sidecar } from "@pokemap/core/src/world/sidecar.js";
 import { gbcEncounterSources, gbcWhereSpecies, gbcCoverage, loadGbcSpeciesConstants } from "@pokemap/core/src/gbc/analyse/atlas.js";
 import { loadGbcFrontSprite } from "@pokemap/core/src/gbc/load/sprites.js";
 import { encodePng } from "@pokemap/cli/src/png.js";
@@ -501,6 +501,46 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       expect(got.equals(wantDay)).toBe(true);
       expect(got.equals(wantNite)).toBe(false);
     });
+
+    it("Plan H A2: an open but clean session (GET /plan, or undone back to clean) keeps the render cache; a dirty one bypasses it", async () => {
+      // Observability: a cache hit never calls proj.map (cachedRender resolves it only on a miss, via
+      // renderGbcMap); the live-render bypass calls it on every request. Baseline: a map with no session.
+      const proj = s.project as { map: (name: string) => unknown };
+      const spy = vi.spyOn(proj, "map");
+      const calls = async (map: string) => {
+        spy.mockClear();
+        const r = await get(`/api/render/${map}.png?border=0&time=day`);
+        expect(r.status).toBe(200);
+        return { n: spy.mock.calls.length, png: Buffer.from(await r.arrayBuffer()) };
+      };
+      try {
+        await calls("CherrygroveCity"); // warm
+        const hit = (await calls("CherrygroveCity")).n; // no session: the cache-hit baseline
+
+        const map = "Route29";
+        const disk = (await calls(map)).png; // miss, fills the cache
+        expect((await get(`/api/edit/${map}/plan`)).status).toBe(200);
+        const clean = await calls(map);
+        expect(clean.n, "open but clean session must keep hitting the cache").toBe(hit);
+        expect(clean.png.equals(disk)).toBe(true);
+
+        await post(`/api/edit/${map}/paint/begin`, {});
+        await post(`/api/edit/${map}/paint/apply`, {
+          tool: "pencil", targets: [{ x: 0, y: 0 }], stamp: { width: 1, height: 1, cells: [{ metatileId: 3 }] }, origin: { x: 0, y: 0 },
+        });
+        await post(`/api/edit/${map}/paint/end`, {});
+        const dirty = await calls(map);
+        expect(dirty.n, "dirty session must bypass the cache").toBeGreaterThan(hit);
+        expect(dirty.png.equals(disk)).toBe(false);
+
+        await post(`/api/edit/${map}/undo`, {});
+        const undone = await calls(map);
+        expect(undone.n, "undone back to clean must return to the cache").toBe(hit);
+        expect(undone.png.equals(disk)).toBe(true);
+      } finally {
+        spy.mockRestore();
+      }
+    }, 120_000);
 
     it("cache-key proof: day, nite, day again -- the second day equals the first and differs from nite", async () => {
       const day1 = Buffer.from(await (await get("/api/render/NewBarkTown.png?time=day")).arrayBuffer());
@@ -1428,4 +1468,52 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("POST /api/world/dungeons (GBC
     expect(r.status).toBe(400);
     expect(existsSync(`${root}/.pokemap/world.json`)).toBe(false);
   });
+
+  // Plan H G3 pin. Recorded limit (Plan H trap 18): loadGbcMaps reads
+  // constants/map_constants.asm, data/maps/attributes.asm, maps.asm and blocks.asm
+  // once at open; no GBC save writes those four files yet. When Plan 14C or Plan 3
+  // Tasks 2/8 make a save write one of them, this test must also cover reading it
+  // back.
+  it("after a committed warp move, the map, warps and world routes (cached project data) report the SAVED values", async () => {
+    const MAP = "VioletCity", WARP_INDEX = 6, TO = { x: 3, y: 5 };
+    const getJson = async (path: string) => {
+      const r = await fetch(`${base}${path}`);
+      expect(r.status, path).toBe(200);
+      return await r.json() as any;
+    };
+    const postJson = (path: string, body: unknown = {}) => fetch(`${base}${path}`, { method: "POST", body: JSON.stringify(body) });
+    // Prime every cache with the pre-save state.
+    const mapBefore = await getJson(`/api/map/${MAP}`);
+    const warpsBefore = await getJson(`/api/warps/${MAP}`);
+    const worldBefore = await getJson("/api/world");
+    const from = mapBefore.events.warps[WARP_INDEX] as { x: number; y: number };
+    expect([from.x, from.y]).not.toEqual([TO.x, TO.y]);
+    expect(warpsBefore.warps[WARP_INDEX]).toMatchObject({ x: from.x, y: from.y });
+    try {
+      expect((await postJson(`/api/edit/${MAP}/paint/begin`)).status).toBe(200);
+      expect((await postJson(`/api/edit/${MAP}/event/move`, { kind: "warp", index: WARP_INDEX, ...TO })).status).toBe(200);
+      const plan = await getJson(`/api/edit/${MAP}/plan`);
+      expect(plan.refusals).toEqual([]);
+      const commit = await postJson(`/api/edit/${MAP}/commit`, { fingerprint: plan.fingerprint });
+      expect(commit.status, JSON.stringify(await commit.json())).toBe(200);
+    } finally {
+      await postJson(`/api/edit/${MAP}/discard`);
+    }
+
+    // Disk witness, read independently of the hub's cached project.
+    const fresh = openGbcProject(root);
+    const disk = loadGbcMapEvents(root, fresh.map(MAP)).events.warps[WARP_INDEX]!;
+    expect([disk.x, disk.y]).toEqual([TO.x, TO.y]);
+
+    const mapAfter = await getJson(`/api/map/${MAP}`);
+    expect(mapAfter.events.warps[WARP_INDEX]).toMatchObject(TO);
+    expect(mapAfter.events.warps).toEqual(JSON.parse(JSON.stringify(loadGbcMapEvents(root, fresh.map(MAP)).events.warps)));
+    const warpsAfter = await getJson(`/api/warps/${MAP}`);
+    expect(warpsAfter).toEqual(JSON.parse(JSON.stringify(buildGbcWarpsPayload(fresh, MAP))));
+    expect(warpsAfter.warps[WARP_INDEX]).toMatchObject(TO);
+    const worldAfter = await getJson("/api/world");
+    expect(worldAfter.placements.SproutTower1F).not.toEqual(worldBefore.placements.SproutTower1F);
+    expect(worldAfter.placements).toEqual(
+      JSON.parse(JSON.stringify(buildGbcWorldPayload(fresh, buildGbcWorld(fresh), readSidecar(root), gbcWarpLinks(fresh)).placements)));
+  }, 120_000);
 });

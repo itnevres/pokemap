@@ -32,6 +32,7 @@ function stubProject(overrides: Partial<Project>): Project {
     tilesetGeneration: 0,
     tilesetSymbols: unused("tilesetSymbols"),
     map: unused("map"),
+    forgetMap: unused("forgetMap"),
     mapNames: () => [],
     encounters: unused("encounters"),
     ...overrides,

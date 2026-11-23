@@ -1,11 +1,10 @@
 import { BodyTooLarge, decodeSegment, readBody, refuseOversize, sendJson } from "./http.js";
 import { createGbaBlockEditRoutes } from "./blockEditRoutes.js";
 import { syncTilesetOverlay, type OverlayState } from "./tilesetOverlay.js";
-import { requireTilesetOwnership, refuseUnsavedBlockRefs } from "./blockEditOwnership.js";
+import { requireTilesetOwnership, refuseUnsavedBlockRefs, savedMetatileCount } from "./blockEditOwnership.js";
 import { checkTilesetBaselines } from "@pokemap/core/src/blockEdit/save.js";
 import { canonicalTilesetPath } from "@pokemap/core/src/blockEdit/canonicalTilesetPath.js";
 import { BlockEditRefusal } from "@pokemap/core/src/blockEdit/types.js";
-import { resolve } from "node:path";
 import { createGbaAddEventRoutes, eventFailure, type AddEventHooks } from "./addEventRoutes.js";
 import { checkGbaMapDefects } from "@pokemap/core/src/defects/gba.js";
 import { createSymbolIndexCache } from "./projectSymbols.js";
@@ -14,7 +13,7 @@ import { parseMap } from "@pokemap/core/src/load/maps.js";
 import { findGbaSign, gbaSignScript, gbaSignText, nextGbaSignNumber, updateGbaSign } from "@pokemap/core/src/signs/gbaSign.js";
 import { formatMarker, signHash, type SignMode } from "@pokemap/core/src/signs/marker.js";
 import { effectiveGbaScripts, gbaSignLabels, gbaSignParagraphs, refreshGbaLinkedSigns, replaceGbaScripts } from "./signRefresh.js";
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { createServer as createHttp, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { openProject, type Project } from "@pokemap/core/src/project.js";
 import { detectEngineFamily } from "@pokemap/core/src/family.js";
@@ -41,7 +40,7 @@ import { paintCells, floodFill, shiftGrid, type Stamp } from "@pokemap/core/src/
 import { applyScriptAppend, planSave, prepareSave, commitSave, type EditSession } from "@pokemap/core/src/write/save.js";
 import { planFingerprint, type AtomicEntry } from "@pokemap/core/src/write/atomic.js";
 import { formatDiffJson } from "@pokemap/core/src/write/diff.js";
-import { moveEvent, addEvent, deleteEvent, setObjectGraphics, findWarpsTargetingByIndex, EVENT_ARRAY_KEY, type EventKind } from "@pokemap/core/src/edit/events.js";
+import { moveEvent, addEvent, deleteEvent, setObjectGraphics, findWarpsTargetingByIndex, eventSlot, appendIndex, dropPendingInsert, type EventKind } from "@pokemap/core/src/edit/events.js";
 import { rankIndicatorSpecies, suggestIndicatorPlacement } from "@pokemap/core/src/signs/suggest.js";
 import { buildGbaIndicator, guardGbaIndicatorWrite, findGbaIndicator, updateGbaIndicator, gbaIndicatorGraphics } from "@pokemap/core/src/indicator/gba.js";
 
@@ -465,8 +464,8 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
               ? project.layoutById(project.map(name).layout)?.name
               : undefined;
 
-        // A live edit session for this exact map name means disk state is
-        // stale (an edit never touches disk until a real commit, per I6) --
+        // A DIRTY (or mid-stroke) edit session for this exact map name means disk
+        // state is stale (an edit never touches disk until a real commit, per I6) --
         // render straight from the session's own in-memory blocks and skip
         // pngCache entirely. pngCache is keyed only on `name:border` with no
         // expiry of its own; writing a live render into it would serve that
@@ -474,10 +473,17 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
         // request for the same map once the session eventually closes. Only
         // BROWSER caching is disabled by the response header below -- this
         // server's own process-lifetime Map needed its own bypass.
-        if (editSessions.has(name)) {
+        // Keyed on `isDirty` (or an open paint stroke, whose command is pushed only
+        // at /paint/end), not on the session merely existing: GET /plan
+        // opens a session as a side effect, and a clean session's blocks equal
+        // disk, so it can use the cache. A staged-only block edit pushes an
+        // undo command, so it is dirty too (the overlay sync above clears
+        // pngCache when staged tileset bytes change).
+        const liveEntry = editSessions.has(name) ? editEntryFor(name) : undefined;
+        if (liveEntry && (liveEntry.session.isDirty || liveEntry.strokeStartBlocks !== null)) {
           const layoutName = resolveLayoutName();
           if (!layoutName) return send(404, { error: `no layout or map ${name}` });
-          const png = encodePng(renderLayout(project, layoutName, { border, blocksOverride: editEntryFor(name).session.blocks }));
+          const png = encodePng(renderLayout(project, layoutName, { border, blocksOverride: liveEntry.session.blocks }));
           res.writeHead(200, { "content-type": "image/png", "cache-control": "no-cache" });
           return res.end(png);
         }
@@ -979,7 +985,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
               ] as const) {
                 if (localIds.length === 0) continue;
                 const path = canonicalTilesetPath(project.tilesetPaths(symbol).metatilesBin);
-                const savedCount = Math.floor(statSync(resolve(project.paths.root, path)).size / 16);
+                const savedCount = savedMetatileCount(project.paths.root, path);
                 refuseUnsavedBlockRefs(editSessions.entries(), name, path, savedCount, localIds);
               }
             };
@@ -1165,6 +1171,14 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
               // A failed commit may still have written (or failed to restore) a file.
               syncOverlay();
               symbols.invalidate(); addEvents.invalidate();
+              // Plan H Task G: a commit writes this map's map.json, so everything parsed from it is stale.
+              // Cache inventory (which cache reads which file):
+              //   project.mapCache[name]  <- <map>/map.json            -> forgetMap(name)
+              //   allMapsCache            <- every map's map.json      -> reset (warp renumber scan)
+              //   worldCache              <- connections + layouts only, no event data; a commit edits events -> kept
+              //   pngCache                <- blocks, layouts, tilesets -> cleared after the finally on success, below (a thrown commit returns 500 first; syncOverlay covers tileset bytes only)
+              //   coverage/species/encounters caches <- wild_encounters.json, graphics/pokemon: a commit never writes them
+              project.forgetMap(name); allMapsCache = undefined;
             }
           } catch (e) {
             console.error(e);
@@ -1206,12 +1220,18 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
             const entry = editEntryFor(name);
             const result = handleEventOp(entry, "move event", (map) => {
               const { map: nextMap, jsonEdits } = moveEvent(map, parsed.kind as EventKind, parsed.index as number, parsed.x as number, parsed.y as number, parsed.elevation as number | undefined);
-              const arrayKey = EVENT_ARRAY_KEY[parsed.kind as EventKind];
-              const pending = entry.session.insertOps.find(op => op.path.length === 1 && op.path[0] === arrayKey && op.index === parsed.index);
-              if (pending) {
-                entry.session.insertOps = entry.session.insertOps.map(op => op === pending
+              // The UI sends a CURRENT index; staged edits address the original file text (Plan H B3).
+              const slot = eventSlot(entry.session, parsed.kind as EventKind, parsed.index as number);
+              if (slot.pending) {
+                entry.session.insertOps = entry.session.insertOps.map(op => op === slot.insert
                   ? { ...op, value: { ...(op.value as Record<string, unknown>), x: parsed.x as number, y: parsed.y as number, ...(parsed.elevation !== undefined ? { elevation: parsed.elevation as number } : {}) } } : op);
-              } else entry.session.jsonEdits = [...entry.session.jsonEdits, ...jsonEdits];
+              } else {
+                // A second move of the same original event replaces the first: editJson locates every edit in the
+                // ORIGINAL text, so two edits at one path would overlap and write garbage (e.g. 5 -> 12 -> 3 saved "32").
+                const moved = jsonEdits.map(edit => ({ ...edit, path: [edit.path[0]!, slot.original, ...edit.path.slice(2)] }));
+                const key = (path: readonly (string | number)[]) => JSON.stringify(path);
+                entry.session.jsonEdits = [...entry.session.jsonEdits.filter(old => !moved.some(edit => key(edit.path) === key(old.path))), ...moved];
+              }
               return { map: nextMap };
             });
             return send(200, { ...overlayStamp(), map: result.map, isDirty: result.isDirty });
@@ -1238,7 +1258,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
             const entry = editEntryFor(name);
             const result = handleEventOp(entry, "add event", (map) => {
               const { map: nextMap, insertOp } = addEvent(map, parsed.kind as EventKind, parsed.value as Record<string, unknown>);
-              entry.session.insertOps = [...entry.session.insertOps, insertOp];
+              entry.session.insertOps = [...entry.session.insertOps, { ...insertOp, index: appendIndex(entry.session, parsed.kind as EventKind) }];
               return { map: nextMap };
             });
             return send(200, { ...overlayStamp(), map: result.map, isDirty: result.isDirty });
@@ -1265,9 +1285,12 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
             const entry = editEntryFor(name);
             const result = handleEventOp(entry, "delete event", (map) => {
               const { map: nextMap, removeOp } = deleteEvent(map, parsed.kind as EventKind, parsed.index as number);
-              entry.session.removeOps = [...entry.session.removeOps, removeOp];
-              const warpRenumberWarnings = parsed.kind === "warp"
-                ? findWarpsTargetingByIndex(getAllMapsForWarpScan().filter((m) => m.mapId !== map.id), map.id, parsed.index as number)
+              // Staged ops speak original indices; deleting a pending add just drops its insert (Plan H B3).
+              const slot = eventSlot(entry.session, parsed.kind as EventKind, parsed.index as number);
+              if (slot.pending) entry.session.insertOps = dropPendingInsert(entry.session, parsed.kind as EventKind, slot.insert);
+              else entry.session.removeOps = [...entry.session.removeOps, { ...removeOp, index: slot.original }];
+              const warpRenumberWarnings = parsed.kind === "warp" && !slot.pending
+                ? findWarpsTargetingByIndex(getAllMapsForWarpScan().filter((m) => m.mapId !== map.id), map.id, slot.original)
                 : [];
               return { map: nextMap, extra: warpRenumberWarnings };
             });
@@ -1404,7 +1427,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
                 // The last body may lack a newline; hash the bytes actually staged.
                 append = append.replace(/^@ pokemap:sign [^\r\n]+/m, formatMarker("gba", mode, signHash(findGbaSign(append, label).body)));
                 session.map = added.map;
-                session.insertOps = [...session.insertOps, added.insertOp];
+                session.insertOps = [...session.insertOps, { ...added.insertOp, index: appendIndex(session, "bg") }];
                 const pending = { path: project.paths.mapScriptsInc(name), text: append };
                 session.scriptAppends = [...(session.scriptAppends ?? []), pending];
                 // Appending after an unterminated EOF supplies the previous body's newline.
@@ -1458,9 +1481,6 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
             const text = effectiveGbaScripts(project, session);
             let scriptLabel: string;
             if (update) {
-              if (session.removeOps.some(op => op.path.length === 1 && op.path[0] === "object_events" && op.index <= (body.index as number))) {
-                throw new Error("Save or undo the pending object deletion before editing this Indicator");
-              }
               const event = session.map.objectEvents[body.index as number];
               if (!event || event.script !== body.scriptLabel) throw new Error("object script no longer matches this Indicator");
               const block = findGbaIndicator(text, { script: event.script, graphics_id: event.graphicsId });
@@ -1473,13 +1493,14 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
               if (event.graphicsId !== gbaIndicatorGraphics(species)) {
                 const changed = setObjectGraphics(session.map, body.index as number, gbaIndicatorGraphics(species));
                 session.map = changed.map;
-                // Scalar edits run before insertions at save time. Fold a staged object's
-                // graphics change into its insert instead of addressing absent disk data.
-                const pending = session.insertOps.find(op => op.path.length === 1 && op.path[0] === "object_events" && op.index === body.index);
-                if (pending) {
-                  session.insertOps = session.insertOps.map(op => op === pending
+                // Fold a staged object's graphics change into its insert; an original object takes a
+                // scalar edit at its ORIGINAL index (the UI sent a current one, Plan H B3).
+                const slot = eventSlot(session, "object", body.index as number);
+                if (slot.pending) {
+                  session.insertOps = session.insertOps.map(op => op === slot.insert
                     ? { ...op, value: { ...(op.value as Record<string, unknown>), graphics_id: gbaIndicatorGraphics(species) } } : op);
-                } else session.jsonEdits = [...session.jsonEdits.filter(edit => !(edit.path[0] === "object_events" && edit.path[1] === body.index && edit.path[2] === "graphics_id")), ...changed.jsonEdits];
+                } else session.jsonEdits = [...session.jsonEdits.filter(edit => !(edit.path[0] === "object_events" && edit.path[1] === slot.original && edit.path[2] === "graphics_id")),
+                  ...changed.jsonEdits.map(edit => ({ ...edit, path: [edit.path[0]!, slot.original, ...edit.path.slice(2)] }))];
               }
               if (after !== text) replaceGbaScripts(project, session, after);
               scriptLabel = block.scriptLabel;
@@ -1493,7 +1514,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
               if (refusals.length) return send(400, { refusals });
               const added = addEvent(session.map, "object", built.objectEvent);
               session.map = added.map;
-              session.insertOps = [...session.insertOps, added.insertOp];
+              session.insertOps = [...session.insertOps, { ...added.insertOp, index: appendIndex(session, "object") }];
               session.scriptAppends = [...(session.scriptAppends ?? []), { path: project.paths.mapScriptsInc(name), text: built.scriptAppendText }];
               scriptLabel = built.scriptLabel;
             }

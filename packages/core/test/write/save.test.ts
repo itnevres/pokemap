@@ -88,6 +88,7 @@ function stubProject(root: string): Project {
     tilesetGeneration: 0,
     tilesetSymbols: () => [],
     map: unused("map"),
+    forgetMap: unused("forgetMap"),
     mapNames: () => ["Test"],
     encounters: unused("encounters"),
   };
@@ -384,5 +385,65 @@ describe("name checks (Task 4)", () => {
     const countingCheck: NameCheck = (name) => { callCount++; return { taken: false, where: undefined }; };
     planSave(proj, session, { checkNames: countingCheck });
     expect(callCount).toBe(0);
+  });
+});
+
+describe("planSave / commitSave: scalar edits aimed at array elements added or removed in the same session", () => {
+  const ids = (written: { object_events: { graphics_id: string }[] }) => written.object_events.map((o) => o.graphics_id);
+
+  it("a jsonEdit on an element appended by an insertOp in the same session saves the inserted event at the edited x", () => {
+    const { root, proj } = tempProject();
+    const session = baseSession(root);
+    session.insertOps = [{ path: ["object_events"], index: 0, value: { graphics_id: "OBJ_NEW", x: 1, y: 2 } }];
+    session.jsonEdits = [{ path: ["object_events", 0, "x"], value: 7 }];
+    session.isDirty = true;
+    const plan = planSave(proj, session);
+    expect(plan.refusals).toEqual([]);
+    commitSave(proj, plan);
+    const written = JSON.parse(readFileSync(join(root, "Test.json"), "utf8"));
+    expect(written.object_events).toEqual([{ graphics_id: "OBJ_NEW", x: 7, y: 2 }]);
+  });
+
+  it("a jsonEdit on an appended element lands on that element, not on a pre-existing one, when the array already has entries", () => {
+    const { root, proj } = tempProject();
+    const session = baseSession(root);
+    session.originalMapJson = SEEDED_MAP_JSON;
+    session.map = parseMap(SEEDED_MAP_JSON);
+    session.insertOps = [{ path: ["object_events"], index: 3, value: { graphics_id: "OBJ_NEW", x: 1, y: 2 } }];
+    session.jsonEdits = [{ path: ["object_events", 3, "x"], value: 9 }];
+    session.isDirty = true;
+    commitSave(proj, planSave(proj, session));
+    const written = JSON.parse(readFileSync(join(root, "Test.json"), "utf8"));
+    expect(written.object_events).toEqual([
+      { graphics_id: "OBJ_A" }, { graphics_id: "OBJ_B" }, { graphics_id: "OBJ_C" },
+      { graphics_id: "OBJ_NEW", x: 9, y: 2 },
+    ]);
+  });
+
+  it("a removeOp together with a jsonEdit on a pre-existing index edits the original element at that index, then removes the other one", () => {
+    const { root, proj } = tempProject();
+    const session = baseSession(root);
+    session.originalMapJson = SEEDED_MAP_JSON;
+    session.map = parseMap(SEEDED_MAP_JSON);
+    session.jsonEdits = [{ path: ["object_events", 2, "graphics_id"], value: "OBJ_C_EDITED" }];
+    session.removeOps = [{ path: ["object_events"], index: 0 }];
+    session.isDirty = true;
+    commitSave(proj, planSave(proj, session));
+    const written = JSON.parse(readFileSync(join(root, "Test.json"), "utf8"));
+    expect(ids(written)).toEqual(["OBJ_B", "OBJ_C_EDITED"]);
+  });
+
+  it("an insertOp, a jsonEdit on a pre-existing index and a removeOp in one session each keep their own target", () => {
+    const { root, proj } = tempProject();
+    const session = baseSession(root);
+    session.originalMapJson = SEEDED_MAP_JSON;
+    session.map = parseMap(SEEDED_MAP_JSON);
+    session.insertOps = [{ path: ["object_events"], index: 3, value: { graphics_id: "OBJ_NEW" } }];
+    session.jsonEdits = [{ path: ["object_events", 1, "graphics_id"], value: "OBJ_B_EDITED" }];
+    session.removeOps = [{ path: ["object_events"], index: 0 }];
+    session.isDirty = true;
+    commitSave(proj, planSave(proj, session));
+    const written = JSON.parse(readFileSync(join(root, "Test.json"), "utf8"));
+    expect(ids(written)).toEqual(["OBJ_B_EDITED", "OBJ_C", "OBJ_NEW"]);
   });
 });

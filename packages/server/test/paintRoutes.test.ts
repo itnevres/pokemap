@@ -5,6 +5,10 @@ import { createServer as createHttpServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { createProjectHandler, type ProjectHandler } from "../src/index.js";
 import { copyGbaTilesetProject, removeGbaTemp } from "@pokemap/core/test/helpers/gbaTilesetProject.js";
+import { openProject } from "@pokemap/core/src/project.js";
+import { canonicalTilesetPath } from "@pokemap/core/src/blockEdit/canonicalTilesetPath.js";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 let s: PokemapServer;
 const post = async (path: string, body: unknown) =>
@@ -85,6 +89,76 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("Q1: GBA session snapshots (hermetic 
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ error: "no map NoSuchMap" });
   });
+});
+
+// Q3: a metatiles.bin that is missing from disk is a refusal (409 BAD_VALUE
+// naming the file), not an unhandled statSync ENOENT (500). Hermetic temp copy:
+// the file is deleted inside each test and restored in `finally`.
+describe.skipIf(!hasProject(SUBJECT_ROOT))("Q3: GBA paint with a missing metatiles file (hermetic temp copy)", () => {
+  const MAP = "Route101";
+  let root: string;
+  let handler: ProjectHandler;
+  let server: Server;
+  let base: string;
+  let split: number;
+  let files: Record<"primary" | "secondary", string>; // canonical repo-relative metatiles.bin paths
+  const post = (action: string, body: unknown = {}) =>
+    fetch(`${base}/api/edit/${MAP}/${action}`, { method: "POST", body: JSON.stringify(body) });
+  const session = async () => (await fetch(`${base}/api/edit/${MAP}/session`)).json() as Promise<{ blocks: unknown[] }>;
+
+  beforeAll(async () => {
+    root = copyGbaTilesetProject();
+    const project = openProject(root);
+    const layout = project.layoutForMap(MAP);
+    split = project.splitFor(layout).metatiles;
+    files = {
+      primary: canonicalTilesetPath(project.tilesetPaths(layout.primaryTileset).metatilesBin),
+      secondary: canonicalTilesetPath(project.tilesetPaths(layout.secondaryTileset).metatilesBin),
+    };
+    handler = createProjectHandler(root);
+    server = createHttpServer(handler.handle);
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+  afterAll(async () => {
+    if (server) await new Promise<void>(resolve => server.close(() => resolve()));
+    handler?.dispose();
+    if (root) removeGbaTemp(root);
+  });
+
+  for (const role of ["primary", "secondary"] as const) {
+    it(`pencil, rect and bucket with a ${role}-tileset id answer 409 BAD_VALUE naming the file; shift still answers 200`, async () => {
+      // primary ids are < split; secondary ids are >= split (the route maps them to the secondary file).
+      const metatileId = role === "primary" ? 1 : split + 1;
+      const stamp = { width: 1, height: 1, cells: [{ metatileId }] };
+      const refused: [string, unknown][] = [
+        ["pencil", { tool: "pencil", targets: [{ x: 0, y: 0 }], stamp, origin: { x: 0, y: 0 } }],
+        ["rect", { tool: "rect", x0: 0, y0: 0, x1: 1, y1: 1, stamp, origin: { x: 0, y: 0 } }],
+        ["bucket", { tool: "bucket", x: 0, y: 0, replacement: { metatileId } }],
+      ];
+      const path = resolve(root, files[role]);
+      const bytes = readFileSync(path);
+      try {
+        const begun = await post("paint/begin");
+        expect(begun.status).toBe(200);
+        const before = (await begun.json() as { blocks: unknown[] }).blocks;
+        rmSync(path);
+        for (const [tool, body] of refused) {
+          const response = await post("paint/apply", body);
+          const answer = await response.json() as { error: string; code?: string };
+          expect(response.status, `${tool}: ${JSON.stringify(answer)}`).toBe(409);
+          expect(answer.code, tool).toBe("BAD_VALUE");
+          expect(answer.error, tool).toContain(files[role]);
+          expect((await session()).blocks, `${tool} left the blocks unchanged`).toEqual(before);
+        }
+        // shift names no ids, so it never reads the file.
+        expect((await post("paint/apply", { tool: "shift", dx: 1, dy: 0 })).status).toBe(200);
+      } finally {
+        writeFileSync(path, bytes);
+        await post("discard");
+      }
+    }, 300_000);
+  }
 });
 
 describe.skipIf(!hasProject(SUBJECT_ROOT))("paint routes", () => {

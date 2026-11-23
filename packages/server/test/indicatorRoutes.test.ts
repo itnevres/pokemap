@@ -140,6 +140,27 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA Indicator and background sign ro
     expect(JSON.parse(readFileSync(json(), "utf8")).object_events[index]).toEqual(movedValue);
     expect(disk()).toBe(expectedScripts);
   });
+  it("Indicator add after a pending object delete saves the Indicator last and a later move lands on the right original", async () => {
+    // Revert guarded: `appendIndex(session, "object")` at the Indicator add insertOp (index.ts, indicator/add branch).
+    // With the raw current-space index the Indicator would be inserted before original 6 and the move would hit it.
+    const original = JSON.parse(originalMap).object_events as Array<Record<string, unknown>>;
+    expect(original).toHaveLength(7);
+    expect((await request("event/delete", { kind: "object", index: 0 })).status).toBe(200);
+    const added = await addIndicator(); expect(added.status, JSON.stringify(added.body)).toBe(200);
+    // Current list: original 1..6, then the Indicator. Current 5 is original 6, the last ORIGINAL object.
+    const moved = await request("event/move", { kind: "object", index: 5, x: 3, y: 4 });
+    expect(moved.status).toBe(200);
+    expect(moved.body.map.objectEvents[5]).toMatchObject({ script: original[6]!.script, x: 3, y: 4 });
+    expect(moved.body.map.objectEvents[6]).toMatchObject({ script: added.body.scriptLabel, x: 1, y: 1 });
+    expect((await request("plan")).body.refusals).toEqual([]);
+    expect((await commit()).status).toBe(200);
+    const written = JSON.parse(readFileSync(json(), "utf8")).object_events as Array<Record<string, unknown>>;
+    expect(written).toHaveLength(7);
+    expect(written.slice(0, 5)).toEqual(original.slice(1, 6));
+    expect(written[5]).toEqual({ ...original[6], x: 3, y: 4 });
+    expect(written[6]).toMatchObject({ script: added.body.scriptLabel, x: 1, y: 1 });
+    expect(written.some(e => e.script === original[0]!.script && e.x === original[0]!.x && e.y === original[0]!.y)).toBe(false);
+  });
   it("plain Add Event -> move plans and commits a clean object insert", async () => {
     const value = { ...JSON.parse(originalMap).object_events[0], x: 1, y: 1, elevation: 2 };
     const index = openProject(root).map(map).objectEvents.length;
@@ -187,19 +208,23 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA Indicator and background sign ro
     expect((await commit()).status).toBe(200);
     expect(readFileSync(json(), "utf8")).toBe(expectedJson); expect(disk()).toBe(expectedScripts);
   });
-  it("refuses update after an earlier object deletion without consuming undo; undoing deletion allows update", async () => {
+  it("updating a persisted Indicator after an earlier object deletion succeeds and saves the graphics change on the Indicator's original index", async () => {
     // Persist the Indicator to exercise original-JSON indices rather than pending-insert folding.
     await addIndicator(); expect((await commit()).status).toBe(200);
-    expect(indicatorIndex()).toBeGreaterThan(0);
+    const persisted = JSON.parse(readFileSync(json(), "utf8")).object_events as any[];
+    const originalIndex = persisted.length - 1;
+    expect(originalIndex).toBeGreaterThan(0);
+    expect(indicatorIndex()).toBe(originalIndex);
     expect((await request("event/delete", { kind: "object", index: 0 })).status).toBe(200);
-    const before = state(); const entry = store.open(map);
-    const history = { undo: entry.stack.canUndo(), redo: entry.stack.canRedo(), dirty: entry.session.isDirty };
-    const r = await updateIndicator(); expect(r.status).toBe(400);
-    expect(r.body.refusals[0].message).toContain("Save or undo the pending object deletion before editing this Indicator");
-    expect(state()).toEqual(before);
-    expect({ undo: entry.stack.canUndo(), redo: entry.stack.canRedo(), dirty: entry.session.isDirty }).toEqual(history);
-    await request("undo", {}); expect(entry.session.removeOps).toEqual([]);
-    expect((await updateIndicator()).status).toBe(200);
+    // After the deletion the Indicator is shown one position earlier.
+    expect(indicatorIndex()).toBe(originalIndex - 1);
+    const r = await updateIndicator(); expect(r.status).toBe(200);
+    const plan = (await request("plan")).body; expect(plan.refusals).toEqual([]);
+    expect((await commit()).status).toBe(200);
+    const written = JSON.parse(readFileSync(json(), "utf8")).object_events as any[];
+    expect(written).toHaveLength(persisted.length - 1);
+    expect(written.at(-1).graphics_id).toBe("OBJ_EVENT_GFX_SPECIES(ZIGZAGOON)");
+    expect(written.slice(0, -1)).toEqual(persisted.slice(1, -1));
   });
   it.each(["add", "update"])("Indicator %s malformed charmaps name the real file and preserve history", async op => {
     await addIndicator(); const before = state(), entry = store.open(map);

@@ -14,6 +14,51 @@ const CAMEL_ARRAY_KEY: Record<EventKind, "objectEvents" | "warpEvents" | "coordE
   object: "objectEvents", warp: "warpEvents", coord: "coordEvents", bg: "bgEvents",
 };
 
+/** What the event routes need from a session to translate indices (Plan H Task B3).
+ *
+ *  Two index spaces meet here. The UI (and `session.map`) speak CURRENT
+ *  indices: the original array minus the removed originals, in order, then
+ *  the pending adds appended. The staged ops (`jsonEdits`, `removeOps`,
+ *  `insertOps`) are applied to the ORIGINAL file text by `applyJsonOps`, so
+ *  they must all live in original space: `removeOps` hold original indices,
+ *  and a pending add holds `originalLength + k`. */
+export interface IndexSpaceSession { originalMap: MapData; insertOps: InsertOp[]; removeOps: RemoveOp[]; }
+
+export type EventSlot = { pending: false; original: number } | { pending: true; insert: InsertOp };
+
+const sameArray = (path: readonly (string | number)[], key: string) => path.length === 1 && path[0] === key;
+
+function originalLength(session: IndexSpaceSession, kind: EventKind): number {
+  return (session.originalMap[CAMEL_ARRAY_KEY[kind]] as unknown[]).length;
+}
+
+/** Current index -> the original index of a surviving original event, or the pending add it names. */
+export function eventSlot(session: IndexSpaceSession, kind: EventKind, current: number): EventSlot {
+  const key = EVENT_ARRAY_KEY[kind];
+  const removed = new Set(session.removeOps.filter((op) => sameArray(op.path, key)).map((op) => op.index));
+  const survivors: number[] = [];
+  for (let i = 0; i < originalLength(session, kind); i++) if (!removed.has(i)) survivors.push(i);
+  if (Number.isInteger(current) && current >= 0 && current < survivors.length) return { pending: false, original: survivors[current]! };
+  const adds = session.insertOps.filter((op) => sameArray(op.path, key));
+  const insert = Number.isInteger(current) ? adds[current - survivors.length] : undefined;
+  if (current < survivors.length || insert === undefined) throw new Error(`index ${current} is not present in ${key}`);
+  return { pending: true, insert };
+}
+
+/** The index a new `addEvent` insertOp must carry so it stays in original space. */
+export function appendIndex(session: IndexSpaceSession, kind: EventKind): number {
+  const key = EVENT_ARRAY_KEY[kind];
+  return originalLength(session, kind) + session.insertOps.filter((op) => sameArray(op.path, key)).length;
+}
+
+/** `insertOps` without `insert`; later pending adds of the same array move down by one. */
+export function dropPendingInsert(session: IndexSpaceSession, kind: EventKind, insert: InsertOp): InsertOp[] {
+  const key = EVENT_ARRAY_KEY[kind];
+  return session.insertOps
+    .filter((op) => op !== insert)
+    .map((op) => (sameArray(op.path, key) && op.index > insert.index ? { ...op, index: op.index - 1 } : op));
+}
+
 /** Writes x/y (always) and elevation (only when passed) via jsonEdits --
  *  I2's own "surgical splice, never reserialise" applies at the field level
  *  too: a drag never touches any other key on the moved event. `elevation`
@@ -50,7 +95,9 @@ export function setObjectGraphics(map: MapData, index: number, graphicsId: strin
  *  `kind`, never a caller-supplied index -- an explicit insertion point in
  *  the middle of an events array has no established meaning in this
  *  format (unlike connections, where order can matter), so "add" always
- *  means "append". */
+ *  means "append". The returned `insertOp.index` is a CURRENT-list index; a
+ *  caller staging it on an EditSession must restamp it with `appendIndex`
+ *  (original-file index space, see `IndexSpaceSession`). */
 export function addEvent(map: MapData, kind: EventKind, value: Record<string, unknown>): { map: MapData; insertOp: InsertOp } {
   const arrayKey = EVENT_ARRAY_KEY[kind];
   const camelKey = CAMEL_ARRAY_KEY[kind];
