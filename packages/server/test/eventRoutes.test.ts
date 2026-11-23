@@ -300,4 +300,92 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("event ops in original index space sa
       expect(withoutObjects(written)).toEqual(withoutObjects(parsed));
     } finally { await restore(jsonPath, before); }
   }, 300_000);
+
+  it("moving the same original event twice saves exactly the second position and changes nothing else", async () => {
+    // Revert guarded: the same-path replacement in the event/move route (index.ts, the jsonEdits filter before
+    // `...moved`). Without it two edits at one path overlap in editJson and write garbled digits (5 -> 12 -> 3 saved "32").
+    const { jsonPath, before, parsed, original } = setup();
+    try {
+      expect([original[3]!.x, original[3]!.y]).not.toEqual([3, 4]);
+      expect((await post(`/api/edit/${map}/event/move`, { kind: "object", index: 3, x: 123, y: 145 })).status).toBe(200);
+      const second = await post(`/api/edit/${map}/event/move`, { kind: "object", index: 3, x: 3, y: 4 });
+      expect(second.status).toBe(200);
+      const shown = (await second.json() as any).map.objectEvents as RawEvent[];
+      expect([shown[3]!.x, shown[3]!.y]).toEqual([3, 4]);
+
+      const plan = await (await get(`/api/edit/${map}/plan`)).json() as any;
+      expect(plan.refusals).toEqual([]);
+      expect((await commit()).status).toBe(200);
+      const text = readFileSync(jsonPath, "utf8");
+      const written = JSON.parse(text) as Record<string, unknown> & { object_events: RawEvent[] };
+      expect(written.object_events).toEqual(original.map((e, i) => (i === 3 ? { ...e, x: 3, y: 4 } : e)));
+      expect(withoutObjects(written)).toEqual(withoutObjects(parsed));
+    } finally { await restore(jsonPath, before); }
+  }, 300_000);
+
+  it("undoing the delete of the first of two added events brings both back, saved in add order with their own coordinates", async () => {
+    // Guards the pending-add delete path (eventSlot pending branch + dropPendingInsert in the event/delete route)
+    // together with the snapshot restore of insertOps: both adds must keep their original-space indexes after undo.
+    const { jsonPath, before, parsed, original } = setup();
+    try {
+      expect((await post(`/api/edit/${map}/event/add`, { kind: "object", value: newEvent("PokeMap_B3_First", 1, 1) })).status).toBe(200);
+      expect((await post(`/api/edit/${map}/event/add`, { kind: "object", value: newEvent("PokeMap_B3_Second", 2, 2) })).status).toBe(200);
+      const delRes = await post(`/api/edit/${map}/event/delete`, { kind: "object", index: original.length });
+      expect(delRes.status).toBe(200);
+      expect(((await delRes.json() as any).map.objectEvents as RawEvent[]).map((e) => e.script).slice(original.length)).toEqual(["PokeMap_B3_Second"]);
+
+      const undone = (await (await post(`/api/edit/${map}/undo`)).json() as any).map.objectEvents as RawEvent[];
+      expect(undone.slice(original.length).map((e) => [e.script, e.x, e.y])).toEqual([["PokeMap_B3_First", 1, 1], ["PokeMap_B3_Second", 2, 2]]);
+
+      expect((await commit()).status).toBe(200);
+      const written = JSON.parse(readFileSync(jsonPath, "utf8")) as Record<string, unknown> & { object_events: RawEvent[] };
+      expect(written.object_events.slice(0, original.length)).toEqual(original);
+      expect(written.object_events.slice(original.length).map((e) => [e.script, e.x, e.y])).toEqual([["PokeMap_B3_First", 1, 1], ["PokeMap_B3_Second", 2, 2]]);
+      expect(withoutObjects(written)).toEqual(withoutObjects(parsed));
+    } finally { await restore(jsonPath, before); }
+  }, 300_000);
+
+  it("redoing the delete of the first of two added events leaves exactly the second one saved", async () => {
+    // Same guard as the undo test, through redo: the redone delete must re-drop the first insert and renumber the second.
+    const { jsonPath, before, parsed, original } = setup();
+    try {
+      expect((await post(`/api/edit/${map}/event/add`, { kind: "object", value: newEvent("PokeMap_B3_First", 1, 1) })).status).toBe(200);
+      expect((await post(`/api/edit/${map}/event/add`, { kind: "object", value: newEvent("PokeMap_B3_Second", 2, 2) })).status).toBe(200);
+      expect((await post(`/api/edit/${map}/event/delete`, { kind: "object", index: original.length })).status).toBe(200);
+      expect((await post(`/api/edit/${map}/undo`)).status).toBe(200);
+      const redone = await post(`/api/edit/${map}/redo`);
+      expect(redone.status).toBe(200);
+      const shown = (await redone.json() as any).map.objectEvents as RawEvent[];
+      expect(shown.slice(original.length).map((e) => [e.script, e.x, e.y])).toEqual([["PokeMap_B3_Second", 2, 2]]);
+
+      expect((await commit()).status).toBe(200);
+      const written = JSON.parse(readFileSync(jsonPath, "utf8")) as Record<string, unknown> & { object_events: RawEvent[] };
+      expect(written.object_events.slice(0, original.length)).toEqual(original);
+      expect(written.object_events.slice(original.length).map((e) => [e.script, e.x, e.y])).toEqual([["PokeMap_B3_Second", 2, 2]]);
+      expect(withoutObjects(written)).toEqual(withoutObjects(parsed));
+    } finally { await restore(jsonPath, before); }
+  }, 300_000);
+});
+
+// Warp deletes warn about other maps' warps that arrive at the deleted warp's INDEX, which must be the
+// original-file index even after an earlier warp of the same map is pending removal.
+describe.skipIf(!hasProject(SUBJECT_ROOT))("warp delete after an earlier pending warp delete", () => {
+  beforeAll(async () => { s = await createServer({ projectPath: SUBJECT_ROOT, port: 0 }); });
+  afterAll(async () => { await s?.close(); });
+
+  it("computes warpRenumberWarnings of the second delete from the original warp index", async () => {
+    // Revert guarded: `slot.original` in the findWarpsTargetingByIndex call of the event/delete route (index.ts);
+    // using the current index 1 would report the ROUTE42 gate (arrives at warp 1) instead of the Burned Tower.
+    // In this corpus exactly one other map arrives at each of EcruteakCity warps 0, 1 and 2 (dest_warp_id "0", "1", "2").
+    const map = "EcruteakCity";
+    try {
+      const first = await post(`/api/edit/${map}/event/delete`, { kind: "warp", index: 0 });
+      expect(first.status).toBe(200);
+      expect((await first.json() as any).warpRenumberWarnings).toEqual([{ fromMapId: "MAP_GATE_ECRUTEAK_CITY_ROUTE38", warpIndex: 0 }]);
+      // After deleting original warp 0, current warp 1 is original warp 2.
+      const second = await post(`/api/edit/${map}/event/delete`, { kind: "warp", index: 1 });
+      expect(second.status).toBe(200);
+      expect((await second.json() as any).warpRenumberWarnings).toEqual([{ fromMapId: "MAP_BURNED_TOWER_1F", warpIndex: 0 }]);
+    } finally { await post(`/api/edit/${map}/discard`); }
+  }, 300_000);
 });

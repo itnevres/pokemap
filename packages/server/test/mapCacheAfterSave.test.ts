@@ -47,6 +47,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA cached project after a save (tem
     const warps = await get(`/api/warps/${MAP}`);
     const world = await get("/api/world");
     expect([map.status, warps.status, world.status]).toEqual([200, 200, 200]);
+    expect((await get(`/api/defects/${MAP}`)).status).toBe(200); // primes the defects route too
     before = { map: map.body, warps: warps.body, world: world.body };
     expect(before.map.map.objectEvents[OBJECT.index]).toMatchObject(OBJECT.from);
     expect(before.map.map.warpEvents[WARP.index]).toMatchObject(WARP.from);
@@ -108,6 +109,20 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA cached project after a save (tem
       const reference = await get("/api/world", `http://127.0.0.1:${fresh.port}`);
       expect(reference.status).toBe(200);
       expect(live.body.placements).toEqual(reference.body.placements);
+    } finally { await fresh.close(); }
+  }, 300_000);
+
+  it("GET /api/defects/:name answers for the saved map exactly like a fresh process", async () => {
+    // The route re-reads the cached project, so it must not serve defects derived from pre-save events.
+    const live = await get(`/api/defects/${MAP}`);
+    expect(live.status).toBe(200);
+    expect(Array.isArray(live.body.defects)).toBe(true);
+    expect(Array.isArray(live.body.incomplete)).toBe(true);
+    const fresh = await createServer({ projectPath: root, port: 0 });
+    try {
+      const reference = await get(`/api/defects/${MAP}`, `http://127.0.0.1:${fresh.port}`);
+      expect(reference.status).toBe(200);
+      expect(live.body).toEqual(reference.body);
     } finally { await fresh.close(); }
   }, 300_000);
 
