@@ -4,7 +4,7 @@ Rate each HexManiacAdvance (HMA) feature listed in issue #7 and split the keeper
 
 ## Status
 
-Rated. All 21 features have a row and every keeper has an issue draft below. Waiting on the user: review the table (18-2), then post the drafts (18-3). No GitHub issue has been created.
+Complete. All 21 features are rated, and the five drafts below are posted as issues: A #50, B #51, C #52, D #53, E #54.
 
 ## Depends on
 
@@ -56,7 +56,7 @@ Counts: keep 2 (5, 21), later 4 (1, 7, 11, 20), owned 5 (4, 6, 9, 12, 13), drop 
 
 ## Issue drafts
 
-For the user to post (18-3). Rows 1 and 20 share draft D; trainers in row 1 stay in Plan 19.
+Posted as issues #50-#54 (18-3). Rows 1 and 20 share draft D; trainers in row 1 stay in Plan 19.
 
 **A. Edit an existing event's fields in the inspector** (keep; new plan)
 Today the inspector can move, delete and change the graphics of an existing event but not its other fields. Let the inspector edit an existing event's script, flag, trainer and movement using the same field model and dropdowns as Add Event, staged through the same save preview. Both families, through the adapter. Script bodies stay in the user's editor (D28).
@@ -76,8 +76,8 @@ Let the pixel editor open the project's other indexed PNGs (GBA `graphics/`, GBC
 ## Subtasks
 
 - 18-1: read the issue, rate each item, write the table and drafts into this file. Done.
-- 18-2: the user reviews the table.
-- 18-3: after the go-ahead, create one issue per draft and add a pointer in the owning plan.
+- 18-2: the user reviews the table. Done.
+- 18-3: create one issue per draft and add a pointer in the owning plan. Done (issues #50-#54; Plan 3 points to #54).
 
 ## Acceptance
 
