@@ -32,6 +32,8 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA add-event routes over a temporar
     "saving the header owner lets another map allocate a new flag",
     "plan rebuilds symbols and refuses a definition added after create",
     "discard refreshes project options free slots and symbols after a disk header edit",
+    "event/create after a pending delete saves the new event last and a later move lands on the right original",
+    "sign put after a pending background-event delete saves the sign last and a later bg move lands on the right original",
   ]);
   let store: ReturnType<typeof sessions.createEditSessionStore>;
   const factory = sessions.createEditSessionStore;
@@ -455,6 +457,50 @@ PreviewMultiText:
     expect((await req("/api/event-options")).body.flags).not.toContain("FLAG_POKEMAP_FIRST");
   });
 
+  it("event/create after a pending delete saves the new event last and a later move lands on the right original", async () => {
+    // Revert guarded: `appendIndex(candidate, form.kind)` at the insertOp in addEventRoutes.ts create() (~line 295).
+    // With the raw current-space index the new event would be inserted before original 6 and the move would hit it.
+    const original = JSON.parse(readFileSync(mapFile(), "utf8")).object_events as Array<Record<string, unknown>>;
+    expect(original).toHaveLength(7);
+    expect((await edit("event/delete", { kind: "object", index: 0 })).status).toBe(200);
+    await create();
+    // Current list: original 1..6, then the new event. Current 5 is original 6, the last ORIGINAL object.
+    const moved = await edit("event/move", { kind: "object", index: 5, x: 3, y: 4 });
+    expect(moved.status).toBe(200);
+    expect(moved.body.map.objectEvents[5]).toMatchObject({ script: original[6]!.script, x: 3, y: 4 });
+    expect(moved.body.map.objectEvents[6]).toMatchObject({ script: "Route101_EventScript_PokemapObject1", x: 1, y: 1 });
+    const plan = (await edit("plan")).body; expect(plan.refusals).toEqual([]);
+    expect((await edit("commit", { fingerprint: plan.fingerprint })).status).toBe(200);
+    const written = JSON.parse(readFileSync(mapFile(), "utf8")).object_events as Array<Record<string, unknown>>;
+    expect(written).toHaveLength(7);
+    expect(written.slice(0, 5)).toEqual(original.slice(1, 6));
+    expect(written[5]).toEqual({ ...original[6], x: 3, y: 4 });
+    expect(written[6]).toMatchObject({ script: "Route101_EventScript_PokemapObject1", x: 1, y: 1 });
+    expect(written.some(e => e.script === original[0]!.script && e.x === original[0]!.x && e.y === original[0]!.y)).toBe(false);
+  }, 30_000);
+  it("sign put after a pending background-event delete saves the sign last and a later bg move lands on the right original", async () => {
+    // Revert guarded: `appendIndex(session, "bg")` at the sign add insertOp (index.ts, sign/put handler ~line 1430).
+    // LittlerootTown has four bg events, so it can show a delete, an add and a move of a later original.
+    const file = `${root}/data/maps/${other}/map.json`;
+    const original = JSON.parse(readFileSync(file, "utf8")).bg_events as Array<Record<string, unknown>>;
+    expect(original).toHaveLength(4);
+    expect((await edit("event/delete", { kind: "bg", index: 0 }, other)).status).toBe(200);
+    const put = await edit("sign/put", { x: 0, y: 0, mode: "free", text: "HELLO" }, other);
+    expect(put.status, JSON.stringify(put.body)).toBe(200);
+    // Current list: original 1..3, then the new sign. Current 2 is original 3, the last ORIGINAL bg event.
+    const moved = await edit("event/move", { kind: "bg", index: 2, x: 13, y: 9 }, other);
+    expect(moved.status).toBe(200);
+    expect(moved.body.map.bgEvents[2]).toMatchObject({ script: original[3]!.script, x: 13, y: 9 });
+    expect(moved.body.map.bgEvents[3]).toMatchObject({ x: 0, y: 0 });
+    const plan = (await edit("plan", undefined, other)).body; expect(plan.refusals).toEqual([]);
+    expect((await edit("commit", { fingerprint: plan.fingerprint }, other)).status).toBe(200);
+    const written = JSON.parse(readFileSync(file, "utf8")).bg_events as Array<Record<string, unknown>>;
+    expect(written).toHaveLength(4);
+    expect(written.slice(0, 2)).toEqual(original.slice(1, 3));
+    expect(written[2]).toEqual({ ...original[3], x: 13, y: 9 });
+    expect(written[3]).toMatchObject({ type: "sign", x: 0, y: 0, script: expect.stringMatching(/_EventScript_PokemapSign\d+$/) });
+    expect(written.some(e => e.script === original[0]!.script)).toBe(false);
+  }, 30_000);
   it.each(["FLAG", "VAR"] as const)("%s unused Existing names are refused before and after allocation", async kind => {
     const slots = eventOptions.freeGbaSlots(root, kind);
     expect(slots.length).toBeGreaterThan(0);

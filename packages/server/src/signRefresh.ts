@@ -74,6 +74,8 @@ export function replaceGbaScripts(proj: Project, session: EditSession, after: st
 
 export function gbaSignParagraphs(proj: Project, entry: SessionEntry, mode: SignMode, text: string): string[][] {
   if (mode !== "free") {
+    // Plan H G2: kept on purpose. A commit now calls `proj.forgetMap`, so `proj.map` is no longer stale after a
+    // save and this re-open is not a cache workaround for event data; it only re-reads display names and species.
     const current = openProject(proj.paths.root);
     text = linkedText(mode, gbaMapDisplayName(current, entry.session.map),
       mode === "species" ? linkedSpecies("gba", current, entry.session.mapName) : []);
