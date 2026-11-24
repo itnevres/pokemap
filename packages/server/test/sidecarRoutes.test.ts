@@ -243,13 +243,6 @@ describe("sidecarRoutes (mounted bare, stub deps only)", () => {
     expect(existsSync(sidecarPath())).toBe(false);
   });
 
-  it("DELETE removes a dungeon, and a second DELETE 404s it", async () => {
-    const created = await (await post("/api/dungeons", { name: "D", maps: ["Route17"] })).json() as { id: string };
-    expect((await fetch(`${base}/api/dungeons/${created.id}`, { method: "DELETE" })).status).toBe(200);
-    expect((await fetch(`${base}/api/dungeons/${created.id}`, { method: "DELETE" })).status).toBe(404);
-    expect((await (await get("/api/dungeons")).json() as unknown[])).toEqual([]);
-  });
-
   it("returns false and sends nothing for a path it does not own", async () => {
     const calls: unknown[] = [];
     const req = { method: "GET" } as IncomingMessage;

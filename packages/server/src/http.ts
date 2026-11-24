@@ -73,14 +73,15 @@ export function decodeSegment(raw: string): string | undefined {
  * (read, parse, 400 on bad JSON, shape check, 413 on an oversize body, 500
  * on a throw). Messages match the hand-written copies exactly. An empty body
  * is invalid JSON (400); the one route that treats it as `{}` keeps its own
- * code. No content-type check: the routes never made one.
+ * code. No content-type check: the routes never made one. `handler` also
+ * receives the raw text, for routes whose later 400s quote it.
  */
 export function jsonBody<T>(
   req: IncomingMessage,
   send: (status: number, body: unknown) => unknown,
   guard: (parsed: unknown) => parsed is T,
   shapeText: string,
-  handler: (body: T) => unknown,
+  handler: (body: T, text: string) => unknown,
 ): Promise<void> {
   return readBody(req)
     .then((text) => {
@@ -88,7 +89,7 @@ export function jsonBody<T>(
       try { parsed = JSON.parse(text); }
       catch (e) { send(400, { error: `invalid JSON body: ${(e as Error).message}` }); return; }
       if (!guard(parsed)) { send(400, { error: `expected ${shapeText}, got ${text}` }); return; }
-      return handler(parsed);
+      return handler(parsed, text);
     })
     .then(() => undefined)
     .catch((e: unknown) => {

@@ -8,7 +8,7 @@ import {
 import type { Conflict } from "@pokemap/core/src/world/connections.js";
 import { readDungeons, writeDungeons } from "@pokemap/core/src/world/dungeons.js";
 import { readSidecar, writeSidecar } from "@pokemap/core/src/world/sidecar.js";
-import { BodyTooLarge, decodeSegment, jsonBody, readBody } from "./http.js";
+import { decodeSegment, jsonBody } from "./http.js";
 
 /**
  * The seven sidecar routes both server families used to hand-write inline
@@ -77,44 +77,6 @@ function isDungeonLayoutBody(value: unknown): value is { enabled: boolean } {
 }
 
 /**
- * The dungeon-object body reader shared by `POST /api/dungeons` and
- * `PATCH /api/dungeons/<id>`. It does NOT use `jsonBody`: both inline
- * copies answered a non-object with `expected a dungeon object, got <raw
- * body>`, quoting the RAW request text -- the same raw text `jsonBody`
- * quotes in its own shape 400 (`expected ${shapeText}, got ${text}`) but
- * with a message this route spells differently. Going through `jsonBody`
- * with a shapeText would force one of the two texts to change, so this one
- * route keeps the read/parse/400/413/500 preamble `jsonBody` was factored
- * out of (http.ts's own doc comment names it as the shared shape, and this
- * is the one body it cannot express). `handler` runs only for a parsed
- * non-null, non-array object.
- */
-function dungeonBody(
-  req: IncomingMessage,
-  send: (status: number, body: unknown) => unknown,
-  handler: (parsed: Record<string, unknown>, rawBody: string) => unknown,
-): void {
-  readBody(req)
-    .then((rawBody) => {
-      let parsed: unknown;
-      try { parsed = JSON.parse(rawBody); }
-      catch (e) { send(400, { error: `invalid JSON body: ${(e as Error).message}` }); return; }
-      if (!isObjectBody(parsed)) { send(400, { error: `expected a dungeon object, got ${rawBody}` }); return; }
-      return handler(parsed, rawBody);
-    })
-    // This chain runs after the caller's own try/catch has already
-    // returned, so a throw in here (readSidecar/readDungeons' I7 refusal on
-    // a corrupted sidecar) would otherwise become an unhandled rejection
-    // and leave the request hanging forever instead of answering it.
-    .then(() => undefined)
-    .catch((e: unknown) => {
-      if (e instanceof BodyTooLarge) { send(413, { error: "request body too large" }); return; }
-      console.error(e);
-      send(500, { error: e instanceof Error ? e.message : String(e) });
-    });
-}
-
-/**
  * The seven routes. Returns a handler that answers a request only when it
  * owns the path, returning `true` then -- the same contract as
  * `addEvents.handleOptions` and `gbcEditRoutes.handle`. A request for a
@@ -122,13 +84,8 @@ function dungeonBody(
  * mount it ONCE wherever the first of these routes sits today and let the
  * rest of their own dispatch run untouched.
  *
- * Every body-reading route goes through one of http.ts's two readers:
- * `jsonBody` (which owns read/parse/400/413/500) for every route whose
- * shape 400 quotes `expected <shape>, got <raw body>`, or
- * `dungeonBody` above for the one route whose text differs. Each route's
- * `handler` returns whatever `send(...)` returns, so `return jsonBody(...)`
- * / `return dungeonBody(...)` from a route branch keeps each caller's own
- * `return send(...)` / `return;` style.
+ * Every body-reading route goes through http.ts's `jsonBody`, which owns
+ * read/parse/400/413/500.
  */
 export function sidecarRoutes(
   deps: SidecarRouteDeps,
@@ -200,7 +157,7 @@ export function sidecarRoutes(
     }
 
     if (pathname === "/api/dungeons" && req.method === "POST") {
-      dungeonBody(req, send, (input, rawBody) => {
+      jsonBody(req, send, isObjectBody, "a dungeon object", (input, rawBody) => {
         if (typeof input.name !== "string" || input.name.trim() === "") {
           return send(400, { error: `expected a non-empty "name" string, got ${rawBody}` });
         }
@@ -246,7 +203,7 @@ export function sidecarRoutes(
         send(200, { ok: true });
         return true;
       }
-      dungeonBody(req, send, (input, rawBody) => {
+      jsonBody(req, send, isObjectBody, "a dungeon object", (input, rawBody) => {
         if (input.name !== undefined && (typeof input.name !== "string" || input.name.trim() === "")) {
           return send(400, { error: `"name" must be a non-empty string when present, got ${rawBody}` });
         }
