@@ -30,8 +30,10 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("F1c server: broken layout or tileset
   let brokenTileset: string;
   let primaryMap: string;
   let brokenPrimary: string;
+  let quietMap: string;
   // Sentinel files at the resolved outside paths: a regression that reads outside shows as a wrong 200, not an ENOENT.
   const planted: string[] = [];
+  const createdDirs: string[] = [];
   let tracked: string[] = [];
   const snapshot = () => tracked.map((f) => (existsSync(f) ? readFileSync(f, "utf8") : null));
 
@@ -56,6 +58,11 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("F1c server: broken layout or tileset
     expect(found, "a map with its own primary tileset exists in the subject copy").toBeDefined();
     primaryMap = found!.m;
     brokenPrimary = found!.l.primaryTileset;
+    taken.add(found!.l.primaryTileset); taken.add(found!.l.secondaryTileset);
+    const quiet = probe.mapNames().map((m) => ({ m, l: probe.layoutForMap(m) }))
+      .find(({ m, l }) => m !== CONTROL_MAP && ![LAYOUT_MAP, TILESET_MAP, primaryMap].includes(m) && !taken.has(l.primaryTileset) && !taken.has(l.secondaryTileset) && l.id !== layout.id);
+    expect(quiet, "a healthy map touched by no other test exists in the subject copy").toBeDefined();
+    quietMap = quiet!.m;
 
     const lj = `${root}/data/layouts/layouts.json`;
     const parsed = JSON.parse(readFileSync(lj, "utf8")) as { layouts: { id: string; blockdata_filepath: string }[] };
@@ -73,7 +80,8 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("F1c server: broken layout or tileset
     for (const rel of ["../../outside.bin", "../../outside/metatiles.bin", "../../outside/primary-metatiles.bin"]) {
       const file = resolve(root, rel);
       if (existsSync(file)) continue; // never overwrite or remove a file we did not create
-      mkdirSync(dirname(file), { recursive: true });
+      const made = mkdirSync(dirname(file), { recursive: true }); // the first directory it created, or undefined
+      if (made) createdDirs.push(made);
       writeFileSync(file, "SENTINEL");
       planted.push(file);
     }
@@ -87,9 +95,9 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("F1c server: broken layout or tileset
   afterAll(async () => {
     if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
     handler?.dispose();
-    if (root) removeGbaTemp(root);
     for (const file of planted) rmSync(file, { force: true });
-    for (const dir of new Set(planted.map(dirname))) if (dir.endsWith("outside")) try { rmdirSync(dir); } catch { /* not empty: not ours */ }
+    for (const dir of createdDirs) try { rmdirSync(dir); } catch { /* not empty: not ours */ }
+    if (root) removeGbaTemp(root);
   });
 
   const post = (path: string, body: unknown = {}) => fetch(`${base}${path}`, { method: "POST", body: JSON.stringify(body) });
@@ -166,14 +174,17 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("F1c server: broken layout or tileset
     expect((await fetch(`${base}/api/event-options/${CONTROL_MAP}?x=0&y=0`)).status).toBe(200);
   }, 300_000);
 
-  it("a map whose map.json cannot be parsed keeps its routes' own answer (the gate does not turn it into a 500)", async () => {
-    const mj = `${root}/data/maps/${CONTROL_MAP}/map.json`;
+  it("a map whose map.json cannot be parsed keeps its route's own answer (the gate does not turn it into a 500)", async () => {
+    // quietMap is touched by no other test: project.map() caches a parsed map, and a cached one would never reach the gate's catch.
+    const mj = `${root}/data/maps/${quietMap}/map.json`;
     const original = readFileSync(mj, "utf8");
     try {
       writeFileSync(mj, "{ not json");
-      const res = await fetch(`${base}/api/edit/${CONTROL_MAP}/plan`);
-      expect(res.status).not.toBe(409);
-      expect(res.status).not.toBe(500);
+      const res = await fetch(`${base}/api/edit/${quietMap}/plan`);
+      expect(res.status).toBe(200);
+      const body = await res.json() as { fingerprint: unknown; refusals: { code: string }[] };
+      expect(body.fingerprint).toBeNull();
+      expect(body.refusals[0]).toMatchObject({ code: "sign" });
     } finally { writeFileSync(mj, original); }
   }, 300_000);
 
