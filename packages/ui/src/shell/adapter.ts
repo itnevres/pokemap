@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { DataDefect } from "@pokemap/core/src/defects/types.js";
 import type { ToolKind } from "../components/Toolbar.js";
 import type { MapGroupsData } from "../components/MapTree.js";
 import type { MapVisibilityInfo } from "../world/visibility.js";
@@ -72,7 +73,13 @@ export interface FamilyRuntime {
   hiddenMapTypes: ReadonlySet<string>;
   dungeons: UseDungeonsResult;
   /** Map view: error for `selected`, and whether its payload is ready to render. */
-  map: { error: string | null; ready: boolean; name: string | null };
+  map: {
+    error: string | null;
+    ready: boolean;
+    name: string | null;
+    /** Defects that block this map from loading; the shell shows them instead of the bare error. */
+    defects?: DataDefect[];
+  };
   renderMap(slots: ShellSlots): ReactNode;
   renderWorld(slots: ShellSlots): ReactNode;
   renderDungeon(mapFilter: Set<string>, slots: ShellSlots): ReactNode;

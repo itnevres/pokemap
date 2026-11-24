@@ -1,8 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MapData } from "@pokemap/core/src/load/maps.js";
-import type { Layout, Split } from "@pokemap/core/src/model/types.js";
+import type { BrokenPath, Layout, Split } from "@pokemap/core/src/model/types.js";
+import type { DataDefect } from "@pokemap/core/src/defects/types.js";
 import { noteTilesetStamp, tilesetGeneration } from "../shared/tilesetVersion.js";
 import { keepUnchanged } from "../shared/keepUnchanged.js";
+
+/** A 409 `broken-path` reply from `/api/map/:name`: the map cannot be opened until its
+ *  out-of-project path is fixed (D25). Carries the defect so the shell can render it. */
+export class BrokenPathError extends Error {
+  constructor(readonly defect: BrokenPath) {
+    super(defect.message);
+    this.name = "BrokenPathError";
+  }
+}
+
+/** A `BrokenPath` from a 409 reply, as the `DataDefect` `DefectsBanner` renders. The `file`
+ *  carries its 1-based line when known, matching the banner's other defect sources. */
+export function brokenPathToDefect(bp: BrokenPath): DataDefect {
+  return { file: bp.line ? `${bp.file}:${bp.line}` : bp.file, message: bp.message, kind: "build", fix: bp.fix };
+}
 
 /** Mirrors `packages/core/src/model/types.ts`'s `Block`, plus the resolved
  *  tile behaviour the server computes per block (see `/api/map/:name`). */
@@ -28,6 +44,8 @@ export interface MapLayoutData {
 export interface UseMapLayoutResult {
   data: MapLayoutData | null;
   error: string | null;
+  /** The broken-path defect from a 409 reply (the map cannot open until it is fixed), or null. */
+  brokenPath: BrokenPath | null;
   loading: boolean;
   /** Plan H Q7: re-reads `/api/map/:name` in place, the way `useGbcMap.reload` does -- it never nulls
    *  `data` and never flips `loading`, so the canvas keeps its zoom/pan/tool through the refresh. A reply
@@ -47,6 +65,7 @@ export interface UseMapLayoutResult {
 export function useMapLayout(name: string | null): UseMapLayoutResult {
   const [data, setData] = useState<MapLayoutData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [brokenPath, setBrokenPath] = useState<BrokenPath | null>(null);
   const [loading, setLoading] = useState(false);
   // Q7: `reload` needs to know, when its reply lands, whether the map it started for is still the
   // selected one and whether this hook is still mounted -- without re-running the load effect below.
@@ -68,9 +87,22 @@ export function useMapLayout(name: string | null): UseMapLayoutResult {
   // won the cancellation/epoch guard, with the generation captured when its fetch started.
   const fetchLayout = useCallback((target: string) => {
     return fetch(`/api/map/${encodeURIComponent(target)}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`GET /api/map/${target} -> ${r.status}`);
-        return r.json() as Promise<MapLayoutData>;
+      .then(async (r) => {
+        if (r.ok) return r.json() as Promise<MapLayoutData>;
+        // A 409 broken-path reply carries the defect that blocks the map; surface it as a
+        // typed error so the shell can show the fix instead of the bare status. Anything
+        // else (other status, non-JSON body, other code) keeps the old bare error.
+        try {
+          const body = await r.json();
+          if (body && typeof body === "object" && body.code === "broken-path" && body.defect && typeof body.defect === "object"
+            && typeof body.defect.file === "string" && typeof body.defect.message === "string" && typeof body.defect.fix === "string") {
+            throw new BrokenPathError(body.defect as BrokenPath);
+          }
+        } catch (e) {
+          if (e instanceof BrokenPathError) throw e;
+          // Non-JSON body (or a JSON parse failure): fall through to the old error.
+        }
+        throw new Error(`GET /api/map/${target} -> ${r.status}`);
       });
   }, []);
 
@@ -82,6 +114,7 @@ export function useMapLayout(name: string | null): UseMapLayoutResult {
       loadingRef.current = false;
       setData(null);
       setError(null);
+      setBrokenPath(null);
       setLoading(false);
       return;
     }
@@ -90,6 +123,7 @@ export function useMapLayout(name: string | null): UseMapLayoutResult {
     loadingRef.current = true;
     setLoading(true);
     setError(null);
+    setBrokenPath(null);
     const generation = tilesetGeneration();
 
     fetchLayout(name)
@@ -97,6 +131,7 @@ export function useMapLayout(name: string | null): UseMapLayoutResult {
         if (!cancelled && epoch.current === mine) {
           noteTilesetStamp(d, generation);
           setData(d);
+          setBrokenPath(null);
           loadingRef.current = false;
           setLoading(false);
         }
@@ -104,6 +139,7 @@ export function useMapLayout(name: string | null): UseMapLayoutResult {
       .catch((e: unknown) => {
         if (!cancelled && epoch.current === mine) {
           setError(e instanceof Error ? e.message : String(e));
+          setBrokenPath(e instanceof BrokenPathError ? e.defect : null);
           loadingRef.current = false;
           setLoading(false);
         }
@@ -131,5 +167,5 @@ export function useMapLayout(name: string | null): UseMapLayoutResult {
     setError(null);
   }, [fetchLayout]);
 
-  return { data, error, loading, reload };
+  return { data, error, brokenPath, loading, reload };
 }

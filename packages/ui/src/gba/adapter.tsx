@@ -7,7 +7,7 @@ import { MapCanvas, compositeOrigin } from "../components/MapCanvas.js";
 import { WorldCanvas } from "../components/WorldCanvas.js";
 import { PokemonIndicatorDialog } from "../components/PokemonIndicatorDialog.js";
 import { useMapGroups } from "../hooks/useMapGroups.js";
-import { useMapLayout } from "../hooks/useMapLayout.js";
+import { brokenPathToDefect, useMapLayout } from "../hooks/useMapLayout.js";
 import { useWorldVisibility } from "../hooks/useWorldVisibility.js";
 import { useDungeons } from "../hooks/useDungeons.js";
 import { useEditSession, isIndicatorMapUpdate } from "../hooks/useEditSession.js";
@@ -144,7 +144,7 @@ export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
     visibility: { placed, error: visibilityError },
     hiddenMapTypes: HIDDEN_MAP_TYPES,
     dungeons,
-    map: { error: layout.error, ready: Boolean(layout.data), name: layout.data?.map.name ?? null },
+    map: { error: layout.error, ready: Boolean(layout.data), name: layout.data?.map.name ?? null, defects: layout.brokenPath ? [brokenPathToDefect(layout.brokenPath)] : undefined },
     renderMap: (s) =>
       selected && layout.data ? (
         <div className="app__map-editing">
