@@ -7,6 +7,7 @@ import type { EditSession } from "@pokemap/core/src/write/save.js";
 import type { TilesetFileEdit } from "@pokemap/core/src/blockEdit/types.js";
 import { EditCommandStack, type EditCommand } from "@pokemap/core/src/edit/commands.js";
 import { parseBlocks } from "@pokemap/core/src/load/blocks.js";
+import { createSessionStore, type SessionStore } from "./sessionStore.js";
 
 export interface SessionEntry {
   session: EditSession;
@@ -19,85 +20,47 @@ export interface SessionEntry {
 }
 
 /**
- * One `Map<mapName, SessionEntry>` per server process, exactly the shape
- * `worldCache`/`coverageCache` already use for "read-only project, compute
- * once" -- except a session is genuinely mutable and this store's whole
- * job is holding that mutation between requests, not memoizing a pure
- * answer. `close()` is what actually enforces I6 in spirit: an edit
- * session existing in memory is not itself a write (nothing has touched
- * disk), and dropping it (after a successful commit, or on an explicit
- * discard) is always safe -- the NEXT open() just re-reads the real files,
- * which are the only durable truth.
+ * Opens ONE GBA edit session entry: `createEditSessionStore` below hands it to
+ * `createSessionStore`, which owns the per-process `Map<mapName, SessionEntry>`
+ * (see `sessionStore.ts` for why dropping an entry is always safe). `project.map`
+ * is called on every open, so a project whose `map` re-parses from disk (the
+ * `index.ts` handler's) hands a reopened session the last commit -- keep calling
+ * it here, never cache the map in the store.
  */
-export function createEditSessionStore(project: Project) {
-  // Unbounded for now, same honesty as index.ts's own pngCache/iconCache --
-  // nothing calls close() yet (Task 9's commit route is expected to, after
-  // a successful save), so a session opened and never explicitly closed or
-  // saved just sits here for the life of the process.
-  const sessions = new Map<string, SessionEntry>();
+function openGbaEntry(project: Project, mapName: string): SessionEntry {
+  const map = project.map(mapName);
+  const layout = project.layoutForMap(mapName);
+  const blocks = parseBlocks(readFileSync(`${project.paths.root}/${layout.blockdataFilepath}`), project.profile);
+  const border = parseBlocks(readFileSync(`${project.paths.root}/${layout.borderFilepath}`), project.profile);
+  const originalMapJson = readFileSync(project.paths.mapJson(mapName), "utf8");
 
-  function open(mapName: string): SessionEntry {
-    let entry = sessions.get(mapName);
-    if (entry) return entry;
-
-    const map = project.map(mapName);
-    const layout = project.layoutForMap(mapName);
-    const blocks = parseBlocks(readFileSync(`${project.paths.root}/${layout.blockdataFilepath}`), project.profile);
-    const border = parseBlocks(readFileSync(`${project.paths.root}/${layout.borderFilepath}`), project.profile);
-    const originalMapJson = readFileSync(project.paths.mapJson(mapName), "utf8");
-
-    const session: EditSession = {
-      mapName, layout, blocks, border, map,
-      // `map` is `project.map(mapName)`'s own cached MapData, shared across
-      // the whole server process -- aliasing it here (as `originalMap: map`)
-      // would violate EditSession.originalMap's own doc comment (MUST be an
-      // independent copy) exactly as originalBlocks's own copy below avoids
-      // for blocks: a later in-place mutation of session.map (Task 9's event
-      // moves, Task 17's sign writes) would otherwise silently corrupt BOTH
-      // guardMapSave's prev/next diff and the project-wide map cache that
-      // /api/map/:name still reads from.
-      originalBlocks: blocks.map((b) => ({ ...b })), originalMap: structuredClone(map),
-      originalMapJson, jsonEdits: [], insertOps: [], removeOps: [], isDirty: false,
-    };
-    entry = { session, stack: new EditCommandStack(), strokeStartBlocks: null, signBaselines: new Map() };
-    const scriptsPath = project.paths.mapScriptsInc(mapName);
-    if (existsSync(scriptsPath)) {
-      const text = readFileSync(scriptsPath, "utf8");
-      for (const label of gbaSignLabels(text)) {
-        const block = findGbaSign(text, label);
-        if (block.editable) entry.signBaselines.set(label, signHash(block.body));
-      }
+  const session: EditSession = {
+    mapName, layout, blocks, border, map,
+    // `map` is `project.map(mapName)`'s own cached MapData, shared across
+    // the whole server process -- aliasing it here (as `originalMap: map`)
+    // would violate EditSession.originalMap's own doc comment (MUST be an
+    // independent copy) exactly as originalBlocks's own copy below avoids
+    // for blocks: a later in-place mutation of session.map (Task 9's event
+    // moves, Task 17's sign writes) would otherwise silently corrupt BOTH
+    // guardMapSave's prev/next diff and the project-wide map cache that
+    // /api/map/:name still reads from.
+    originalBlocks: blocks.map((b) => ({ ...b })), originalMap: structuredClone(map),
+    originalMapJson, jsonEdits: [], insertOps: [], removeOps: [], isDirty: false,
+  };
+  const entry: SessionEntry = { session, stack: new EditCommandStack(), strokeStartBlocks: null, signBaselines: new Map() };
+  const scriptsPath = project.paths.mapScriptsInc(mapName);
+  if (existsSync(scriptsPath)) {
+    const text = readFileSync(scriptsPath, "utf8");
+    for (const label of gbaSignLabels(text)) {
+      const block = findGbaSign(text, label);
+      if (block.editable) entry.signBaselines.set(label, signHash(block.body));
     }
-    sessions.set(mapName, entry);
-    return entry;
   }
+  return entry;
+}
 
-  function close(mapName: string): void {
-    sessions.delete(mapName);
-  }
-
-  function has(mapName: string): boolean {
-    return sessions.has(mapName);
-  }
-
-  /** Names (sorted) of every open session whose `session.isDirty` is true --
-   *  the hub's own `ProjectHandler.dirtyMaps()` (Plan 6c A1), which the
-   *  `/api/hub/open` unsaved-edits guard reads before swapping a handler
-   *  out. `EditCommandStack` keeps `isDirty` current on every push/undo/redo,
-   *  so this is a plain filter, not its own tracking. */
-  function dirty(): string[] {
-    return [...sessions.entries()].filter(([, e]) => e.session.isDirty).map(([name]) => name).sort();
-  }
-
-  /** Drops every open session -- the hub's own `dispose()` (Plan 6c A1),
-   *  called on a handler that is about to be replaced or torn down. Same
-   *  "always safe to drop" reasoning as `close()`'s own doc comment: nothing
-   *  here has touched disk. */
-  function closeAll(): void {
-    sessions.clear();
-  }
-
-  return { open, close, has, dirty, closeAll, entries: () => [...sessions.entries()], root: project.paths.root };
+export function createEditSessionStore(project: Project): SessionStore<SessionEntry> {
+  return createSessionStore(project.paths.root, (mapName) => openGbaEntry(project, mapName));
 }
 
 /** A snapshot-diff command: `apply`/`revert` just assign the session's own
