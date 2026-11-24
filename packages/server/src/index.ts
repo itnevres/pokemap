@@ -21,7 +21,7 @@ import type { GbcProject } from "@pokemap/core/src/gbc/project.js";
 import { createGbcProjectHandler } from "./gbcRoutes.js";
 import { renderLayout } from "@pokemap/core/src/render/layout.js";
 import { parseEncounters, type Encounters } from "@pokemap/core/src/load/encounters.js";
-import { coverage, whereSpecies, allSpecies } from "@pokemap/core/src/analyse/coverage.js";
+import { coverage, allSpecies } from "@pokemap/core/src/analyse/coverage.js";
 import { buildWorld, resolveWorldPlacements } from "@pokemap/core/src/world/resolve.js";
 import { readSidecar } from "@pokemap/core/src/world/sidecar.js";
 import { warpConnectedMapsFrom } from "@pokemap/core/src/world/warpGraph.js";
