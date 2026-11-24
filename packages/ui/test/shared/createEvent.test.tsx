@@ -44,7 +44,7 @@ for (const family of ["gba", "gbc"] as const) {
       const { result } = mount();
       await act(async () => { expect(await result.current.createEvent(form)).toEqual(created); });
       expect(fetcher).toHaveBeenCalledTimes(1);
-      expect(fetcher).toHaveBeenCalledWith("/api/edit/A/event/create", { method: "POST", body: JSON.stringify(form) });
+      expect(fetcher).toHaveBeenCalledWith("/api/edit/A/event/create", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(form) });
       expect(result.current).toMatchObject({ isDirty: true, canUndo: true, canRedo: false });
       if ("map" in result.current) {
         expect(result.current.map).toEqual(body.map);

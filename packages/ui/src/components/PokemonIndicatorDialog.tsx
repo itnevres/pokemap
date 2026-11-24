@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { IndicatorBlock, IndicatorSpecies } from "@pokemap/core/src/indicator/gba.js";
 import { trapDialogFocus, useRestoreFocus } from "../shared/dialogFocus.js";
+import { postJson } from "../hooks/useGuardedFetch.js";
 import "../styles.css";
 
 
@@ -116,11 +117,7 @@ export function PokemonIndicatorDialog({ mapName, edit, onDone, onCancel }: Poke
     setRefusals([]);
     setAddError(null);
     try {
-      const r = await fetch(`/api/edit/${encodeURIComponent(mapName)}/indicator/${edit ? "update" : "add"}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(edit ? { index: edit.index, scriptLabel: edit.block.scriptLabel, species, text: dialogue } : { x, y, species, text: dialogue }),
-      });
+      const r = await postJson(`/api/edit/${encodeURIComponent(mapName)}/indicator/${edit ? "update" : "add"}`, edit ? { index: edit.index, scriptLabel: edit.block.scriptLabel, species, text: dialogue } : { x, y, species, text: dialogue });
       const body: unknown = await r.json().catch(() => null);
       if (ticket !== generation.current) return;
       submitPending.current = false;

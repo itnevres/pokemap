@@ -3,6 +3,7 @@ import type { AddEventForm, EventKind } from "@pokemap/core/src/addEvent/types.j
 import { useVisit } from "./useVisit.js";
 import { invalidateEventOptions } from "./useEventOptions.js";
 import { noteTilesetStamp, tilesetGeneration } from "./tilesetVersion.js";
+import { postJson } from "../hooks/useGuardedFetch.js";
 
 /** Refusals keep their server code; callers suppress failures belonging to a retired visit. */
 export class EditSessionError extends Error {
@@ -136,7 +137,9 @@ export function useEditSessionCore<State>(base: string, mapName: string | null, 
       const ticket: EditTicket = { map: mapName, seed, seq: ++seq.current.issued, isCurrent: owner.isCurrent };
       try {
         const generation = tilesetGeneration();
-        const r = await fetch(`${base}/${encodeURIComponent(mapName)}${path}`, body === undefined ? { method: "POST" } : { method: "POST", body: JSON.stringify(body) });
+        const url = `${base}/${encodeURIComponent(mapName)}${path}`;
+        // A body carries `application/json`; a body-less request stays a plain POST (no content type to send).
+        const r = body === undefined ? await fetch(url, { method: "POST" }) : await postJson(url, body);
         // Legacy callers can opt out of body reads on errors; session mutations, block reads and redo always need refusal codes.
         const structured = readServerError || path === "/event/create" || path === "/redo"
           || path === "/block/apply" || path === "/block/check" || path === "/block/preview";
