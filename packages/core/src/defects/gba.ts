@@ -60,34 +60,47 @@ export function checkGbaMapDefects(proj: Project, mapName: string, opts?: { symb
   const out: DataDefect[] = [];
   const add = (kind: DataDefect["kind"], message: string, fix: string, target = file) =>
     out.push({ file: target, kind, message, fix });
-  const raw = readFileSync(`${proj.paths.root}/${layout.blockdataFilepath}`);
-  const expectedBytes = layout.width * layout.height * 2;
-  if (raw.length !== expectedBytes) out.push(sizeDefect(layout.blockdataFilepath, raw.length, expectedBytes,
-    `width/height for ${layout.id} in data/layouts/layouts.json`));
-
-  // C2 dropped from v1 (spec: a check that cannot reach zero false positives is removed). The GBA subject has 71 off-map
-  // events (60 objects, 9 warps, 2 bg) that are scripted staging, edge-adjacent (x == width) or vanilla leftovers;
-  // bounds alone cannot tell them from errors. See the Task 3 report.
-
-  const split = proj.splitFor(layout).metatiles;
   const tilesets = parseTilesetPaths(
     readFileSync(proj.paths.tilesetHeadersH, "utf8"),
     readFileSync(proj.paths.tilesetMetatilesH, "utf8"),
     [readFileSync(proj.paths.tilesetGraphicsH, "utf8"), readFileSync(proj.paths.tilesetGraphicsC, "utf8")],
   );
-  const count = (symbol: string) => {
-    const paths = tilesets.get(symbol);
-    if (!paths) throw new Error(`Unknown tileset ${symbol} in ${proj.paths.tilesetHeadersH}`);
-    // Eight u16 tile entries per metatile, as in loadTileset; no art or cached tileset is needed.
-    return readFileSync(`${proj.paths.root}/${paths.metatilesBin}`).length / 16;
-  };
-  const primary = count(layout.primaryTileset);
-  const ceiling = Math.min(split + count(layout.secondaryTileset), proj.constants.metatilesTotal);
-  const badIds = [...new Set(parseBlocks(raw, proj.profile).slice(0, layout.width * layout.height)
-    .map((b) => b.metatileId).filter((id) => id < split ? id >= primary : id >= ceiling))].sort((a, b) => a - b);
-  if (badIds.length) add("gameplay", `Metatile id(s) ${badIds.join(", ")} are out of range for this layout's split.`,
-    `Replace these ids in ${layout.blockdataFilepath} with ids in 0..${Math.min(primary, split) - 1} or ${split}..${ceiling - 1}.`,
-    layout.blockdataFilepath);
+  // D25: an escaping path on the layout or on either of its tilesets is a
+  // defect on this map. The blockdata size and metatile-range checks below
+  // read that file, so they are skipped -- not run against a path outside the
+  // project -- whenever anything here is broken. A tileset symbol missing from
+  // the map still throws "Unknown tileset" in `count` below, but only when nothing here is broken.
+  const broken = [...(layout.brokenPaths ?? []),
+    ...(tilesets.get(layout.primaryTileset)?.brokenPaths ?? []),
+    ...(tilesets.get(layout.secondaryTileset)?.brokenPaths ?? [])]
+    .filter((bp, i, all) => all.findIndex((other) => other.message === bp.message) === i);
+  for (const bp of broken) add("build", bp.message, bp.fix, bp.file);
+
+  // C2 dropped from v1 (spec: a check that cannot reach zero false positives is removed). The GBA subject has 71 off-map
+  // events (60 objects, 9 warps, 2 bg) that are scripted staging, edge-adjacent (x == width) or vanilla leftovers;
+  // bounds alone cannot tell them from errors. See the Task 3 report.
+
+  if (broken.length === 0) {
+    const raw = readFileSync(`${proj.paths.root}/${layout.blockdataFilepath}`);
+    const expectedBytes = layout.width * layout.height * 2;
+    if (raw.length !== expectedBytes) out.push(sizeDefect(layout.blockdataFilepath, raw.length, expectedBytes,
+      `width/height for ${layout.id} in data/layouts/layouts.json`));
+
+    const split = proj.splitFor(layout).metatiles;
+    const count = (symbol: string) => {
+      const paths = tilesets.get(symbol);
+      if (!paths) throw new Error(`Unknown tileset ${symbol} in ${proj.paths.tilesetHeadersH}`);
+      // Eight u16 tile entries per metatile, as in loadTileset; no art or cached tileset is needed.
+      return readFileSync(`${proj.paths.root}/${paths.metatilesBin}`).length / 16;
+    };
+    const primary = count(layout.primaryTileset);
+    const ceiling = Math.min(split + count(layout.secondaryTileset), proj.constants.metatilesTotal);
+    const badIds = [...new Set(parseBlocks(raw, proj.profile).slice(0, layout.width * layout.height)
+      .map((b) => b.metatileId).filter((id) => id < split ? id >= primary : id >= ceiling))].sort((a, b) => a - b);
+    if (badIds.length) add("gameplay", `Metatile id(s) ${badIds.join(", ")} are out of range for this layout's split.`,
+      `Replace these ids in ${layout.blockdataFilepath} with ids in 0..${Math.min(primary, split) - 1} or ${split}..${ceiling - 1}.`,
+      layout.blockdataFilepath);
+  }
 
   // Resolve by the declared id, never by a guessed conversion of directory names.
   const byId = new Map([[map.id, map]]);
