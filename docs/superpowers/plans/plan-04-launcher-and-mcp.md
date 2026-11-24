@@ -153,5 +153,5 @@ Demonstrated, not asserted:
 - [ ] 3a, 3b: Claude Code calls `pokemap_render` and the image comes back visible in the transcript (criterion 2)
 - [ ] 3c: write tools, the GBC event tools included, refuse without `--allow-writes`, naming the flag
 - [ ] 5: a reader follows the guide on a scratch project
-- [ ] 6a, 6b: benchmarks meet the Task 6 targets, with numbers recorded in the PR
+- [x] 6a, 6b: benchmarks recorded (`task-reports/pokemap-plan-4/task-6a-benchmarks.md`, `task-6b-cli-startup.md`); after 6b `pokemap render` is about 300 ms on GBA and 365 ms on GBC through tsx (a prebuilt bundle, after Plan H P3, is the only further step); cold open, world view and pan targets met by the core proxies, browser fps not measured
 - [ ] Both subjects unchanged after a full exploratory session (compared before and after, as the `gate` skill does; trap 6)
