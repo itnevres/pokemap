@@ -483,15 +483,29 @@ PreviewMulti${ending}Text:
     const before = owned();
     expect(JSON.stringify(before.consts)).toContain(flag1); expect(JSON.stringify(before.consts)).toContain(flag2);
     expect(before.names).toContain(flag1); expect(before.names).toContain(flag2);
-    const index = store.open(map).session.events.objects.findIndex(o => o.eventFlag === flag1);
+    // Delete the SECOND add: a lookup that ignored the flag would pick the first record.
+    const index = store.open(map).session.events.objects.findIndex(o => o.eventFlag === flag2);
     expect(index).toBeGreaterThanOrEqual(0);
     const r = await edit("event/delete", { kind: "object", index }); expect(r.status, JSON.stringify(r.body)).toBe(200);
     const objects = store.open(map).session.events.objects;
-    expect(objects.some(o => o.eventFlag === flag1)).toBe(false);
-    expect(objects.some(o => o.eventFlag === flag2 && o.script === label)).toBe(true);
+    expect(objects.some(o => o.eventFlag === flag2)).toBe(false);
+    expect(objects.some(o => o.eventFlag === flag1 && o.script === label)).toBe(true);
     const s = owned();
-    expect(JSON.stringify(s.consts)).toContain(`const ${flag2}`); expect(JSON.stringify(s.consts)).not.toContain(flag1);
-    expect(s.names).toContain(flag2); expect(s.names).not.toContain(flag1);
+    expect(JSON.stringify(s.consts)).toContain(`const ${flag1}`); expect(JSON.stringify(s.consts)).not.toContain(flag2);
+    expect(s.names).toContain(flag1); expect(s.names).not.toContain(flag2);
+  });
+  it("B4: a second pending event on the same new script never takes that script's blocks with it", async () => {
+    await create(npc("Route29B4Dup"));
+    const before = owned();
+    expect(before.text).toContain("Route29B4Dup:");
+    await create({ ...npc(), script: { mode: "existing", label: "Route29B4Dup" } });
+    const added = owned();
+    const index = store.open(map).session.events.objects.length - 1;
+    expect((await edit("event/delete", { kind: "object", index })).status).toBe(200);
+    expect(owned().text).toContain("Route29B4Dup:");
+    expect(owned().names).toEqual(expect.arrayContaining(before.names));
+    expect(store.open(map).session.events.objects.some(o => o.script === "Route29B4Dup")).toBe(true);
+    expect(added.names.length).toBeGreaterThan(before.names.length);
   });
   it("B4: undo of the delete restores the event with its script edits and redo drops them again", async () => {
     const baseline = owned();
