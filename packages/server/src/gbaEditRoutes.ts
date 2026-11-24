@@ -248,8 +248,8 @@ export function gbaEditRoutes(ctx: GbaEditRouteContext): (req: IncomingMessage, 
       }
 
       // Plan 2 follow-up 5: explicit "give up on this whole session, revert
-      // to disk state" -- editSessions.ts's own close() already does exactly
-      // this (sessions.delete(mapName)); this route is just the first thing
+      // to disk state" -- the session store's own close() (sessionStore.ts) already does exactly
+      // this (it forgets the map's entry); this route is just the first thing
       // that ever calls it outside a successful commit. Deliberately its own
       // route, not a repurposing of SaveDialog's Cancel button (see that
       // component's own comment) -- Cancel stays a non-destructive
@@ -265,7 +265,7 @@ export function gbaEditRoutes(ctx: GbaEditRouteContext): (req: IncomingMessage, 
         // editSessions.has(name) is false -- after a discard, that's exactly
         // true. Idempotent: discarding an already-clean or never-opened
         // session is a harmless no-op with the same response, matching
-        // close()'s own "always safe to drop" doc comment.
+        // the "always safe to drop" note in sessionStore.ts's header.
         return send(200, { ...overlayStamp(), blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false });
       }
 

@@ -367,7 +367,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
       })) return;
       // Plan H I1: the read-only GBA routes (event/indicator option lookups, project, groups, defects, map,
       // render, metatile, species icon, encounters, warps, coverage, species, where, world) live in gbaReadRoutes.ts.
-      // The option-lookup block that used to sit above `createEventMatch` now runs below it: they are disjoint
+      // The option-lookup block used to run after `createEventMatch` (now in gbaEditRoutes.ts): they are disjoint
       // (that block only answers GET option lookups, `createEventMatch` only POST /api/edit/<name>/event/create).
       if (gbaReadRoute(req, res, url, send)) return;
 
