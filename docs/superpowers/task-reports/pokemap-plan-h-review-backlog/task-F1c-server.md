@@ -39,3 +39,6 @@ Dead code, not killable by a test: the `.catch` mappings at event/create, sign p
 
 ## Not in scope (F1d, F1e)
 The gate already refuses `/api/edit/<map>/block*` for the requested map. Left for F1d: `GET /api/block-sheet/<map>.png` (not gated; tileset case answers 500); `blockEdit/{usage,gbaOps,save}.ts` walking every consuming layout through a HEALTHY map's URL, a real outside read on master today; `sign/*` beyond the gate; core readers. The UI half of the banner (the UI discards the 409 body) is row F1e.
+
+## Gate (merged head, origin/master 832abe4 merged in, all through the test lock)
+Typecheck exit 0; UI build exit 0; full vitest 291 of 293 files, 5562 of 5565 tests pass. The 3 failures are the known `engine.test` cfg failure and two 8 s timeouts in `gbcAddEventRoutes.test.ts` under load; that file re-run alone: 39 of 39 pass. Subject repos unchanged (git status before and after identical). `brokenPaths.test.ts` 13 of 13; sessionStore, editSessions: pass.
