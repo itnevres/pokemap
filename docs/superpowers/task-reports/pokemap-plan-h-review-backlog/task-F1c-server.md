@@ -23,15 +23,17 @@ Refuse (typed `409 {error, code:"broken-path", defect}`), never read or open: `/
 Source restored after each mutation.
 
 ## Review fix round (both Opus reviews: CHANGES NEEDED, tests missing, not logic wrong)
+Third review (Opus, fix round, `task-F1c-server-review-fixround.md`) found the first version of the unparseable-map.json test vacuous (it ran on a map an earlier test had already cached, so the try/catch mutant survived); the test now breaks a map no other test touches, asserts the route's own 200 `sign` refusal, and the mutant is killed. Its minors (afterAll removes only directories it created, planted files removed first) are done; POSIX portability of the `../../outside` sentinel path is not (Windows-only dev box, AppData root). Baseline 13/13.
+
 Added to `brokenPaths.test.ts` (now 13 tests): `GET /api/edit/<map>/block?x=0&y=0`, `GET /api/edit/<map>/plan` and `POST /api/edit/<map>/commit` for the broken layout and the broken tileset expect 409 `broken-path`, with tracked project files (layouts.json, metatiles.h, four map.json) byte-identical afterwards and sentinel files planted at the resolved outside paths (so a regression is a wrong 200, not an ENOENT); `GET /api/event-options/<map>?x=0&y=0` expects 409 (new `brokenPathBody` mapping in `addEventRoutes.ts` `optionsHandler`); a map with unparseable map.json keeps its route's own answer (the gate's `project.map` lookup is now in a try/catch).
 
 | Mutation (fix round) | Result |
 |---|---|
-| `blockEdits.handle(...)` moved above the gate | MUTANT_1 |
-| `block` added to the gate's exemption | MUTANT_2 |
-| gate narrowed to `event/create` only | MUTANT_3 |
-| gate lookup try/catch removed | MUTANT_4 |
-| `optionsHandler` 409 mapping removed | MUTANT_5 |
+| `blockEdits.handle(...)` moved above the gate | 1 fails (block/plan/commit test) |
+| `block` added to the gate's exemption | 1 fails (block/plan/commit test) |
+| gate narrowed to `event/create` only | 1 fails (block/plan/commit test) |
+| gate lookup try/catch removed | 1 fails (unparseable map.json test, on an untouched map) |
+| `optionsHandler` 409 mapping removed | 1 fails (event options test) |
 
 Dead code, not killable by a test: the `.catch` mappings at event/create, sign put/resolve, indicator add/update and commit are defence in depth. Each route has an inner try that turns `PathEscapeError` into 400 first, and the gate stands in front of all of them. The paint/apply and event move/add/delete mappings are also behind the gate.
 
