@@ -46,3 +46,6 @@ Read sites still unguarded: `signs/suggest.ts:79`, `cli/src/writeCommands.ts:25-
 
 ## Orchestrator ruling on the unguarded readers, and accepted limit
 Orchestrator 2 ruled: F1c scope stays as is, not widened. The unguarded readers are now Plan H row F1d (High, after the F1c server half), added to `plans/plan-h-hardening.md`. Accepted limit (out of scope): containment is lexical only (`insideRoot`, no `realpath`), so a symlink or junction inside a project that points outside is not caught anywhere in Plan H Task F.
+
+## Gate after the tilesets.ts fix
+Gate at 7bac140 (code identical to adfcf49): 5497 pass / 2 fail / 288 files (286 pass); typecheck pass (exit 0), UI build pass (exit 0); subjects unchanged. The 2 failures: known env fail `engine.test` "parses the subject repo's real porymap.project.cfg", and `gbcAddEventRoutes` "saving the header owner lets another map allocate a new flag" (an 8000 ms timeout at 10.6 s while the machine was loaded; the whole file re-run alone through the lock: 39/39 pass; GBC server code, untouched by this PR).
