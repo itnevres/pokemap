@@ -88,6 +88,11 @@ function isDungeonLayoutBody(value: unknown): value is { enabled: boolean } {
  *
  * Every body-reading route goes through http.ts's `jsonBody`, which owns
  * read/parse/400/413/500.
+ *
+ * `GET /api/dungeons` and `DELETE /api/dungeons/<id>` read `dungeons.json` synchronously, so
+ * a corrupt file throws out of this function: the caller's own try/catch must
+ * answer the 500 (both handlers mount it inside theirs). Do not mount it
+ * outside a try/catch.
  */
 export function sidecarRoutes(
   deps: SidecarRouteDeps,

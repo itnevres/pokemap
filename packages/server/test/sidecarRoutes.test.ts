@@ -353,4 +353,37 @@ describe("sidecarRoutes (mounted bare, stub deps only)", () => {
     }
     expect(existsSync(dungeonsPath())).toBe(before !== null);
   });
+
+
+  // Review minor (Opus, H-b): every owned path answers only its own methods;
+  // any other method must fall through (the harness 404) so a dropped
+  // `req.method ===` guard cannot go unnoticed.
+  it.each([
+    ["GET", "/api/world/placement"],
+    ["GET", "/api/world/conflicts/accept"],
+    ["GET", "/api/world/dungeons"],
+    ["PUT", "/api/dungeons"],
+    ["GET", "/api/dungeons/x"],
+    ["POST", "/api/dungeons/x"],
+    ["PATCH", "/api/dungeons/"],
+  ])("%s %s falls through to the caller's own 404", async (method, path) => {
+    const r = await fetch(`${base}${path}`, { method });
+    expect(r.status).toBe(404);
+    expect(await r.json()).toEqual({ error: "not found" });
+    expect(existsSync(sidecarPath())).toBe(false);
+    expect(existsSync(dungeonsPath())).toBe(false);
+  });
+
+  // Review minor (Opus, H-b): the id is DECODED before it is compared; a UUID
+  // never shows the difference, an id with a space does (the UIs encode).
+  it("PATCH and DELETE match a dungeon by its decoded id", async () => {
+    mkdirSync(dirname(dungeonsPath()), { recursive: true });
+    writeFileSync(dungeonsPath(), JSON.stringify({ version: 1, dungeons: [{ id: "a b", name: "N", maps: [] }] }));
+    const patched = await sendJsonBody("PATCH", "/api/dungeons/a%20b", { name: "M" });
+    expect(patched.status).toBe(200);
+    expect(await patched.json()).toEqual({ id: "a b", name: "M", maps: [] });
+    const deleted = await fetch(`${base}/api/dungeons/a%20b`, { method: "DELETE" });
+    expect(deleted.status).toBe(200);
+    expect(await (await get("/api/dungeons")).json()).toEqual([]);
+  });
 });

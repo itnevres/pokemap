@@ -1,14 +1,16 @@
 # Plan H task H-b report: one `sidecarRoutes.ts` for both families
 
-Branch `claude/plan-h-server-8-h-b` (from master `57f9271`). Tier Medium (behaviour-preserving move plus one named change).
+Branch `claude/plan-h-server-8-h-b` (from master `57f9271`). **Tier High** (orchestrator ruling 2026-11-24: request-body guards and a known-map check move across both families at the HTTP boundary; the plan row said Medium, the CLAUDE.md tie-break wins).
 
 ## What changed
 - New `packages/server/src/sidecarRoutes.ts` (234 lines): the seven routes (conflict accept, placement, auto-layout switch `POST /api/world/dungeons`, dungeons list/create/patch/delete). Deps `{ root, getWorld, knownMap, expandSeed, autoLayoutReply }`; no family import (pinned by `test/sidecarRoutes.test.ts`, which mounts it on a bare temp root).
-- `index.ts` -214 / `gbcRoutes.ts` -191 lines each side (net of the one mount + deps block); both mount it once as `sidecarRoute`.
+- Lines removed: `index.ts` 193 deleted / 21 added (net -172); `gbcRoutes.ts` 158 deleted / 33 added (net -125); `sidecarRoutes.ts` is new (about 235 lines). Both handlers mount it once as `sidecarRoute`.
 - `http.ts`: `jsonBody`'s handler now also receives the raw text (backward compatible).
 - Allowed behaviour changes: GBC placement now rejects unknown maps and `__proto__` (same `unknown map <name>` 400 as GBA); both families use the stricter GBC body guards (`null` was a 500 on GBA); bad dungeon-id escape text is `malformed dungeon id <raw>` for both. `POST /api/world/dungeons` keeps each family's pinned reply shape (`autoLayoutReply`).
 
 ## Review
+Tier High: two separate Opus reviews (Codex is out until Nov 25), both PASS with no Critical/Important: `task-Hb-spec-review-opus.md` (4 Minor: stale report counts, stale impl notes, spec lists one allowed change, method guards untested) and `task-Hb-quality-review-opus.md` (4 Minor test gaps: method fall-through, decoded id, sync-throw contract undocumented, GBC mount laziness only via stub; 2 pre-existing observations: dungeon `maps` are not known-map-checked, in-flight write after dispose). Fixed: report counts, impl notes marked superseded, plan Task H amended, a method-guard table test and a decoded-id test added, the sync-throw contract written in the module doc. Not done: a GBC-handler-level laziness test (stub test covers the module). Earlier combined Sonnet review: `task-Hb-review-sonnet.md`.
+
 Implementer: free OpenRouter hop (ernie-5.5-flash) via `chain.py --tier sonnet`; Sonnet fix round. Combined Sonnet-tier review: PASS, 1 Important (dropped rationale comment, restored) and Minors (rename `sidecar`→`sidecarRoute`, test gaps T1-T9; all applied). Duplicate body reader dropped by extending `jsonBody` (inline, ~6 lines).
 
 ## Mutation checks (16)

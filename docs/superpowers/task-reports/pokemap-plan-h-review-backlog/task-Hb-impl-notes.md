@@ -1,3 +1,5 @@
+> **Superseded in part by `task-Hb-report.md`.** After this note: the private `dungeonBody` helper was removed (POST and PATCH `/api/dungeons` use `jsonBody`, which now passes the raw text), the mount constant is `sidecarRoute`, and the allowed behaviour changes are the ones listed in the plan's Task H requirement (not only the known-map check).
+
 # Plan H task H-b implementation notes -- one `sidecarRoutes.ts` for both server families
 
 ## What changed
