@@ -26,3 +26,6 @@ Unmutated: 15 of 15 pass. Source files restored after each mutation (`git status
 
 ## Follow-ups (not in this diff; from the review)
 Other core readers of these paths with no broken-path check: `validate/metatileRange.ts:56-58`, `signs/suggest.ts:79-80`, `write/binary.ts:32,57,76`, `blockEdit/gbaOps.ts`, `blockEdit/usage.ts` (reads the blockdata of every layout sharing an edited tileset), `blockEdit/save.ts`. `project.ts getTilesetPaths` returns broken tilesets unrefused (one refusal there covers most tileset items), and `proj.tileset` throws a plain `Error` where the layout path throws `PathEscapeError`: the server half must handle both, or `project.ts` should throw `PathEscapeError(tp.brokenPaths[0])`. `config/paths.ts:67` `mapJson(name)` has no `insideRoot` check (same class, other component).
+
+## Gate
+Gate at fa82caf: 5492 pass / 1 fail / 287 files (286 pass); the 1 failure is the known env fail `engine.test` "parses the subject repo's real porymap.project.cfg"; typecheck pass, UI build pass; subjects unchanged.
