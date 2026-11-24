@@ -371,8 +371,11 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
       if (editGate && !/^(session|undo|redo|discard)$/.test(editGate[2]!)) {
         const gateName = decodeSegment(editGate[1]!);
         if (gateName !== undefined && project.mapNames().includes(gateName)) {
-          const gateLayout = project.layoutById(project.map(gateName).layout);
-          const gateBroken = gateLayout && brokenPathOfLayout(project, gateLayout);
+          let gateBroken: ReturnType<typeof brokenPathOfLayout>;
+          try {
+            const gateLayout = project.layoutById(project.map(gateName).layout);
+            gateBroken = gateLayout && brokenPathOfLayout(project, gateLayout);
+          } catch { /* unparseable map.json etc.: let the route answer as it did before the gate */ }
           if (gateBroken) return send(409, refusalBody(gateBroken));
         }
       }

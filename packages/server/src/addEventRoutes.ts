@@ -23,6 +23,7 @@ import { scanCalls, codeLines, stripComment } from "@pokemap/core/src/gbc/load/a
 import { addEvent, appendIndex } from "@pokemap/core/src/edit/events.js";
 import { editJson, insertArrayElement, removeArrayElement } from "@pokemap/core/src/write/jsonEdit.js";
 import { createSymbolIndexCache } from "./projectSymbols.js";
+import { brokenPathBody } from "./brokenComponents.js";
 import { effectiveGbaScripts } from "./signRefresh.js";
 import { snapshotOf, snapshotCommand, type createEditSessionStore } from "./editSessions.js";
 import { gbcSnapshotOf, type createGbcEditSessionStore } from "./gbcEditSessions.js";
@@ -223,7 +224,10 @@ function optionsHandler(family: "gba" | "gbc", known: (name: string) => boolean,
         const text = stagedText(name);
         send(200, m[2] === "text" ? textPreview(text, family, label) : (family === "gba" ? copyGbaScriptBody : copyGbcScriptBody)(text, label));
       } else send(200, mapOptions(name, url.searchParams));
-    } catch (error) { send(400, eventFailure(family, name, error)); }
+    } catch (error) {
+      const broken = brokenPathBody(error);
+      if (broken) send(409, broken); else send(400, eventFailure(family, name, error));
+    }
     return true;
   };
 }

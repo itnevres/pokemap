@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createServer as createHttpServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, rmdirSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { createProjectHandler, type ProjectHandler } from "../src/index.js";
 import { createEditSessionStore } from "../src/editSessions.js";
 import { openProject } from "@pokemap/core/src/project.js";
@@ -29,6 +30,10 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("F1c server: broken layout or tileset
   let brokenTileset: string;
   let primaryMap: string;
   let brokenPrimary: string;
+  // Sentinel files at the resolved outside paths: a regression that reads outside shows as a wrong 200, not an ENOENT.
+  const planted: string[] = [];
+  let tracked: string[] = [];
+  const snapshot = () => tracked.map((f) => (existsSync(f) ? readFileSync(f, "utf8") : null));
 
   beforeAll(async () => {
     root = copyGbaTilesetProject();
@@ -65,6 +70,15 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("F1c server: broken layout or tileset
     }
     writeFileSync(mh, text);
 
+    for (const rel of ["../../outside.bin", "../../outside/metatiles.bin", "../../outside/primary-metatiles.bin"]) {
+      const file = resolve(root, rel);
+      if (existsSync(file)) continue; // never overwrite or remove a file we did not create
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, "SENTINEL");
+      planted.push(file);
+    }
+    tracked = [lj, mh, ...[LAYOUT_MAP, TILESET_MAP, CONTROL_MAP, primaryMap].map((m) => `${root}/data/maps/${m}/map.json`)];
+
     handler = createProjectHandler(root);
     server = createHttpServer(handler.handle);
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -74,6 +88,8 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("F1c server: broken layout or tileset
     if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
     handler?.dispose();
     if (root) removeGbaTemp(root);
+    for (const file of planted) rmSync(file, { force: true });
+    for (const dir of new Set(planted.map(dirname))) if (dir.endsWith("outside")) try { rmdirSync(dir); } catch { /* not empty: not ours */ }
   });
 
   const post = (path: string, body: unknown = {}) => fetch(`${base}${path}`, { method: "POST", body: JSON.stringify(body) });
@@ -98,7 +114,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("F1c server: broken layout or tileset
   it("render refuses a broken layout and a broken tileset with a typed 409, not a 500", async () => {
     await expectRefusal(await fetch(`${base}/api/render/${LAYOUT_MAP}.png`), "../../outside.bin");
     await expectRefusal(await fetch(`${base}/api/render/${TILESET_MAP}.png`), "../../outside/metatiles.bin");
-    // also the live-session branch and a named layout
+    // and by layout name (the cachedRender path, not the map name)
     await expectRefusal(await fetch(`${base}/api/render/${probeLayoutName(LAYOUT_MAP)}.png`), "../../outside.bin");
   }, 300_000);
 
@@ -131,6 +147,34 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("F1c server: broken layout or tileset
   it("an edit route with its own 400 handler (event/create) still answers the typed 409", async () => {
     await expectRefusal(await post(`/api/edit/${LAYOUT_MAP}/event/create`, { kind: "object", x: 1, y: 1 }), "../../outside.bin");
     await expectRefusal(await post(`/api/edit/${TILESET_MAP}/event/create`, { kind: "object", x: 1, y: 1 }), "../../outside/metatiles.bin");
+  }, 300_000);
+
+  it("the block read, the plan and the commit refuse a broken map before reading outside, and change no file", async () => {
+    const before = snapshot();
+    for (const [name, part] of [[LAYOUT_MAP, "../../outside.bin"], [TILESET_MAP, "../../outside/metatiles.bin"]] as const) {
+      await expectRefusal(await fetch(`${base}/api/edit/${name}/block?x=0&y=0`), part);
+      await expectRefusal(await fetch(`${base}/api/edit/${name}/plan`), part);
+      await expectRefusal(await post(`/api/edit/${name}/commit`), part);
+    }
+    expect(snapshot()).toEqual(before);
+    expect(handler.dirtyMaps()).toEqual([]);
+  }, 300_000);
+
+  it("event options with a tile query answer the typed 409, not a 400", async () => {
+    await expectRefusal(await fetch(`${base}/api/event-options/${LAYOUT_MAP}?x=0&y=0`), "../../outside.bin");
+    await expectRefusal(await fetch(`${base}/api/event-options/${TILESET_MAP}?x=0&y=0`), "../../outside/metatiles.bin");
+    expect((await fetch(`${base}/api/event-options/${CONTROL_MAP}?x=0&y=0`)).status).toBe(200);
+  }, 300_000);
+
+  it("a map whose map.json cannot be parsed keeps its routes' own answer (the gate does not turn it into a 500)", async () => {
+    const mj = `${root}/data/maps/${CONTROL_MAP}/map.json`;
+    const original = readFileSync(mj, "utf8");
+    try {
+      writeFileSync(mj, "{ not json");
+      const res = await fetch(`${base}/api/edit/${CONTROL_MAP}/plan`);
+      expect(res.status).not.toBe(409);
+      expect(res.status).not.toBe(500);
+    } finally { writeFileSync(mj, original); }
   }, 300_000);
 
   it("a broken PRIMARY tileset is refused on render, map and edit too", async () => {
