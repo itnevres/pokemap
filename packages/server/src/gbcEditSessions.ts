@@ -6,6 +6,7 @@ import type { Block, GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
 import type { TilesetFileEdit } from "@pokemap/core/src/blockEdit/types.js";
 import { EditCommandStack } from "@pokemap/core/src/edit/commands.js";
 import { openGbcEditSession, type GbcEditSession } from "@pokemap/core/src/gbc/write/save.js";
+import { createSessionStore, type SessionStore } from "./sessionStore.js";
 
 export interface GbcSessionEntry {
   session: GbcEditSession;
@@ -36,42 +37,20 @@ export interface GbcSnapshot {
 export const gbcSnapshotOf = (s: GbcEditSession): GbcSnapshot => ({ tilesetEdits: s.tilesetEdits ?? [], blocks: s.blocks, eventsText: s.eventsText, events: s.events, constEdits: s.constEdits ?? [], newNames: s.newNames ?? [], ownedAdds: s.ownedAdds ?? [] });
 
 /**
- * One `Map<mapName, GbcSessionEntry>` per GBC handler, the counterpart of
- * `createEditSessionStore` (`editSessions.ts`): holds the mutable edit state
- * between requests. An open session is not a write -- nothing has touched
- * disk -- so dropping one (after a successful commit, or on an explicit
- * discard) is always safe; the NEXT `open()` re-reads the real files, which
- * are the only durable truth. Unbounded, like the GBA store: a session opened
- * and never closed sits here for the life of the handler.
+ * The GBC counterpart of `createEditSessionStore` (`editSessions.ts`): the
+ * store itself is `createSessionStore` (`sessionStore.ts`); only opening one
+ * entry is GBC-specific. `mapName` must already be a known map
+ * (`openGbcEditSession` throws on a miss, and then nothing is stored).
  */
-export function createGbcEditSessionStore(proj: GbcProject) {
-  const sessions = new Map<string, GbcSessionEntry>();
-
-  /** Opens lazily on first use; `mapName` must already be a known map (`openGbcEditSession` throws on a miss). */
-  function open(mapName: string): GbcSessionEntry {
-    let entry = sessions.get(mapName);
-    if (!entry) {
-      entry = { session: openGbcEditSession(proj, mapName), stack: new EditCommandStack<GbcEditSession>(), strokeStartBlocks: null, signBaselines: new Map() };
-      for (const label of gbcSignLabels(entry.session.eventsText)) {
-        const block = findGbcSign(entry.session.eventsText, label);
-        if (block.editable) entry.signBaselines.set(label, signHash(block.body));
-      }
-      sessions.set(mapName, entry);
-    }
-    return entry;
+function openGbcEntry(proj: GbcProject, mapName: string): GbcSessionEntry {
+  const entry: GbcSessionEntry = { session: openGbcEditSession(proj, mapName), stack: new EditCommandStack<GbcEditSession>(), strokeStartBlocks: null, signBaselines: new Map() };
+  for (const label of gbcSignLabels(entry.session.eventsText)) {
+    const block = findGbcSign(entry.session.eventsText, label);
+    if (block.editable) entry.signBaselines.set(label, signHash(block.body));
   }
+  return entry;
+}
 
-  const close = (mapName: string): void => { sessions.delete(mapName); };
-  const has = (mapName: string): boolean => sessions.has(mapName);
-
-  /** Names (sorted) of every open session with `session.isDirty` -- the hub's
-   *  `ProjectHandler.dirtyMaps()`, which its unsaved-edits 409 guard reads.
-   *  `EditCommandStack` keeps `isDirty` current on every push/undo/redo, so
-   *  this is a plain filter. */
-  const dirty = (): string[] => [...sessions].filter(([, e]) => e.session.isDirty).map(([name]) => name).sort();
-
-  /** Drops every open session -- the handler's `dispose()`. */
-  const closeAll = (): void => { sessions.clear(); };
-
-  return { open, close, has, dirty, closeAll, entries: () => [...sessions.entries()], root: proj.root };
+export function createGbcEditSessionStore(proj: GbcProject): SessionStore<GbcSessionEntry> {
+  return createSessionStore(proj.root, (mapName) => openGbcEntry(proj, mapName));
 }
