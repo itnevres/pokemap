@@ -27,4 +27,4 @@ Floor: `tsx -e 1` alone is 230-240 ms on this machine in the quiet run (6a measu
 ## Evidence
 
 - `npx vitest run packages/cli --no-file-parallelism` through the lock: 8 files, 93 tests pass.
-- Typecheck and the full gate: see the PR body.
+- Gate at `54c2f8c` (docs-only commits after it): 5459 pass / 1 fail / 285 files; typecheck pass (no tsc output), UI build pass; subjects unchanged (porcelain identical before and after). The one failure is the known env failure `engine.test` "parses the subject repo's real porymap.project.cfg" (RESUME).
