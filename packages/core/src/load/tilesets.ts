@@ -82,7 +82,13 @@ export function parseTilesetPaths(
     const palettes = data.get(field("palettes") ?? "") ?? [];
     if (!metatilesBin || !attributesBin) continue;
 
-    const dirOf = (p: string) => p.slice(0, p.lastIndexOf("/"));
+    // A path with no separator lives in the project root: "." (slice(0, -1) would
+    // drop the file name's last character, so "..a" derived "../tiles.png").
+    const dirOf = (p: string) => {
+      const s = p.replace(/\\/g, "/");
+      const i = s.lastIndexOf("/");
+      return i < 0 ? "." : s.slice(0, i);
+    };
     const dir = dirOf(metatilesBin);
     // From `.tiles`, not from `dir`. They differ for 15 tilesets, and eight
     // of those have a tiles.png at the wrong path too, so getting this wrong
