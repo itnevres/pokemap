@@ -28,10 +28,10 @@ import { parseEncounters, speciesChances, FISHING_RODS, type Encounters, type Me
 import { coverage, whereSpecies, allSpecies } from "@pokemap/core/src/analyse/coverage.js";
 import { buildWorld, resolveWorldPlacements } from "@pokemap/core/src/world/resolve.js";
 import type { Placement } from "@pokemap/core/src/world/connections.js";
-import { readSidecar, writeSidecar } from "@pokemap/core/src/world/sidecar.js";
-import { conflictKey, isAcceptConflictBody, updatedAcceptedConflicts, wireConflicts } from "@pokemap/core/src/world/conflictAcceptance.js";
-import { readDungeons, writeDungeons } from "@pokemap/core/src/world/dungeons.js";
+import { readSidecar } from "@pokemap/core/src/world/sidecar.js";
+import { wireConflicts } from "@pokemap/core/src/world/conflictAcceptance.js";
 import { warpConnectedMapsFrom } from "@pokemap/core/src/world/warpGraph.js";
+import { sidecarRoutes } from "./sidecarRoutes.js";
 import { encodePng } from "@pokemap/cli/src/png.js";
 import { parseBorder } from "@pokemap/cli/src/args.js";
 import { randomUUID } from "node:crypto";
@@ -129,6 +129,18 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
   // never touch /api/world (most of api.test.ts) don't pay for it.
   let worldCache: ReturnType<typeof buildWorld> | undefined;
   const getWorld = () => (worldCache ??= buildWorld(project));
+
+  // Plan H H-b: the seven sidecar routes both server families share. GBA's
+  // own deps: its project map names for `knownMap`, `warpConnectedMapsFrom`
+  // for the dungeon seed BFS, and the `{ ok: true }` reply
+  // `world.test.ts` pins for `POST /api/world/dungeons`.
+  const sidecar = sidecarRoutes({
+    root: project.paths.root,
+    getWorld,
+    knownMap: (name) => project.mapNames().includes(name),
+    expandSeed: (seedMap) => warpConnectedMapsFrom(project, seedMap),
+    autoLayoutReply: () => ({ ok: true }),
+  });
 
   // Shared render helper used by both the /api/render route and warmUp.
   // Returns the cached PNG for `${name}:${border}`, or resolves the layout,
@@ -736,196 +748,12 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
         });
       }
 
-      if (url.pathname === "/api/world/conflicts/accept" && req.method === "POST") {
-        return readBody(req).then((body) => {
-          let parsed: unknown;
-          try { parsed = JSON.parse(body); }
-          catch (e) { return send(400, { error: `invalid JSON body: ${(e as Error).message}` }); }
-          if (!isAcceptConflictBody(parsed)) return send(400, { error: `expected { key: string, accepted: boolean }, got ${body}` });
-          if (!getWorld().conflicts.some((conflict) => conflictKey(conflict) === parsed.key)) {
-            return send(404, { error: `unknown conflict key ${parsed.key}` });
-          }
-          const sidecar = readSidecar(project.paths.root);
-          sidecar.acceptedConflicts = updatedAcceptedConflicts(sidecar.acceptedConflicts ?? [], parsed.key, parsed.accepted);
-          writeSidecar(project.paths.root, sidecar);
-          return send(200, { acceptedConflicts: sidecar.acceptedConflicts });
-        }).catch((e: unknown) => {
-          if (e instanceof BodyTooLarge) return send(413, { error: "request body too large" });
-          console.error(e);
-          send(500, { error: e instanceof Error ? e.message : String(e) });
-        });
-      }
-
-      if (url.pathname === "/api/world/placement" && req.method === "POST") {
-        return readBody(req)
-          .then((body) => {
-            let parsed: unknown;
-            try {
-              parsed = JSON.parse(body);
-            } catch (e) {
-              return send(400, { error: `invalid JSON body: ${(e as Error).message}` });
-            }
-            const placement = parsed as { map?: unknown; x?: unknown; y?: unknown };
-            // The GBC twin's guard (gbcRoutes.ts:561-565): `null`, a non-object
-            // and an array are all refused here rather than reaching
-            // `placement.map` and throwing, and `Number.isFinite` rejects the
-            // `1e999` JSON.parse turns into Infinity. The known-map check is
-            // GBA's addition -- without it `__proto__` (and any other unknown
-            // name) would be written as a `manualPlacements` key, and
-            // `manualPlacements["__proto__"] = ...` replaces only that object's
-            // own prototype and persists nothing, yet would answer a silent
-            // 200 `{ ok: true }`.
-            if (
-              parsed === null || typeof parsed !== "object" || Array.isArray(parsed)
-              || typeof placement.map !== "string"
-              || typeof placement.x !== "number" || !Number.isFinite(placement.x)
-              || typeof placement.y !== "number" || !Number.isFinite(placement.y)
-            ) {
-              return send(400, { error: `expected { map: string, x: number, y: number }, got ${body}` });
-            }
-            if (!project.mapNames().includes(placement.map)) {
-              return send(400, { error: `unknown map ${placement.map}` });
-            }
-            const sidecar = readSidecar(project.paths.root);
-            sidecar.manualPlacements[placement.map] = { x: placement.x, y: placement.y };
-            writeSidecar(project.paths.root, sidecar);
-            return send(200, { ok: true });
-          })
-          // This chain runs after the try/catch below has already returned,
-          // so a throw in here (bad JSON, wrong shape, or readSidecar's own
-          // I7 refusal on a corrupted world.json) would otherwise become an
-          // unhandled rejection and leave the request hanging forever
-          // instead of answering it.
-          .catch((e: unknown) => {
-            if (e instanceof BodyTooLarge) return send(413, { error: "request body too large" });
-            console.error(e);
-            send(500, { error: e instanceof Error ? e.message : String(e) });
-          });
-      }
-
-      // Review fix: the dungeon-layout switch (packages/ui's WorldCanvas)
-      // only ever changed the query string used for its own next fetch --
-      // nothing persisted sidecar.dungeonAutoLayout, so a reload silently
-      // discarded it. Mirrors /api/world/placement's own shape exactly
-      // (JSON-parse guard, shape guard, read-mutate-write, outer .catch()
-      // for the same "runs after the try/catch below has returned" reason).
-      if (url.pathname === "/api/world/dungeons" && req.method === "POST") {
-        return readBody(req)
-          .then((body) => {
-            let parsed: { enabled?: unknown };
-            try {
-              parsed = JSON.parse(body) as typeof parsed;
-            } catch (e) {
-              return send(400, { error: `invalid JSON body: ${(e as Error).message}` });
-            }
-            if (typeof parsed.enabled !== "boolean") {
-              return send(400, { error: `expected { enabled: boolean }, got ${body}` });
-            }
-            const sidecar = readSidecar(project.paths.root);
-            sidecar.dungeonAutoLayout = parsed.enabled;
-            writeSidecar(project.paths.root, sidecar);
-            return send(200, { ok: true });
-          })
-          .catch((e: unknown) => {
-            if (e instanceof BodyTooLarge) return send(413, { error: "request body too large" });
-            console.error(e);
-            send(500, { error: e instanceof Error ? e.message : String(e) });
-          });
-      }
-
-      // Feature C (dungeon-mode-and-warp-tools spec §5.3): user-curated
-      // named groups of maps, persisted to their own sidecar file --
-      // .pokemap/dungeons.json, not world.json, for the same single-
-      // responsibility split sidecar.ts's own file already established.
-      if (url.pathname === "/api/dungeons" && req.method === "GET") {
-        return send(200, readDungeons(project.paths.root).dungeons);
-      }
-
-      if (url.pathname === "/api/dungeons" && req.method === "POST") {
-        return readBody(req)
-          .then((body) => {
-            let parsed: { name?: unknown; seedMap?: unknown; maps?: unknown };
-            try {
-              parsed = JSON.parse(body) as typeof parsed;
-            } catch (e) {
-              return send(400, { error: `invalid JSON body: ${(e as Error).message}` });
-            }
-            if (typeof parsed.name !== "string" || parsed.name.trim() === "") {
-              return send(400, { error: `expected a non-empty "name" string, got ${body}` });
-            }
-            if (parsed.seedMap !== undefined && typeof parsed.seedMap !== "string") {
-              return send(400, { error: `"seedMap" must be a string when present, got ${body}` });
-            }
-            if (parsed.maps !== undefined && (!Array.isArray(parsed.maps) || parsed.maps.some((m) => typeof m !== "string"))) {
-              return send(400, { error: `"maps" must be a string array when present, got ${body}` });
-            }
-
-            let maps: string[];
-            if (typeof parsed.seedMap === "string") {
-              if (!project.mapNames().includes(parsed.seedMap)) {
-                return send(400, { error: `seedMap ${parsed.seedMap} is not a known map` });
-              }
-              maps = [...warpConnectedMapsFrom(project, parsed.seedMap)].sort();
-            } else {
-              maps = (parsed.maps as string[] | undefined) ?? [];
-            }
-
-            const dungeons = readDungeons(project.paths.root);
-            const dungeon = { id: randomUUID(), name: parsed.name, maps };
-            dungeons.dungeons.push(dungeon);
-            writeDungeons(project.paths.root, dungeons);
-            return send(200, dungeon);
-          })
-          .catch((e: unknown) => {
-            if (e instanceof BodyTooLarge) return send(413, { error: "request body too large" });
-            console.error(e);
-            send(500, { error: e instanceof Error ? e.message : String(e) });
-          });
-      }
-
-      const dungeonIdMatch = /^\/api\/dungeons\/(.+)$/.exec(url.pathname);
-      if (dungeonIdMatch && req.method === "PATCH") {
-        const id = decodeSegment(dungeonIdMatch[1]!);
-        if (id === undefined) return send(400, { error: "malformed percent-escape in path" });
-        return readBody(req)
-          .then((body) => {
-            let parsed: { name?: unknown; maps?: unknown };
-            try {
-              parsed = JSON.parse(body) as typeof parsed;
-            } catch (e) {
-              return send(400, { error: `invalid JSON body: ${(e as Error).message}` });
-            }
-            if (parsed.name !== undefined && (typeof parsed.name !== "string" || parsed.name.trim() === "")) {
-              return send(400, { error: `"name" must be a non-empty string when present, got ${body}` });
-            }
-            if (parsed.maps !== undefined && (!Array.isArray(parsed.maps) || parsed.maps.some((m) => typeof m !== "string"))) {
-              return send(400, { error: `"maps" must be a string array when present, got ${body}` });
-            }
-            const dungeons = readDungeons(project.paths.root);
-            const dungeon = dungeons.dungeons.find((d) => d.id === id);
-            if (!dungeon) return send(404, { error: `no dungeon ${id}` });
-            if (typeof parsed.name === "string") dungeon.name = parsed.name;
-            if (Array.isArray(parsed.maps)) dungeon.maps = parsed.maps as string[];
-            writeDungeons(project.paths.root, dungeons);
-            return send(200, dungeon);
-          })
-          .catch((e: unknown) => {
-            if (e instanceof BodyTooLarge) return send(413, { error: "request body too large" });
-            console.error(e);
-            send(500, { error: e instanceof Error ? e.message : String(e) });
-          });
-      }
-
-      if (dungeonIdMatch && req.method === "DELETE") {
-        const id = decodeSegment(dungeonIdMatch[1]!);
-        if (id === undefined) return send(400, { error: "malformed percent-escape in path" });
-        const dungeons = readDungeons(project.paths.root);
-        const before = dungeons.dungeons.length;
-        dungeons.dungeons = dungeons.dungeons.filter((d) => d.id !== id);
-        if (dungeons.dungeons.length === before) return send(404, { error: `no dungeon ${id}` });
-        writeDungeons(project.paths.root, dungeons);
-        return send(200, { ok: true });
-      }
+      // Plan H H-b: the seven sidecar routes both families share live in
+      // sidecarRoutes.ts, mounted here where the first of them
+      // (`/api/world/conflicts/accept`) used to sit -- i.e. AFTER the
+      // `/api/world` payload above, which must keep priority on its own
+      // exact path.
+      if (sidecar(req, url, send)) return;
 
       // Task 8 (Plan 2): paint-stroke lifecycle. begin/apply/end are three
       // separate requests on purpose -- see editSessions.ts's own doc

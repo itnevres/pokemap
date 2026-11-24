@@ -963,6 +963,35 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       expect(await r.json()).toMatchObject({ error: expect.stringContaining("expected { map: string, x: number, y: number }") });
     });
 
+    // Plan H H-b: GBC's twin gained GBA's known-map check. Without it
+    // `__proto__` would be written as a `manualPlacements` key (which
+    // replaces only that object's own prototype and persists nothing) while
+    // still answering a silent 200 -- so the bytes on disk must be untouched.
+    it("rejects unknown map names (__proto__ and NoSuchMap) without writing a sidecar", async () => {
+      const sidecarPath = `${GBC_SUBJECT_ROOT}/.pokemap/world.json`;
+      const sidecarDir = `${GBC_SUBJECT_ROOT}/.pokemap`;
+      const sidecarDirExisted = existsSync(sidecarDir);
+      const before = existsSync(sidecarPath) ? readFileSync(sidecarPath) : null;
+      let written: Buffer | null = null;
+      try {
+        for (const map of ["__proto__", "NoSuchMap"]) {
+          const r = await post("/api/world/placement", { map, x: 1, y: 2 });
+          written = existsSync(sidecarPath) ? readFileSync(sidecarPath) : null;
+          expect(r.status, map).toBe(400);
+          expect(await r.json()).toEqual({ error: `unknown map ${map}` });
+        }
+        expect(existsSync(sidecarPath)).toBe(before !== null);
+        if (before) expect(readFileSync(sidecarPath)).toEqual(before);
+      } finally {
+        if (before && written && existsSync(sidecarPath) && readFileSync(sidecarPath).equals(written) && !written.equals(before)) {
+          writeFileSync(sidecarPath, before);
+        } else if (!before && written && existsSync(sidecarPath) && readFileSync(sidecarPath).equals(written)) {
+          unlinkSync(sidecarPath);
+          if (!sidecarDirExisted) try { rmdirSync(sidecarDir); } catch {}
+        }
+      }
+    });
+
     it("rejects null and non-finite coordinates without writing a sidecar", async () => {
       const sidecarPath = `${GBC_SUBJECT_ROOT}/.pokemap/world.json`;
       const sidecarDir = `${GBC_SUBJECT_ROOT}/.pokemap`;
