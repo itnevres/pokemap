@@ -24,6 +24,7 @@ import type { createGbcEditSessionStore } from "./gbcEditSessions.js";
 import { ownedTilesetPaths, requireTilesetOwnership, stageTilesetPlan, type BlockEditStore, type OwnershipEntry } from "./blockEditOwnership.js";
 import { parseTimeParam } from "./gbcRoutes.js";
 import { BodyTooLarge, decodeSegment, readBody } from "./http.js";
+import { brokenPathBody, refuseBrokenLayout } from "./brokenComponents.js";
 
 type Send = (code: number, body: unknown) => void;
 type Routes = { handle(req: IncomingMessage, url: URL, send: Send): boolean };
@@ -145,6 +146,8 @@ function routes(deps: CommonDeps, read: (name: string, url: URL, version: number
     const fail = (error: unknown, planner = false) => {
       if (error instanceof BodyTooLarge) { send(413, { error: "request body too large" }); return; }
       if (error instanceof BadGrid) { send(409, { error: error.message, code: "BAD_GRID" }); return; }
+      const broken = brokenPathBody(error);
+      if (broken) { send(409, broken); return; }
       const refusal = error instanceof BlockEditRefusal;
       send(refusal ? (planner || error instanceof GetConflict || error.code !== "BAD_VALUE" ? 409 : 400) : 500,
         { error: error instanceof Error ? error.message : String(error), code: refusal ? error.code : "INTERNAL_ERROR" });
@@ -217,7 +220,9 @@ export function createGbaBlockEditRoutes(
   const grids = (): StagedGrids => new Map(store.entries().map(([name, entry]) =>
     [name, gbaGridIds(entry.session.blocks, project.profile.blockMetatileIdMask)]));
   const context = (name: string) => {
-    const layout = project.layoutForMap(name), split = project.splitFor(layout);
+    const layout = project.layoutForMap(name);
+    refuseBrokenLayout(project, layout);
+    const split = project.splitFor(layout);
     const primary = project.tileset(layout.primaryTileset), secondary = project.tileset(layout.secondaryTileset);
     const primaryTiles = primary.tiles.width / 8 * (primary.tiles.height / 8);
     const secondaryTiles = secondary.tiles.width / 8 * (secondary.tiles.height / 8);

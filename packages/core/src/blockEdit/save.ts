@@ -51,7 +51,7 @@ export function gbaTilesetEffects(
   if (changed.length === 0) return [];
   const symbolsByPath = new Map<string, Set<string>>();
   for (const symbol of proj.tilesetSymbols()) {
-    const files = proj.tilesetPaths(symbol);
+    const files = proj.tilesetPathsUnchecked(symbol);
     for (const file of [files.metatilesBin, files.attributesBin]) {
       const path = canonicalTilesetPath(file);
       const symbols = symbolsByPath.get(path) ?? new Set<string>();

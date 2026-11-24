@@ -84,6 +84,7 @@ function stubProject(root: string): Project {
       tiles: {} as any, palettes: [], attributes: [], metatile: () => [], layerType: () => 0, behavior: () => 0,
     }),
     tilesetPaths: unused("tilesetPaths"),
+    tilesetPathsUnchecked: unused("tilesetPathsUnchecked"),
     setTilesetOverlay: unused("setTilesetOverlay"),
     tilesetGeneration: 0,
     tilesetSymbols: () => [],

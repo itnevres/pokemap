@@ -119,7 +119,8 @@ export function createPokemapServer(opts: ServerOptions = {}): McpServer {
   }, async ({ check }) => {
     const r = await runCli(opts.project, ["validate", "--json", ...(check ? [`--${check}`] : [])]);
     // The CLI exits 1 when there are findings; that is a result, not a failure.
-    return r.status === 1 && r.stdout.trim().startsWith("[") ? text(r.stdout) : toResult(r);
+    return r.status === 1 && r.stdout.trim().startsWith("[") ? text(r.stderr.trim() ? `${r.stdout}
+${r.stderr}` : r.stdout) : toResult(r);
   });
 
   server.registerTool("pokemap_encounters", {

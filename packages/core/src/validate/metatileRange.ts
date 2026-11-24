@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import type { Project } from "../project.js";
 import { parseBlocks } from "../load/blocks.js";
 import type { Split } from "../model/types.js";
+import { brokenPathOfLayout } from "../brokenComponents.js";
 
 export interface RangeFinding {
   kind: "metatile-range";
@@ -36,6 +37,7 @@ export function validateMetatileRange(proj: Project): RangeFinding[] {
   const out: RangeFinding[] = [];
 
   for (const layout of proj.layouts) {
+    if (brokenPathOfLayout(proj, layout)) continue;
     const split = proj.splitFor(layout);
     const primaryCount = proj.tileset(layout.primaryTileset).metatileCount;
     const secondaryCount = proj.tileset(layout.secondaryTileset).metatileCount;
@@ -96,6 +98,7 @@ export function validatePaletteRange(proj: Project): PaletteFinding[] {
   const out: PaletteFinding[] = [];
 
   for (const symbol of proj.tilesetSymbols()) {
+    if (proj.tilesetPathsUnchecked(symbol).brokenPaths?.length) continue;
     const ts = proj.tileset(symbol);
     const counts = new Map<number, number>();
     for (let m = 0; m < ts.metatileCount; m++) {

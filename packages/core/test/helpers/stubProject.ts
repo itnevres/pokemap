@@ -33,6 +33,7 @@ export function stubProject(overrides: Partial<Project>): Project {
     mapNames: () => [],
     encounters: unused("encounters"),
     ...overrides,
+    tilesetPathsUnchecked: overrides.tilesetPathsUnchecked ?? overrides.tilesetPaths ?? unused("tilesetPathsUnchecked"),
   };
 }
 

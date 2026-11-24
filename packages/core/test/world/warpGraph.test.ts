@@ -28,6 +28,7 @@ function stubProject(overrides: Partial<Project>): Project {
     splitFor: unused("splitFor"),
     tileset: unused("tileset"),
     tilesetPaths: unused("tilesetPaths"),
+    tilesetPathsUnchecked: unused("tilesetPathsUnchecked"),
     setTilesetOverlay: unused("setTilesetOverlay"),
     tilesetGeneration: 0,
     tilesetSymbols: unused("tilesetSymbols"),
