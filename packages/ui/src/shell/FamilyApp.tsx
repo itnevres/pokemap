@@ -11,7 +11,20 @@ import { useStrokeChainRegistry } from "../shared/useStrokeChain.js";
 import { useDungeonFilter } from "./useDungeonFilter.js";
 import { useWarpPopup } from "./useWarpPopup.js";
 import { WarpPopup } from "../shared/WarpPopup.js";
+import { DefectsBanner } from "../shared/DefectsBanner.js";
+import type { DataDefect } from "@pokemap/core/src/defects/types.js";
 import type { EngineAdapter, Mode, ShellSlots } from "./adapter.js";
+
+/** A map blocked by a broken path: show the defect (file/message/fix) via DefectsBanner
+ *  instead of the bare "Could not load" HTTP error. Shared by the canvas and warp popup. */
+function BrokenPathPlaceholder({ name, defects }: { name: string; defects: DataDefect[] }) {
+  return (
+    <>
+      <DefectsBanner defects={defects} />
+      <p className="app__canvas-placeholder">{name} cannot be opened until this is fixed.</p>
+    </>
+  );
+}
 
 export interface FamilyAppProps {
   /** Fixed for the life of the mount: Root keys this component on family:root:gen. */
@@ -276,13 +289,21 @@ export function FamilyApp({ adapter, switcher }: FamilyAppProps) {
           {mode === "world" ? runtime.renderWorld(slots) : mode === "dungeon" ? (
             openDungeon && mapFilter ? runtime.renderDungeon(mapFilter, slots) : <p className="app__canvas-placeholder">Select or create a dungeon</p>
           ) : !selected ? <p className="app__canvas-placeholder">Select a map</p> : runtime.map.error ? (
-            <p className="app__canvas-placeholder">Could not load {selected}: {runtime.map.error}</p>
+            runtime.map.defects?.length ? (
+              <BrokenPathPlaceholder name={selected} defects={runtime.map.defects} />
+            ) : (
+              <p className="app__canvas-placeholder">Could not load {selected}: {runtime.map.error}</p>
+            )
           ) : runtime.map.ready ? runtime.renderMap(slots) : <p className="app__canvas-placeholder">Loading {selected}…</p>}
           {warp.popup && (
             <WarpPopup mapName={warp.popup.destination} onClose={warp.requestClose}>
               {runtime.banners}
               {runtime.map.error ? (
-                <p className="app__canvas-placeholder">Could not load {warp.popup.destination}: {runtime.map.error}</p>
+                runtime.map.defects?.length ? (
+                  <BrokenPathPlaceholder name={warp.popup.destination} defects={runtime.map.defects} />
+                ) : (
+                  <p className="app__canvas-placeholder">Could not load {warp.popup.destination}: {runtime.map.error}</p>
+                )
               ) : runtime.map.ready && runtime.map.name === warp.popup.destination ? runtime.renderMap(slots) : (
                 <p className="app__canvas-placeholder">Loading {warp.popup.destination}…</p>
               )}

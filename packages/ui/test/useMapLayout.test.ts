@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { currentTilesetVersion, noteTilesetStamp, resetTilesetVersion, useTilesetVersion } from "../src/shared/tilesetVersion.js";
-import { useMapLayout } from "../src/hooks/useMapLayout.js";
+import { useMapLayout, brokenPathToDefect } from "../src/hooks/useMapLayout.js";
 
 beforeEach(() => { resetTilesetVersion(); });
 
@@ -288,5 +288,71 @@ describe("useMapLayout", () => {
     await act(async () => { await result.current.reload(); });
     expect(result.current.data!.blocks).not.toBe(before.blocks); // real change -> new identity
     expect(result.current.data!.map).toBe(before.map);
+  });
+
+  // F1e: a 409 broken-path reply carries the defect that blocks the map; the hook surfaces it
+  // (as `brokenPath`, with the defect message as `error`) instead of the bare status.
+  it("surfaces a 409 broken-path body as brokenPath, with the defect message as the error", async () => {
+    const defect = { file: "data/layouts/Foo/map.bin", line: 12, key: "blockdataFilepath", path: "../../outside.bin", message: "Path leaves the project", fix: "Point it inside data/" };
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 409, json: async () => ({ error: defect.message, code: "broken-path", defect }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useMapLayout("Foo"));
+    await waitFor(() => expect(result.current.brokenPath).not.toBeNull());
+
+    expect(result.current.brokenPath).toEqual(defect);
+    expect(result.current.error).toBe(defect.message);
+    expect(result.current.data).toBeNull();
+  });
+
+  it("keeps the old error for a 409 whose body is not a broken-path defect", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 409, json: async () => ({ error: "nope", code: "other" }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useMapLayout("Foo"));
+    await waitFor(() => expect(result.current.error).not.toBeNull());
+
+    expect(result.current.error).toBe("GET /api/map/Foo -> 409");
+    expect(result.current.brokenPath).toBeNull();
+  });
+
+  it("keeps the old error for a 409 with a non-JSON body", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 409, json: async () => { throw new Error("not json"); } });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useMapLayout("Foo"));
+    await waitFor(() => expect(result.current.error).not.toBeNull());
+
+    expect(result.current.error).toBe("GET /api/map/Foo -> 409");
+    expect(result.current.brokenPath).toBeNull();
+  });
+
+  it("clears brokenPath and error when a healthy map is selected after a broken one", async () => {
+    const defect = { file: "f", key: "k", path: "p", message: "bad", fix: "fix" };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 409, json: async () => ({ code: "broken-path", defect }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => BODY });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result, rerender } = renderHook(({ name }) => useMapLayout(name), { initialProps: { name: "Foo" as string | null } });
+    await waitFor(() => expect(result.current.brokenPath).not.toBeNull());
+
+    rerender({ name: "Bar" });
+    await waitFor(() => expect(result.current.data).not.toBeNull());
+
+    expect(result.current.brokenPath).toBeNull();
+    expect(result.current.error).toBeNull();
+  });
+});
+
+describe("brokenPathToDefect", () => {
+  it("includes the 1-based line in file when present", () => {
+    const bp = { file: "data/x", line: 7, key: "k", path: "p", message: "m", fix: "f" };
+    expect(brokenPathToDefect(bp)).toEqual({ file: "data/x:7", message: "m", kind: "build", fix: "f" });
+  });
+
+  it("uses the bare file when no line is known", () => {
+    const bp = { file: "data/x", key: "k", path: "p", message: "m", fix: "f" };
+    expect(brokenPathToDefect(bp)).toEqual({ file: "data/x", message: "m", kind: "build", fix: "f" });
   });
 });
