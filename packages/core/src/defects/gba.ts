@@ -69,7 +69,7 @@ export function checkGbaMapDefects(proj: Project, mapName: string, opts?: { symb
   // defect on this map. The blockdata size and metatile-range checks below
   // read that file, so they are skipped -- not run against a path outside the
   // project -- whenever anything here is broken. A tileset symbol missing from
-  // the map keeps the "Unknown tileset" throw in `count` below.
+  // the map still throws "Unknown tileset" in `count` below, but only when nothing here is broken.
   const broken = [...(layout.brokenPaths ?? []),
     ...(tilesets.get(layout.primaryTileset)?.brokenPaths ?? []),
     ...(tilesets.get(layout.secondaryTileset)?.brokenPaths ?? [])]

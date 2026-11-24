@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { gbaMapDefects, checkGbaMapDefects } from "../../src/defects/gba.js";
 import { projectPaths } from "../../src/config/paths.js";
 import { stubProject, stubTileset } from "../helpers/stubProject.js";
@@ -119,5 +119,69 @@ describe("GBA defects for paths that leave the project", () => {
     expect(defects).toHaveLength(2);
     expect(defects.some((d) => d.message.includes("MAP_NOWHERE"))).toBe(true);
     expect(checkGbaMapDefects(proj, "Test").incomplete).toEqual([]);
+  });
+});
+
+describe("GBA defects for paths that leave the project: scope, order and containment", () => {
+  const breakIncbin = (from: string, to: string) => {
+    const mh = projectPaths(root).tilesetMetatilesH;
+    const text = readFileSync(mh, "utf8");
+    expect(text).toContain(from);
+    writeFileSync(mh, text.replace(from, to));
+  };
+
+  it("a broken secondary tileset is reported on its own", () => {
+    breakIncbin('INCBIN_U16("./Secondary.bin")', 'INCBIN_U16("../../outside/Secondary.bin")');
+    const defects = gbaMapDefects(proj, "Test");
+    expect(defects).toHaveLength(1);
+    expect(defects[0]).toMatchObject({ kind: "build", file: "src/data/tilesets/headers.h" });
+    expect(defects[0]!.message).toContain("gTileset_Secondary");
+  });
+
+  it("a broken tileset this map does not use is not reported, and the layout checks still run", () => {
+    const paths = projectPaths(root);
+    writeFileSync(paths.tilesetHeadersH, readFileSync(paths.tilesetHeadersH, "utf8") +
+      "\nconst struct Tileset gTileset_Other = {\n.metatiles = gMetatiles_Other,\n.metatileAttributes = gAttributes_Other,\n};\n");
+    writeFileSync(paths.tilesetMetatilesH, readFileSync(paths.tilesetMetatilesH, "utf8") +
+      '\nconst u16 gMetatiles_Other[] = INCBIN_U16("../../outside/Other.bin");\nconst u16 gAttributes_Other[] = INCBIN_U16("./Other.attributes.bin");\n');
+    writeFileSync(join(root, "data/layouts/Test/map.bin"), Buffer.alloc(8 + 4)); // wrong size: the size check must still run
+    const defects = gbaMapDefects(proj, "Test");
+    expect(defects).toHaveLength(1);
+    expect(defects[0]!.kind).toBe("size");
+    expect(defects.some((d) => d.message.includes("gTileset_Other"))).toBe(false);
+  });
+
+  it("the same broken tileset as primary and secondary is reported once", () => {
+    breakIncbin('INCBIN_U16("./Primary.bin")', 'INCBIN_U16("../../outside/Primary.bin")');
+    const lj = projectPaths(root).layoutsJson;
+    const parsed = JSON.parse(readFileSync(lj, "utf8")) as { layouts: Record<string, unknown>[] };
+    parsed.layouts[0]!.secondary_tileset = "gTileset_Primary";
+    writeFileSync(lj, JSON.stringify(parsed));
+    const defects = gbaMapDefects(proj, "Test");
+    expect(defects).toHaveLength(1);
+    expect(defects[0]!.message).toContain("gTileset_Primary");
+  });
+
+  it("path defects come first, before the other checks' defects", () => {
+    breakLayout();
+    const file = proj.paths.mapJson("Test");
+    writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), warp_events: [{ ...warp, dest_map: "MAP_NOWHERE" }] }));
+    const defects = gbaMapDefects(proj, "Test");
+    expect(defects).toHaveLength(2);
+    expect(defects[0]!.message).toContain("LAYOUT_TEST");
+    expect(defects[1]!.message).toContain("MAP_NOWHERE");
+  });
+
+  it("never reads the escaping file: a wrong-sized file that exists there adds no size defect", () => {
+    const sentinel = join(root, "..", `${basename(root)}-sentinel.bin`);
+    writeFileSync(sentinel, Buffer.alloc(3));
+    try {
+      breakLayout(`../${basename(sentinel)}`);
+      const defects = gbaMapDefects(proj, "Test");
+      expect(defects).toHaveLength(1);
+      expect(defects[0]!.message).toContain("LAYOUT_TEST");
+    } finally {
+      rmSync(sentinel, { force: true });
+    }
   });
 });
