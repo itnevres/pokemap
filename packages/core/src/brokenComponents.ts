@@ -48,3 +48,16 @@ export function assertLayoutUsable(proj: Project, layout: Layout): void {
 export function assertLayoutFilesInside(layout: Layout): void {
   if (layout.brokenPaths?.length) throw new PathEscapeError(layout.brokenPaths[0]!);
 }
+
+/**
+ * Every broken component in the project (each layout's own paths, then each
+ * tileset's), one entry per distinct message. The validators skip these, so a
+ * caller (CLI `validate`) uses this to say the check did NOT cover them instead
+ * of reporting a clean run.
+ */
+export function brokenComponentsOf(proj: Project): BrokenPath[] {
+  const seen = new Map<string, BrokenPath>();
+  for (const layout of proj.layouts) for (const b of layout.brokenPaths ?? []) seen.set(b.message, b);
+  for (const symbol of proj.tilesetSymbols()) for (const b of proj.tilesetPathsUnchecked(symbol).brokenPaths ?? []) seen.set(b.message, b);
+  return [...seen.values()];
+}

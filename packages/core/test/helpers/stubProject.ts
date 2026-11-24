@@ -25,6 +25,7 @@ export function stubProject(overrides: Partial<Project>): Project {
     splitFor: unused("splitFor"),
     tileset: unused("tileset"),
     tilesetPaths: unused("tilesetPaths"),
+    tilesetPathsUnchecked: unused("tilesetPathsUnchecked"),
     setTilesetOverlay: unused("setTilesetOverlay"),
     tilesetGeneration: 0,
     tilesetSymbols: unused("tilesetSymbols"),
@@ -33,6 +34,7 @@ export function stubProject(overrides: Partial<Project>): Project {
     mapNames: () => [],
     encounters: unused("encounters"),
     ...overrides,
+    tilesetPathsUnchecked: overrides.tilesetPathsUnchecked ?? overrides.tilesetPaths ?? unused("tilesetPathsUnchecked"),
   };
 }
 
