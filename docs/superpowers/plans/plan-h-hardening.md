@@ -415,6 +415,8 @@ for (const route of routes) if (route(req, url, send)) return;
 return send(404, { error: "not found" });
 ```
 
+**Ruling (conductor C10, 2026-11-24, I2b).** `gbaReadRoutes.ts` and `gbaEditRoutes.ts` are verbatim moves: each is the old if-chain inside a `fellThrough` IIFE, mounted once in `index.ts`. The route-table conversion (trap 23, `gbcEditRoutes.ts:278-472` shape) is deferred to a separate follow-up commit/plan, not done in I1 or I2b; later plans that edit these modules should expect an if-chain. `disposed` and `allMapsCache` are `let`s in `createProjectHandler`, so `GbaEditRouteContext` exposes them as accessors; `POST /api/edit/<name>/event/create` now runs after the read and sidecar mounts (disjoint paths).
+
 **`ctx`.** The snippet's `ctx` is not defined anywhere yet. Define it once, in the I1 move commit, as `GbaRouteContext` in `packages/server/src/gbaRouteContext.ts`: the values the route bodies close over today (the project, the root, the caches, `editSessions`, `symbols`, `addEvents`, the overlay sync). List the fields from the closure; do not design new ones, and leave out a field no moved route reads.
 
 **Acceptance.** The test count is unchanged and no test is edited. `git diff --stat -M` shows moves. `index.ts` holds context construction and the loop. For I2, a mutation spot check: make the store's `has` always false, and the existing session tests fail in both families.
