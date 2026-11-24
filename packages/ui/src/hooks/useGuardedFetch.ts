@@ -52,6 +52,26 @@ export function fetchGuarded<T>(url: string, guard: (x: unknown) => x is T, labe
     });
 }
 
+/** A request that carries a JSON body. Always labels it `application/json`
+ *  (without the header the browser sends `text/plain`, which a cross-site page
+ *  may send with no preflight; the hub answers 415 to anything else).
+ *  Without `guard` it resolves the raw `Response` for callers that read the
+ *  status themselves; with `guard` it behaves like `fetchGuarded`. A body-less
+ *  request (discard, undo) is not a JSON request: use a plain `fetch`. */
+export function sendJson(method: "POST" | "PUT" | "PATCH", path: string, body: unknown): Promise<Response>;
+export function sendJson<T>(method: "POST" | "PUT" | "PATCH", path: string, body: unknown, guard: (x: unknown) => x is T, label?: string): Promise<T>;
+export function sendJson<T>(method: "POST" | "PUT" | "PATCH", path: string, body: unknown, guard?: (x: unknown) => x is T, label?: string): Promise<Response | T> {
+  const init: RequestInit = { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) };
+  return guard ? fetchGuarded(path, guard, label, init) : fetch(path, init);
+}
+
+/** `sendJson("POST", ...)`; see there. */
+export function postJson(path: string, body: unknown): Promise<Response>;
+export function postJson<T>(path: string, body: unknown, guard: (x: unknown) => x is T, label?: string): Promise<T>;
+export function postJson<T>(path: string, body: unknown, guard?: (x: unknown) => x is T, label?: string): Promise<Response | T> {
+  return guard ? sendJson("POST", path, body, guard, label) : sendJson("POST", path, body);
+}
+
 /**
  * The shared "fetch once, validate the shape, surface every failure
  * visibly" hook shape `useMapGroups.ts` established and `Root.tsx`'s own

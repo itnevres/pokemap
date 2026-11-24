@@ -52,7 +52,7 @@ describe("SaveDialog", () => {
     await waitFor(() => expect(screen.getByText("a changed")).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
     await waitFor(() => expect(onCommitted).toHaveBeenCalled());
-    expect(fetchMock).toHaveBeenCalledWith("/api/edit/PalletTown/commit", expect.objectContaining({ method: "POST" }));
+    expect(fetchMock).toHaveBeenCalledWith("/api/edit/PalletTown/commit", expect.objectContaining({ method: "POST", headers: { "content-type": "application/json" } }));
     vi.unstubAllGlobals();
   });
 
@@ -104,7 +104,7 @@ describe("SaveDialog", () => {
     expect((screen.getByRole("button", { name: "Save Changes" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Refresh Route29Sign1" }));
     await waitFor(() => expect(screen.getByText("Route29 sign refreshed")).toBeTruthy());
-    expect(fetchMock).toHaveBeenCalledWith("/api/edit/Route29/sign/resolve", expect.objectContaining({ method: "POST", body: JSON.stringify({ scriptLabel: "Route29Sign1", action: "refresh" }) }));
+    expect(fetchMock).toHaveBeenCalledWith("/api/edit/Route29/sign/resolve", expect.objectContaining({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ scriptLabel: "Route29Sign1", action: "refresh" }) }));
     vi.unstubAllGlobals();
   });
 
@@ -166,7 +166,7 @@ describe("SaveDialog", () => {
     await waitFor(() => expect(screen.getByText("a changed")).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
     await waitFor(() => expect(onCommitted).toHaveBeenCalled());
-    expect(fetchMock).toHaveBeenCalledWith("/api/edit/PalletTown/commit", expect.objectContaining({ method: "POST", body: JSON.stringify({ fingerprint: "fp1" }) }));
+    expect(fetchMock).toHaveBeenCalledWith("/api/edit/PalletTown/commit", expect.objectContaining({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fingerprint: "fp1" }) }));
     vi.unstubAllGlobals();
   });
 
@@ -188,7 +188,7 @@ describe("SaveDialog", () => {
     expect(onCommitted).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
     await waitFor(() => expect(onCommitted).toHaveBeenCalled());
-    expect(fetchMock).toHaveBeenCalledWith("/api/edit/PalletTown/commit", expect.objectContaining({ method: "POST", body: JSON.stringify({ fingerprint: "fp2" }) }));
+    expect(fetchMock).toHaveBeenCalledWith("/api/edit/PalletTown/commit", expect.objectContaining({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fingerprint: "fp2" }) }));
     expect(screen.queryByText("Changes were made since you opened Save")).toBeNull();
     vi.unstubAllGlobals();
   });

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
-import { useGuardedFetch, describeReceived, fetchGuarded } from "../src/hooks/useGuardedFetch.js";
+import { useGuardedFetch, describeReceived, fetchGuarded, sendJson, postJson } from "../src/hooks/useGuardedFetch.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -202,5 +202,31 @@ describe("fetchGuarded", () => {
     await expect(fetchGuarded("/api/save", isThing, undefined, init)).rejects.toThrow("POST /api/save returned an unexpected shape");
     vi.stubGlobal("fetch", vi.fn().mockRejectedValueOnce(new Error("network down")));
     await expect(fetchGuarded("/api/save", isThing, undefined, init)).rejects.toThrow("network down");
+  });
+});
+
+describe("sendJson / postJson", () => {
+  it("sends a JSON body with an application/json content type and returns the raw response", async () => {
+    const fetchMock = vi.fn(async () => new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const r = await postJson("/api/x", { a: 1 });
+    expect(r.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledWith("/api/x", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ a: 1 }) });
+  });
+
+  it("uses the given method for PATCH", async () => {
+    const fetchMock = vi.fn(async () => new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await sendJson("PATCH", "/api/x/1", { name: "n" });
+    expect(fetchMock).toHaveBeenCalledWith("/api/x/1", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "n" }) });
+  });
+
+  it("with a guard behaves like fetchGuarded: guarded value, real Error on a bad status or shape", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ name: "ok" }), { status: 200 })));
+    expect(await postJson("/api/x", {}, isThing)).toEqual({ name: "ok" });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 500 })));
+    await expect(postJson("/api/x", {}, isThing)).rejects.toThrow("POST /api/x -> 500");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ nope: 1 }), { status: 200 })));
+    await expect(sendJson("PATCH", "/api/x", {}, isThing)).rejects.toThrow("PATCH /api/x returned an unexpected shape");
   });
 });

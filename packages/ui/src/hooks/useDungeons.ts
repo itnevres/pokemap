@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
+import { fetchGuarded, postJson, sendJson } from "./useGuardedFetch.js";
+import { isRecord } from "../gbc/guards.js";
 
 export interface Dungeon {
   id: string;
@@ -15,6 +17,19 @@ export interface UseDungeonsResult {
   remove(id: string): Promise<void>;
 }
 
+function isDungeon(x: unknown): x is Dungeon {
+  return isRecord(x) && typeof x.id === "string" && typeof x.name === "string"
+    && Array.isArray(x.maps) && x.maps.every((m: unknown) => typeof m === "string");
+}
+
+function isDungeons(x: unknown): x is Dungeon[] {
+  return Array.isArray(x) && x.every(isDungeon);
+}
+
+function isDeleted(x: unknown): x is { ok: true } {
+  return isRecord(x) && x.ok === true;
+}
+
 /**
  * Feature C's dungeon CRUD (the server's own /api/dungeons routes), gated
  * by `enabled` the same way useWorldVisibility is -- Dungeon mode is the
@@ -23,75 +38,35 @@ export interface UseDungeonsResult {
 export function useDungeons(enabled: boolean): UseDungeonsResult {
   const [data, setData] = useState<Dungeon[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [gen, setGen] = useState(0);
-
+  const [generation, setGeneration] = useState(0);
   useEffect(() => {
-    if (!enabled) {
-      setData(null);
-      setError(null);
-      return;
-    }
+    if (!enabled) { setData(null); setError(null); return; }
     let cancelled = false;
     setError(null);
-    fetch("/api/dungeons")
-      .then((r) => {
-        if (!r.ok) throw new Error(`GET /api/dungeons -> ${r.status}`);
-        return r.json() as Promise<Dungeon[]>;
-      })
-      .then((d) => {
-        if (!cancelled) setData(d);
-      })
-      .catch((e: unknown) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [enabled, gen]);
+    fetchGuarded("/api/dungeons", isDungeons).then((result) => {
+      if (!cancelled) setData(result);
+    }).catch((reason: unknown) => {
+      if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
+    });
+    return () => { cancelled = true; };
+  }, [enabled, generation]);
 
-  const reload = useCallback(() => setGen((g) => g + 1), []);
-
-  const create = useCallback(
-    async (input: { name: string; seedMap?: string; maps?: string[] }): Promise<Dungeon> => {
-      const r = await fetch("/api/dungeons", { method: "POST", body: JSON.stringify(input) });
-      if (!r.ok) throw new Error(`POST /api/dungeons -> ${r.status}`);
-      const dungeon = (await r.json()) as Dungeon;
-      reload();
-      return dungeon;
-    },
-    [reload],
-  );
-
-  const rename = useCallback(
-    async (id: string, name: string): Promise<Dungeon> => {
-      const r = await fetch(`/api/dungeons/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ name }) });
-      if (!r.ok) throw new Error(`PATCH /api/dungeons/${id} -> ${r.status}`);
-      const dungeon = (await r.json()) as Dungeon;
-      reload();
-      return dungeon;
-    },
-    [reload],
-  );
-
-  const setMaps = useCallback(
-    async (id: string, maps: string[]): Promise<Dungeon> => {
-      const r = await fetch(`/api/dungeons/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ maps }) });
-      if (!r.ok) throw new Error(`PATCH /api/dungeons/${id} -> ${r.status}`);
-      const dungeon = (await r.json()) as Dungeon;
-      reload();
-      return dungeon;
-    },
-    [reload],
-  );
-
-  const remove = useCallback(
-    async (id: string): Promise<void> => {
-      const r = await fetch(`/api/dungeons/${encodeURIComponent(id)}`, { method: "DELETE" });
-      if (!r.ok) throw new Error(`DELETE /api/dungeons/${id} -> ${r.status}`);
-      reload();
-    },
-    [reload],
-  );
-
+  const reload = useCallback(() => setGeneration((n) => n + 1), []);
+  const create = useCallback(async (input: { name: string; seedMap?: string; maps?: string[] }) => {
+    const result = await postJson("/api/dungeons", input, isDungeon);
+    reload();
+    return result;
+  }, [reload]);
+  const patch = useCallback(async (id: string, body: { name?: string; maps?: string[] }) => {
+    const result = await sendJson("PATCH", `/api/dungeons/${encodeURIComponent(id)}`, body, isDungeon);
+    reload();
+    return result;
+  }, [reload]);
+  const rename = useCallback((id: string, name: string) => patch(id, { name }), [patch]);
+  const setMaps = useCallback((id: string, maps: string[]) => patch(id, { maps }), [patch]);
+  const remove = useCallback(async (id: string) => {
+    await fetchGuarded(`/api/dungeons/${encodeURIComponent(id)}`, isDeleted, undefined, { method: "DELETE" });
+    reload();
+  }, [reload]);
   return { data, error, create, rename, setMaps, remove };
 }

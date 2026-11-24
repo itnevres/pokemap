@@ -1,6 +1,7 @@
 import type { ProjectInfo } from "@pokemap/core/src/family.js";
 import type { BrowseResult, HubState, OpenConflict } from "@pokemap/core/src/hub/wire.js";
 import { isRecord, isProjectInfo } from "../gbc/guards.js";
+import { postJson } from "../hooks/useGuardedFetch.js";
 
 /**
  * Pure runtime type guards + the one non-GET fetch this app makes
@@ -74,11 +75,7 @@ export type OpenProjectResult =
 export async function openProject(path: string, force?: boolean): Promise<OpenProjectResult> {
   try {
     const body: Record<string, unknown> = force ? { path, force: true } : { path };
-    const r = await fetch("/api/hub/open", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    const r = await postJson("/api/hub/open", body);
     const parsed: unknown = await r.json().catch(() => null);
 
     if (r.ok && isProjectInfo(parsed)) {

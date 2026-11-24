@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useVisit } from "../shared/useVisit.js";
 import { sessionMutationBarrier } from "../shared/useEditSessionCore.js";
 import { trapDialogFocus, useRestoreFocus } from "../shared/dialogFocus.js";
+import { postJson } from "../hooks/useGuardedFetch.js";
 import "../styles.css";
 
 interface PendingChange { path: string; kind: "json" | "binary" | "text"; summary: string }
@@ -121,7 +122,7 @@ export function SaveDialog({ mapName, onCommitted, onCancel }: SaveDialogProps) 
     try {
       await sessionMutationBarrier(mapName);
       if (!visit.isCurrent()) return;
-      const r = await fetch(`/api/edit/${encodeURIComponent(mapName)}/sign/resolve`, { method: "POST", body: JSON.stringify({ scriptLabel, action }) });
+      const r = await postJson(`/api/edit/${encodeURIComponent(mapName)}/sign/resolve`, { scriptLabel, action });
       if (!r.ok) { setSaveError("Could not update linked sign."); return; }
       const planResponse = await fetch(`/api/edit/${encodeURIComponent(mapName)}/plan`);
       const body: unknown = await planResponse.json().catch(() => null);
@@ -139,7 +140,7 @@ export function SaveDialog({ mapName, onCommitted, onCancel }: SaveDialogProps) 
     try {
       await sessionMutationBarrier(mapName);
       if (!visit.isCurrent()) return;
-      const r = await fetch(`/api/edit/${encodeURIComponent(mapName)}/commit`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fingerprint: plan?.fingerprint }) });
+      const r = await postJson(`/api/edit/${encodeURIComponent(mapName)}/commit`, { fingerprint: plan?.fingerprint });
       const body: unknown = await r.json().catch(() => null);
       setSaving(false);
       if (r.status === 409 && isDiffPlan(body)) {

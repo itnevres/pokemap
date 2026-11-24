@@ -73,10 +73,10 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("world api", () => {
       const start = await getWorld();
       const key = start.conflicts.find((c) => c.map === "Route111")!.key;
       const postAccept = (accepted: boolean) => fetch(`${base}/api/world/conflicts/accept`, {
-        method: "POST", body: JSON.stringify({ key, accepted }),
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key, accepted }),
       });
-      expect((await fetch(`${base}/api/world/conflicts/accept`, { method: "POST", body: "null" })).status).toBe(400);
-      expect((await fetch(`${base}/api/world/conflicts/accept`, { method: "POST", body: JSON.stringify({ key: "unknown", accepted: true }) })).status).toBe(404);
+      expect((await fetch(`${base}/api/world/conflicts/accept`, { method: "POST", headers: { "content-type": "application/json" }, body: "null" })).status).toBe(400);
+      expect((await fetch(`${base}/api/world/conflicts/accept`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key: "unknown", accepted: true }) })).status).toBe(404);
       expect((await postAccept(true)).status).toBe(200);
       expect((await getWorld()).conflicts.find((c) => c.key === key)?.accepted).toBe(true);
       expect((await getWorld()).placements).toEqual(start.placements);
@@ -121,7 +121,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("world api", () => {
     };
     try {
       const post = await fetch(`${base}/api/world/dungeons`, {
-        method: "POST", body: JSON.stringify({ enabled: false }),
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled: false }),
       });
       expect(post.status).toBe(200);
       const saved = readFileSync(sidecarPath);
@@ -152,6 +152,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("world api", () => {
     // actually completes, not just that it eventually would.
     const r = await fetch(`http://127.0.0.1:${s.port}/api/world/placement`, {
       method: "POST",
+      headers: { "content-type": "application/json" },
       body: "not json",
     });
     expect(r.status).toBe(400);
@@ -182,6 +183,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("world api", () => {
       expect(auto).toBeDefined();
       const post = await fetch(`http://127.0.0.1:${s.port}/api/world/placement`, {
         method: "POST",
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({ map: name, x: 12345, y: 67890 }),
       });
       expect(post.status).toBe(200);
@@ -213,6 +215,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("world api", () => {
 
       const post = await fetch(`http://127.0.0.1:${s.port}/api/world/dungeons`, {
         method: "POST",
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({ enabled: target }),
       });
       expect(post.status).toBe(200);
@@ -232,6 +235,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("world api", () => {
   it("400s a malformed dungeon-layout body instead of hanging the request", async () => {
     const r = await fetch(`http://127.0.0.1:${s.port}/api/world/dungeons`, {
       method: "POST",
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({ enabled: "yes" }), // string, not boolean
     });
     expect(r.status).toBe(400);
@@ -325,6 +329,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("world api", () => {
     const before = sidecarBytes();
     const r = await fetch(`http://127.0.0.1:${s.port}/api/world/placement`, {
       method: "POST",
+      headers: { "content-type": "application/json" },
       body: new Uint8Array(MAX_BODY_BYTES + 1),
     });
     expect(r.status).toBe(413);
@@ -339,7 +344,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("world api", () => {
   it("400s null, array, __proto__, an unknown map and non-finite coordinates, writing nothing", async () => {
     const sidecarPath = projectPaths(fixtureRoot).sidecar;
     const before = existsSync(sidecarPath) ? readFileSync(sidecarPath) : null;
-    const postRaw = (body: string) => fetch(`http://127.0.0.1:${s.port}/api/world/placement`, { method: "POST", body });
+    const postRaw = (body: string) => fetch(`http://127.0.0.1:${s.port}/api/world/placement`, { method: "POST", headers: { "content-type": "application/json" }, body });
     try {
       for (const body of [
         "null",
@@ -369,7 +374,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("world api", () => {
     expect(ok.status).toBe(200);
     expect(ok.headers.get("x-content-type-options")).toBe("nosniff");
 
-    const bad = await fetch(`http://127.0.0.1:${s.port}/api/world/placement`, { method: "POST", body: "null" });
+    const bad = await fetch(`http://127.0.0.1:${s.port}/api/world/placement`, { method: "POST", headers: { "content-type": "application/json" }, body: "null" });
     expect(bad.status).toBe(400);
     expect(bad.headers.get("x-content-type-options")).toBe("nosniff");
   }, 300_000);

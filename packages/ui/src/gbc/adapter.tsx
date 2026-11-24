@@ -10,7 +10,7 @@ import { PokemonIndicatorDialog } from "../components/PokemonIndicatorDialog.js"
 import type { IndicatorBlock } from "@pokemap/core/src/indicator/gba.js";
 import { useGbcEditSession, isSessionBody } from "./hooks/useGbcEditSession.js";
 import { useGbcWorld } from "./hooks/useGbcWorld.js";
-import { useGbcDungeons } from "./hooks/useGbcDungeons.js";
+import { useDungeons } from "../hooks/useDungeons.js";
 import type { GbcTimeOfDay } from "./time.js";
 import { GBC_HIDDEN_MAP_TYPES } from "../world/visibility.js";
 import { useTilesetVersion } from "../shared/tilesetVersion.js";
@@ -28,7 +28,7 @@ export function useGbcRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
   // switch so a stale highlight from the PREVIOUS map's tileset never
   // survives onto a freshly selected one.
   const [hoveredMetatileId, setHoveredMetatileId] = useState<number | null>(null);
-  const dungeons = useGbcDungeons(mode === "dungeon");
+  const dungeons = useDungeons(mode === "dungeon");
   const groups = useGbcGroups();
   const { data: world, error: worldError, reload: reloadWorld } = useGbcWorld(mode === "world");
   // Tree visibility before FamilyApp merges this session's manual placements (FamilyApp's SR8 merge).

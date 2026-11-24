@@ -16,7 +16,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC Indicator routes", () => 
   const path = () => `${root}/maps/Route29.asm`;
   const disk = () => readFileSync(path(), "utf8");
   const req = async (route: string, body?: unknown) => {
-    const r = await fetch(`${base}/api/edit/Route29/${route}`, body === undefined ? {} : { method: "POST", body: JSON.stringify(body) });
+    const r = await fetch(`${base}/api/edit/Route29/${route}`, body === undefined ? {} : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     return { status: r.status, body: await r.json() as any };
   };
   const commit = async () => {

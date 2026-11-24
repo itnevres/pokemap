@@ -2,7 +2,7 @@ import { Agent, createServer, request, type IncomingMessage, type RequestListene
 import type { AddressInfo } from "node:net";
 import { PassThrough } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { BodyTooLarge, MAX_BODY_BYTES, declaresOversizeBody, decodeSegment, isCrossOriginRequest, jsonBody, readBody, refuseOversize, sendJson } from "../src/http.js";
+import { BodyTooLarge, MAX_BODY_BYTES, declaresOversizeBody, decodeSegment, isCrossOriginRequest, jsonBody, readBody, refuseNonJsonBody, refuseOversize, sendJson } from "../src/http.js";
 
 let server: Server | undefined;
 async function listen(handler: RequestListener): Promise<number> {
@@ -254,6 +254,63 @@ describe("shared HTTP boundary (no corpus)", () => {
         expect(b.status).toBe(500);
         expect(JSON.parse(b.body)).toEqual({ error: "str" });
       } finally { spy.mockRestore(); }
+    });
+  });
+
+  describe("refuseNonJsonBody (Plan H J3)", () => {
+    // Answers 415 when refused, else 200 "passed"; the handler never reads the body.
+    async function probe(method: string, chunks: string[], headers: Record<string, string> = {}) {
+      const port = await listen((req, res) => {
+        if (refuseNonJsonBody(req, res)) return;
+        sendJson(res, 200, "passed");
+      });
+      const agent = new Agent({ keepAlive: false });
+      const r = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+        const req = request({ host: "127.0.0.1", port, method, headers, agent }, (res) => {
+          let body = "";
+          res.setEncoding("utf8");
+          res.on("data", (c: string) => { body += c; });
+          res.on("end", () => resolve({ status: res.statusCode!, body }));
+        });
+        req.setTimeout(2000, () => req.destroy(new Error("no response within 2 s")));
+        req.on("error", reject);
+        for (const c of chunks) req.write(c);
+        req.end();
+      });
+      agent.destroy();
+      return r;
+    }
+    const withLength = (body: string, type?: string) => ({ "content-length": String(Buffer.byteLength(body)), ...(type ? { "content-type": type } : {}) });
+
+    it("answers 415 to a POST, PUT or PATCH body labelled text/plain or not labelled", async () => {
+      for (const method of ["POST", "PUT", "PATCH"]) {
+        const plain = await probe(method, ["{}"], withLength("{}", "text/plain"));
+        expect(plain.status, method).toBe(415);
+        expect(JSON.parse(plain.body)).toEqual({ error: "request body must be application/json" });
+        expect((await probe(method, ["{}"], withLength("{}"))).status, `${method} unlabelled`).toBe(415);
+      }
+      expect((await probe("POST", ["{}"], withLength("{}", "application/x-www-form-urlencoded"))).status).toBe(415);
+      expect((await probe("POST", ["{}"], withLength("{}", "application/jsonp"))).status).toBe(415);
+    });
+
+    it("answers 415 to a chunked body with no JSON label", async () => {
+      expect((await probe("POST", ["{", "}"], { "content-type": "text/plain" })).status).toBe(415);
+      expect((await probe("POST", ["{", "}"])).status).toBe(415);
+    });
+
+    it("lets application/json through, with parameters and in any case", async () => {
+      for (const type of ["application/json", "application/json; charset=utf-8", "Application/JSON", " application/json ;charset=UTF-8"]) {
+        expect((await probe("POST", ["{}"], withLength("{}", type))).status, type).toBe(200);
+      }
+      expect((await probe("POST", ["{", "}"], { "content-type": "application/json" })).status).toBe(200);
+    });
+
+    it("lets a bodyless write through whatever its label, and any GET or bodyless DELETE", async () => {
+      expect((await probe("POST", [], { "content-length": "0" })).status).toBe(200);
+      expect((await probe("POST", [], { "content-type": "text/plain", "content-length": "0" })).status).toBe(200);
+      expect((await probe("POST", [])).status).toBe(200);
+      expect((await probe("GET", [], { "content-type": "text/plain" })).status).toBe(200);
+      expect((await probe("DELETE", [], { "content-type": "text/plain" })).status).toBe(200);
     });
   });
 });

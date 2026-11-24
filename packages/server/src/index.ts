@@ -1,4 +1,4 @@
-import { decodeSegment, refuseOversize, sendJson } from "./http.js";
+import { decodeSegment, isCrossOriginRequest, refuseNonJsonBody, refuseOversize, sendJson } from "./http.js";
 import { createGbaBlockEditRoutes } from "./blockEditRoutes.js";
 import { syncTilesetOverlay, type OverlayState } from "./tilesetOverlay.js";
 import { createGbaAddEventRoutes, type AddEventHooks } from "./addEventRoutes.js";
@@ -339,6 +339,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
     // chunked oversize body gets the same 413. The connection is kept (see
     // `refuseOversize`).
     if (refuseOversize(req, res)) return;
+    if (refuseNonJsonBody(req, res)) return;
     const url = new URL(req.url ?? "/", "http://localhost");
     // One-line over `sendJson` so the `Send` type the route modules
     // (addEventRoutes, gbcEditRoutes, blockEditRoutes) receive is unchanged.
@@ -456,7 +457,14 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
  */
 export async function createServer(opts: { projectPath: string; port?: number }): Promise<PokemapServer> {
   const h = createProjectHandler(opts.projectPath);
-  const http: Server = createHttp(h.handle);
+  // The standalone server answers the same cross-origin refusal the hub does (Plan H J3).
+  const http: Server = createHttp((req, res) => {
+    if (isCrossOriginRequest({ origin: req.headers.origin, host: req.headers.host })) {
+      sendJson(res, 403, { error: "cross-origin request refused" });
+      return;
+    }
+    h.handle(req, res);
+  });
 
   await new Promise<void>((r) => http.listen(opts.port ?? 5174, "127.0.0.1", r));
   const addr = http.address();

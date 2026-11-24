@@ -105,4 +105,36 @@ describe("useDungeons", () => {
     await waitFor(() => expect(result.current.error).toBeNull());
     expect(result.current.data).toEqual([{ id: "2", name: "New One", maps: [] }]);
   });
+
+  it("sends create and PATCH bodies as application/json", async () => {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    const dungeon = { id: "1", name: "Mt Moon", maps: ["A"] };
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      const body = init?.method === "DELETE" ? { ok: true } : init?.method ? dungeon : [dungeon];
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) } as Response);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useDungeons(true));
+    await waitFor(() => expect(result.current.data).toHaveLength(1));
+    await result.current.create({ name: "New", maps: ["B"] });
+    await result.current.rename("1", "Renamed");
+    await result.current.setMaps("1", ["A", "C"]);
+
+    const json = { "content-type": "application/json" };
+    const writes = calls.filter((c) => c.init?.method === "POST" || c.init?.method === "PATCH");
+    expect(writes.map((c) => [c.init?.method, c.url])).toEqual([["POST", "/api/dungeons"], ["PATCH", "/api/dungeons/1"], ["PATCH", "/api/dungeons/1"]]);
+    for (const c of writes) expect(c.init?.headers).toEqual(json);
+  });
+
+  it("surfaces a list with a malformed entry as an error instead of casting it", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve([{ id: 1 }]) }));
+
+    const { result } = renderHook(() => useDungeons(true));
+    await waitFor(() => expect(result.current.error).not.toBeNull());
+
+    expect(result.current.error).toMatch(/unexpected shape/);
+    expect(result.current.data).toBeNull();
+  });
 });

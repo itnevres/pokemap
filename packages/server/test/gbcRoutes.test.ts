@@ -54,11 +54,11 @@ describe("GBC directed dungeon seed traversal", () => {
 let s: PokemapServer;
 const get = async (path: string) => fetch(`http://127.0.0.1:${s.port}${path}`);
 const post = async (path: string, body: unknown = {}) =>
-  fetch(`http://127.0.0.1:${s.port}${path}`, { method: "POST", body: JSON.stringify(body) });
+  fetch(`http://127.0.0.1:${s.port}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 const postRaw = async (path: string, body: string) =>
-  fetch(`http://127.0.0.1:${s.port}${path}`, { method: "POST", body });
+  fetch(`http://127.0.0.1:${s.port}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body });
 const patch = async (path: string, body: unknown = {}) =>
-  fetch(`http://127.0.0.1:${s.port}${path}`, { method: "PATCH", body: JSON.stringify(body) });
+  fetch(`http://127.0.0.1:${s.port}${path}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 
 // Same "hooks live INSIDE the describe" reasoning as api.test.ts's own
 // GBA suite (see that file's comment, packages/server/test/api.test.ts:10-17):
@@ -1172,7 +1172,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
           expect(await r.json()).toMatchObject({ error: expect.any(String) });
         }
         for (const body of ["null", "[]", "{", '{"name":" "}', '{"name":5}', '{"maps":[1]}']) {
-          const r = await request(() => fetch(`http://127.0.0.1:${s.port}/api/dungeons/missing`, { method: "PATCH", body }));
+          const r = await request(() => fetch(`http://127.0.0.1:${s.port}/api/dungeons/missing`, { method: "PATCH", headers: { "content-type": "application/json" }, body }));
           expect(r.status).toBe(400);
           expect(await r.json()).toMatchObject({ error: expect.any(String) });
         }
@@ -1411,7 +1411,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
 describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("POST /api/world/dungeons (GBC, temp copy)", () => {
   let root: string, server: Server, base: string;
   const world = async () => (await fetch(`${base}/api/world`)).json() as Promise<GbcWorldPayload>;
-  const toggle = (body: unknown) => fetch(`${base}/api/world/dungeons`, { method: "POST", body: JSON.stringify(body) });
+  const toggle = (body: unknown) => fetch(`${base}/api/world/dungeons`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const singletons = (w: GbcWorldPayload) => w.components.filter((c) => c.maps.length === 1).map((c) => c.maps[0]!);
   beforeEach(async () => {
     root = copyGbcSubjectToTemp();
@@ -1434,9 +1434,9 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("POST /api/world/dungeons (GBC
     expect(manual && auto).toBeTruthy();
     expect(on.placements[auto!]).toBeDefined();
     const conflictKey = on.conflicts[0]!.key;
-    expect((await fetch(`${base}/api/world/conflicts/accept`, { method: "POST", body: JSON.stringify({ key: conflictKey, accepted: true }) })).status).toBe(200);
+    expect((await fetch(`${base}/api/world/conflicts/accept`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key: conflictKey, accepted: true }) })).status).toBe(200);
     const sidecarPath = `${root}/.pokemap/world.json`;
-    const placed = await fetch(`${base}/api/world/placement`, { method: "POST", body: JSON.stringify({ map: manual, x: 11, y: 12 }) });
+    const placed = await fetch(`${base}/api/world/placement`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ map: manual, x: 11, y: 12 }) });
     expect(placed.status).toBe(200);
     const before = JSON.parse(readFileSync(sidecarPath, "utf8")) as { manualPlacements: unknown; acceptedConflicts?: unknown };
     const r = await toggle({ enabled: false });
@@ -1493,7 +1493,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("POST /api/world/dungeons (GBC
   });
 
   it.each([["{}"], ['{"enabled":"yes"}'], ["not json"], ["[]"], ["null"]])("bad body %s is a 400 and writes nothing", async (body) => {
-    const r = await fetch(`${base}/api/world/dungeons`, { method: "POST", body });
+    const r = await fetch(`${base}/api/world/dungeons`, { method: "POST", headers: { "content-type": "application/json" }, body });
     expect(r.status).toBe(400);
     expect(existsSync(`${root}/.pokemap/world.json`)).toBe(false);
   });
@@ -1510,7 +1510,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("POST /api/world/dungeons (GBC
       expect(r.status, path).toBe(200);
       return await r.json() as any;
     };
-    const postJson = (path: string, body: unknown = {}) => fetch(`${base}${path}`, { method: "POST", body: JSON.stringify(body) });
+    const postJson = (path: string, body: unknown = {}) => fetch(`${base}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     // Prime every cache with the pre-save state.
     const mapBefore = await getJson(`/api/map/${MAP}`);
     const warpsBefore = await getJson(`/api/warps/${MAP}`);

@@ -38,4 +38,4 @@ function upload(port: number, path: string, bytes: number, headers: Record<strin
 
 /** `MAX_BODY_BYTES + 1` (by default) streamed with `transfer-encoding: chunked`, so no length is declared. */
 export const postChunked = (port: number, path: string, bytes = MAX_BODY_BYTES + 1): Promise<OversizeReply> =>
-  upload(port, path, bytes, { "transfer-encoding": "chunked" });
+  upload(port, path, bytes, { "transfer-encoding": "chunked", "content-type": "application/json" });

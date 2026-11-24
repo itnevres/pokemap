@@ -123,7 +123,7 @@ describe("useEditSession", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining("/event/move"),
-      expect.objectContaining({ method: "POST", body: JSON.stringify({ kind: "object", index: 0, x: 5, y: 5 }) }),
+      expect.objectContaining({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind: "object", index: 0, x: 5, y: 5 }) }),
     );
     expect(last!.map).toEqual(MAP_AFTER);
     expect(last!.isDirty).toBe(true);
@@ -145,7 +145,7 @@ describe("useEditSession", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining("/event/move"),
-      expect.objectContaining({ method: "POST", body: JSON.stringify({ kind: "object", index: 0, x: 5, y: 5, elevation: 3 }) }),
+      expect.objectContaining({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind: "object", index: 0, x: 5, y: 5, elevation: 3 }) }),
     );
   });
 
@@ -180,7 +180,7 @@ describe("useEditSession", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining("/event/delete"),
-      expect.objectContaining({ method: "POST", body: JSON.stringify({ kind: "object", index: 0 }) }),
+      expect.objectContaining({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind: "object", index: 0 }) }),
     );
     expect(last!.map).toEqual(MAP_BEFORE);
   });

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { trapDialogFocus, useRestoreFocus } from "./dialogFocus.js";
+import { postJson } from "../hooks/useGuardedFetch.js";
 import "../styles.css";
 
 type Mode = "free" | "name" | "species";
@@ -48,7 +49,7 @@ export function SignEditor({ mapName, x, y, anchor, hasObjectEvent = false, onDo
     setSaving(true); setError(null);
     const body = { x, y, mode: nextMode, text: nextMode === "free" ? text : "", ...(reply?.kind === "sign" ? { scriptLabel: reply.scriptLabel } : {}), ...(force ? { force: true } : {}) };
     try {
-      const r = await fetch(`/api/edit/${encodeURIComponent(mapName)}/sign/put`, { method: "POST", body: JSON.stringify(body) });
+      const r = await postJson(`/api/edit/${encodeURIComponent(mapName)}/sign/put`, body);
       const result: unknown = await r.json().catch(() => null);
       setSaving(false);
       const problems = refusals(result);

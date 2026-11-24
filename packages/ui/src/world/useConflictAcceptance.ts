@@ -1,6 +1,6 @@
 import { useRef, useState, type RefObject } from "react";
 import type { WireConflict } from "@pokemap/core/src/world/conflictAcceptance.js";
-import { fetchGuarded } from "../hooks/useGuardedFetch.js";
+import { postJson } from "../hooks/useGuardedFetch.js";
 import { isAcceptedConflictsResponse } from "./conflictAcceptance.js";
 import { useWorldContextMenu } from "../components/WorldContextMenu.js";
 
@@ -13,9 +13,7 @@ export function useConflictAcceptance(conflicts: readonly WireConflict[] | undef
   /** Resolves true once the server confirmed; on failure keeps the acknowledgement as it was, shows the error, resolves false. */
   const toggle = (key: string, accepted: boolean): Promise<boolean> => {
     setError(null);
-    return fetchGuarded("/api/world/conflicts/accept", isAcceptedConflictsResponse, undefined, {
-      method: "POST", body: JSON.stringify({ key, accepted }),
-    }).then((response) => {
+    return postJson("/api/world/conflicts/accept", { key, accepted }, isAcceptedConflictsResponse).then((response) => {
       setAcceptedKeys(response.acceptedConflicts);
       return true;
     }, (cause: unknown) => {

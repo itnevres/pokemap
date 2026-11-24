@@ -86,7 +86,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
   });
 
   const get = (path: string) => fetch(base + path);
-  const post = (path: string, body: unknown = {}) => fetch(base + path, { method: "POST", body: JSON.stringify(body) });
+  const post = (path: string, body: unknown = {}) => fetch(base + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const session = async (r: Response) => (await r.json()) as SessionBody;
   const png = async (name: string) => Buffer.from(await (await get(`/api/render/${name}.png`)).arrayBuffer());
   const plan = async (name = "NewBarkTown") => (await (await get(`/api/edit/${name}/plan`)).json()) as PlanBody;
@@ -218,7 +218,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
     }
 
     it("malformed JSON -> 400", async () => {
-      const r = await fetch(`${base}${NBT}/paint/apply`, { method: "POST", body: "{nope" });
+      const r = await fetch(`${base}${NBT}/paint/apply`, { method: "POST", headers: { "content-type": "application/json" }, body: "{nope" });
       expect(r.status).toBe(400);
       expect(((await r.json()) as { error: string }).error).toMatch(/JSON/);
     });
@@ -455,7 +455,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
       expect(r.status, `${path} ${JSON.stringify(body)}`).toBe(400);
       expect(((await r.json()) as { error: string }).error).toContain(`"${field}"`);
     }
-    const r = await fetch(`${base}${NBT}/event/move`, { method: "POST", body: "{nope" });
+    const r = await fetch(`${base}${NBT}/event/move`, { method: "POST", headers: { "content-type": "application/json" }, body: "{nope" });
     expect(r.status).toBe(400);
     expect(h.dirtyMaps()).toEqual([]);
     await post(`${NBT}/discard`);
@@ -697,7 +697,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
   it("14. hub: a dirty GBC session blocks /api/hub/open with 409 until force: true, then the old handler is disposed", async () => {
     const home = mkdtempSync(join(tmpdir(), "pokemap-home-"));
     const hub = await createHub({ port: 0, home, open: tmp });
-    const hubPost = (path: string, body: unknown) => fetch(`http://127.0.0.1:${hub.port}${path}`, { method: "POST", body: JSON.stringify(body) });
+    const hubPost = (path: string, body: unknown) => fetch(`http://127.0.0.1:${hub.port}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     try {
       await hubPost(`${NBT}/paint/begin`, {});
       await hubPost(`${NBT}/paint/apply`, { tool: "pencil", targets: [{ x: 0, y: 0 }], stamp: stamp1(40), origin: { x: 0, y: 0 } });

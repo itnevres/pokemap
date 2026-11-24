@@ -27,7 +27,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA cached project after a save (tem
     return { status: r.status, body: await r.json() as any };
   };
   const post = async (path: string, body: unknown = {}) => {
-    const r = await fetch(`${base}${path}`, { method: "POST", body: JSON.stringify(body) });
+    const r = await fetch(`${base}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     return { status: r.status, body: await r.json() as any };
   };
 

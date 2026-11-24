@@ -1,4 +1,4 @@
-import { BodyTooLarge, readBody, sendJson, isCrossOriginRequest, refuseOversize, decodeSegment } from "./http.js";
+import { BodyTooLarge, readBody, sendJson, isCrossOriginRequest, refuseOversize, refuseNonJsonBody, decodeSegment } from "./http.js";
 import { existsSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -245,6 +245,7 @@ export async function createHub(opts: { port?: number; home?: string; open?: str
         return send(403, { error: "cross-origin request refused" });
       }
       if (refuseOversize(req, res)) return;
+      if (refuseNonJsonBody(req, res)) return;
 
       // `/api` routes always win; every other path is the built UI when one is configured.
       if (uiDir !== undefined && url.pathname !== "/api" && !url.pathname.startsWith("/api/")) {

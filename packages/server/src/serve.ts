@@ -112,6 +112,7 @@ async function main(): Promise<void> {
       try {
         const r = await fetch(`http://127.0.0.1:${hub.port}/api/hub/open`, {
           method: "POST",
+          headers: { "content-type": "application/json" },
           body: JSON.stringify({ path: mostRecent.path }),
         });
         if (!r.ok) {
