@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { existsSync, readFileSync, rmSync, mkdtempSync } from "node:fs";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { existsSync, readFileSync, rmSync, mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { createServer as createHttpServer, type Server, type IncomingMessage } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { sidecarRoutes, type SidecarRouteDeps } from "../src/sidecarRoutes.js";
 import { MAX_BODY_BYTES, sendJson } from "../src/http.js";
 import { projectPaths } from "@pokemap/core/src/config/paths.js";
@@ -30,20 +30,23 @@ let root: string;
 let server: Server;
 let base: string;
 let expandCalls: string[];
+let worldCalls: number;
 
 const deps = (): SidecarRouteDeps => ({
   root,
-  getWorld: () => ({ conflicts: CONFLICTS }),
+  getWorld: () => { worldCalls++; return { conflicts: CONFLICTS }; },
   knownMap: (name) => KNOWN.has(name),
   expandSeed: (seedMap) => { expandCalls.push(seedMap); return EXPANDED; },
   autoLayoutReply: (v) => ({ dungeonAutoLayout: v }),
 });
 
 const mount = (): void => {
+  // Built once, like the real mounts: a closure-state regression is visible.
+  const route = sidecarRoutes(deps());
   server = createHttpServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     const send = (code: number, body: unknown) => sendJson(res, code, body);
-    if (sidecarRoutes(deps())(req, url, send)) return;
+    if (route(req, url, send)) return;
     sendJson(res, 404, { error: "not found" });
   });
 };
@@ -60,6 +63,7 @@ const postRaw = (path: string, body: string) => fetch(`${base}${path}`, { method
 beforeEach(async () => {
   root = mkdtempSync(join(tmpdir(), "pokemap-sidecar-routes-"));
   expandCalls = [];
+  worldCalls = 0;
   mount();
   await start();
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -67,9 +71,9 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await stop();
-  // Same guard shape as world.test.ts's scratch cleanup: refuse to delete
-  // anything that is not inside a `pokemap-sidecar-routes-` temp dir.
-  if (!resolve(root).startsWith(`${resolve(tmpdir())}\\pokemap-sidecar-routes-`)) {
+  // Mirrors world.test.ts:42's scratch cleanup: refuse to delete anything
+  // that is not inside a `pokemap-sidecar-routes-` temp dir.
+  if (!resolve(root).startsWith(join(resolve(tmpdir()), "pokemap-sidecar-routes-"))) {
     throw new Error("scratch cleanup escaped temp root");
   }
   rmSync(root, { recursive: true, force: true });
@@ -96,6 +100,11 @@ describe("sidecarRoutes (mounted bare, stub deps only)", () => {
 
     const patched = await (await sendJsonBody("PATCH", `/api/dungeons/${created.id}`, { name: "E", maps: ["Route19"] })).json() as { id: string; name: string; maps: string[] };
     expect(patched).toEqual({ id: created.id, name: "E", maps: ["Route19"] });
+
+    // The 200 body alone does not prove the write: the list and the file must show it.
+    const edited = { id: created.id, name: "E", maps: ["Route19"] };
+    expect(await (await get("/api/dungeons")).json()).toEqual([edited]);
+    expect((JSON.parse(readFileSync(dungeonsPath(), "utf8")) as { dungeons: unknown[] }).dungeons).toEqual([edited]);
 
     const deleted = await fetch(`${base}/api/dungeons/${created.id}`, { method: "DELETE" });
     expect(deleted.status).toBe(200);
@@ -142,7 +151,7 @@ describe("sidecarRoutes (mounted bare, stub deps only)", () => {
     expect(noName.status).toBe(400);
     expect((await noName.json() as { error: string }).error).toEqual('expected a non-empty "name" string, got {"maps":[]}');
 
-    // `{}` has no name: jsonBody's own shape 400, quoting the raw text.
+    // `{}` has no name: the handler's own name check, quoting the raw text.
     const empty = await postRaw("/api/dungeons", "{}");
     expect(empty.status).toBe(400);
     expect(await empty.json()).toEqual({ error: 'expected a non-empty "name" string, got {}' });
@@ -153,12 +162,28 @@ describe("sidecarRoutes (mounted bare, stub deps only)", () => {
     expect(badMapsBody.error).toBe('"maps" must be a string array when present, got {"name":"x","maps":[1]}');
   });
 
-  it("PATCH 404s an unknown id and DELETE 404s an unknown id", async () => {
-    expect((await sendJsonBody("PATCH", "/api/dungeons/nope", {})).status).toBe(404);
+  it("404s an unknown id on PATCH and on DELETE", async () => {
+    const patched = await sendJsonBody("PATCH", "/api/dungeons/nope", {});
+    expect(patched.status).toBe(404);
+    expect(await patched.json()).toEqual({ error: "no dungeon nope" });
     expect((await fetch(`${base}/api/dungeons/nope`, { method: "DELETE" })).status).toBe(404);
-    const patched = await fetch(`${base}/api/dungeons/nope`, { method: "PATCH", body: "{}" });
-    const patchedBody = await patched.json() as { error: string };
-    expect(patchedBody.error).toBe("no dungeon nope");
+  });
+
+  it("PATCH validates name and maps with exact texts, and a partial PATCH leaves the other key alone", async () => {
+    const created = await (await post("/api/dungeons", { name: "D", maps: ["Route17"] })).json() as { id: string };
+    const patchRaw = (body: string) => fetch(`${base}/api/dungeons/${created.id}`, { method: "PATCH", body });
+    const before = readFileSync(dungeonsPath());
+
+    const blank = await patchRaw('{"name":" "}');
+    expect(blank.status).toBe(400);
+    expect(await blank.json()).toEqual({ error: '"name" must be a non-empty string when present, got {"name":" "}' });
+    const badMaps = await patchRaw('{"maps":"x"}');
+    expect(badMaps.status).toBe(400);
+    expect(await badMaps.json()).toEqual({ error: '"maps" must be a string array when present, got {"maps":"x"}' });
+    expect(readFileSync(dungeonsPath())).toEqual(before);
+
+    expect(await (await patchRaw('{"name":"N2"}')).json()).toEqual({ id: created.id, name: "N2", maps: ["Route17"] });
+    expect(await (await patchRaw('{"maps":["Route19"]}')).json()).toEqual({ id: created.id, name: "N2", maps: ["Route19"] });
   });
 
   it("400s a malformed percent-escape dungeon id on both PATCH and DELETE", async () => {
@@ -179,6 +204,30 @@ describe("sidecarRoutes (mounted bare, stub deps only)", () => {
     expect(ok.status).toBe(200);
     expect(await ok.json()).toEqual({ acceptedConflicts: [KEY_A] });
     expect(readSidecar(root).acceptedConflicts).toEqual([KEY_A]);
+
+    // Un-accept removes it again.
+    const undone = await post("/api/world/conflicts/accept", { key: KEY_A, accepted: false });
+    expect(undone.status).toBe(200);
+    expect(await undone.json()).toEqual({ acceptedConflicts: [] });
+    expect(readSidecar(root).acceptedConflicts).toEqual([]);
+  });
+
+  it("400s the accept body shape with the raw-body text, without writing", async () => {
+    const r = await postRaw("/api/world/conflicts/accept", '{"key":1}');
+    expect(r.status).toBe(400);
+    expect(await r.json()).toEqual({ error: 'expected { key: string, accepted: boolean }, got {"key":1}' });
+    expect(existsSync(sidecarPath())).toBe(false);
+  });
+
+  it("builds the world lazily: only the accept route ever calls getWorld", async () => {
+    expect(worldCalls).toBe(0); // not at mount
+    await post("/api/world/placement", { map: "Route17", x: 1, y: 2 });
+    await post("/api/dungeons", { name: "D", maps: ["Route17"] });
+    await get("/api/dungeons");
+    await post("/api/world/dungeons", { enabled: false });
+    expect(worldCalls).toBe(0);
+    await post("/api/world/conflicts/accept", { key: KEY_A, accepted: true });
+    expect(worldCalls).toBeGreaterThanOrEqual(1);
   });
 
   it("POST /api/world/placement writes manualPlacements for a known map only", async () => {
@@ -195,6 +244,9 @@ describe("sidecarRoutes (mounted bare, stub deps only)", () => {
       // A missing / non-number coordinate is the same shape 400.
       ['{"map":"Route17","x":0}', "expected { map: string, x: number, y: number }, got {\"map\":\"Route17\",\"x\":0}"],
       ['{"map":"Route17","x":"0","y":0}', "expected { map: string, x: number, y: number }, got {\"map\":\"Route17\",\"x\":\"0\",\"y\":0}"],
+      // Same for y: Infinity and a string.
+      ['{"map":"Route17","x":0,"y":1e999}', "expected { map: string, x: number, y: number }, got {\"map\":\"Route17\",\"x\":0,\"y\":1e999}"],
+      ['{"map":"Route17","x":0,"y":"0"}', "expected { map: string, x: number, y: number }, got {\"map\":\"Route17\",\"x\":0,\"y\":\"0\"}"],
     ] as const;
     for (const [body, error] of bad) {
       const r = await postRaw("/api/world/placement", body);
@@ -220,15 +272,32 @@ describe("sidecarRoutes (mounted bare, stub deps only)", () => {
     expect(readSidecar(root).dungeonAutoLayout).toBe(false);
   });
 
-  it.each(["null", "[]", "{}", '{"enabled":"yes"}', "not json"])("400s POST /api/world/dungeons body %s", async (body) => {
-    const r = await postRaw("/api/world/dungeons", body);
-    expect(r.status, body).toBe(400);
+  it("400s a bad POST /api/world/dungeons body with the raw-body text, writing nothing", async () => {
+    for (const body of ["null", "[]", "{}", '{"enabled":"yes"}']) {
+      const r = await postRaw("/api/world/dungeons", body);
+      expect(r.status, body).toBe(400);
+      expect(await r.json(), body).toEqual({ error: `expected { enabled: boolean }, got ${body}` });
+    }
+    const notJson = await postRaw("/api/world/dungeons", "not json");
+    expect(notJson.status).toBe(400);
+    expect((await notJson.json() as { error: string }).error.startsWith("invalid JSON body:")).toBe(true);
+    expect(existsSync(sidecarPath())).toBe(false);
   });
 
-  it("400s the dungeon-layout body with the raw-body shape text", async () => {
-    const r = await postRaw("/api/world/dungeons", '{"enabled":"yes"}');
-    expect(await r.json()).toEqual({ error: 'expected { enabled: boolean }, got {"enabled":"yes"}' });
-  });
+  it("answers 500 (not a hang) when world.json is corrupted, leaving the bytes untouched", async () => {
+    const corrupted = "{not json";
+    mkdirSync(dirname(sidecarPath()), { recursive: true });
+    writeFileSync(sidecarPath(), corrupted);
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const r = await post("/api/world/placement", { map: "Route17", x: 1, y: 2 });
+      expect(r.status).toBe(500);
+      expect(((await r.json()) as { error: string }).error).toContain("is not valid JSON");
+      expect(readFileSync(sidecarPath(), "utf8")).toBe(corrupted);
+    } finally {
+      spy.mockRestore();
+    }
+  }, 10_000);
 
   it("400s an invalid JSON body and 413s an oversize body, writing nothing", async () => {
     const invalid = await postRaw("/api/dungeons", "{");
@@ -255,14 +324,6 @@ describe("sidecarRoutes (mounted bare, stub deps only)", () => {
     const r = await get("/api/dungeonsx");
     expect(r.status).toBe(404);
     expect(await r.json()).toEqual({ error: "not found" });
-  });
-
-  it("writes a real sidecar file that readSidecar can read back", async () => {
-    await post("/api/world/placement", { map: "Route19", x: -3, y: 4 });
-    // Reading the file the route produced through the real core reader proves
-    // it is a valid sidecar a later process would load.
-    expect(readSidecar(root).manualPlacements.Route19).toEqual({ x: -3, y: 4 });
-    expect(existsSync(sidecarPath())).toBe(true);
   });
 
   it("dungeon POST with explicit maps keeps the caller's order (only seed expansion is sorted)", async () => {

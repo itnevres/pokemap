@@ -368,7 +368,7 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
   // `{ dungeonAutoLayout: <new value> }` reply `gbcRoutes.test.ts` and the
   // GBC UI pin. `getWorld` is passed, never called: the world must not be
   // built at mount time.
-  const sidecar = sidecarRoutes({
+  const sidecarRoute = sidecarRoutes({
     root: proj.root,
     getWorld,
     knownMap: (name) => mapNames.has(name),
@@ -529,8 +529,9 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
       // sidecarRoutes.ts, mounted here where the first of them
       // (`/api/world/conflicts/accept`) used to sit -- i.e. AFTER the
       // `/api/world` payload above, which must keep priority on its own
-      // exact path.
-      if (sidecar(req, url, send)) return;
+      // exact path. The four dungeon routes now sit before
+      // `/api/warps/(.+)`; no path overlaps, so the order change is neutral.
+      if (sidecarRoute(req, url, send)) return;
 
       // `(.+)`, not `[^/]+` -- same reasoning as `/api/map/:name` above: a
       // map name never contains a slash in this corpus, but matching the

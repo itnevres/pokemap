@@ -134,7 +134,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
   // own deps: its project map names for `knownMap`, `warpConnectedMapsFrom`
   // for the dungeon seed BFS, and the `{ ok: true }` reply
   // `world.test.ts` pins for `POST /api/world/dungeons`.
-  const sidecar = sidecarRoutes({
+  const sidecarRoute = sidecarRoutes({
     root: project.paths.root,
     getWorld,
     knownMap: (name) => project.mapNames().includes(name),
@@ -753,7 +753,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
       // (`/api/world/conflicts/accept`) used to sit -- i.e. AFTER the
       // `/api/world` payload above, which must keep priority on its own
       // exact path.
-      if (sidecar(req, url, send)) return;
+      if (sidecarRoute(req, url, send)) return;
 
       // Task 8 (Plan 2): paint-stroke lifecycle. begin/apply/end are three
       // separate requests on purpose -- see editSessions.ts's own doc

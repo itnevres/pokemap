@@ -15,9 +15,11 @@ import { decodeSegment, jsonBody } from "./http.js";
  * (Plan H task H-b): `POST /api/world/conflicts/accept`,
  * `POST /api/world/placement`, `POST /api/world/dungeons`, `GET|POST
  * /api/dungeons` and `PATCH|DELETE /api/dungeons/<id>`. GBA
- * (`index.ts`) and GBC (`gbcRoutes.ts`) kept byte-identical copies that
- * differed only in three places, each of which is now an injected dep
- * instead of a second implementation:
+ * (`index.ts`) and GBC (`gbcRoutes.ts`) kept near-identical copies that
+ * differed in three injected deps (below), plus the guard unifications Plan
+ * H H-b made on purpose: GBC gained the placement known-map check, and the
+ * stricter GBC body guards and `malformed dungeon id` text now apply to
+ * both. The dep differences are:
  *
  * - `knownMap`: GBA's `project.mapNames().includes(name)` vs GBC's
  *   `mapNames.has(name)` (a Set).
@@ -118,8 +120,11 @@ export function sidecarRoutes(
       // settles after the caller's own try/catch has returned, so its `.catch`
       // is the only thing standing between a readSidecar I7 refusal and an
       // unhandled rejection that would leave the request hanging forever.
+      // Bad JSON and a wrong body shape are answered by `jsonBody` before
+      // this handler runs.
       jsonBody(req, send, isPlacementBody, "{ map: string, x: number, y: number }", (placement) => {
-        // The known-map check is GBA's addition -- without it `__proto__`
+        // The known-map check is GBA's guard, shared by both families since
+        // Plan H H-b -- without it `__proto__`
         // (and any other unknown name) would be written as a
         // `manualPlacements` key, and `manualPlacements["__proto__"] = ...`
         // replaces only that object's own prototype and persists nothing,
@@ -135,6 +140,9 @@ export function sidecarRoutes(
       return true;
     }
 
+    // Review fix: the dungeon-layout switch (packages/ui's WorldCanvas) only
+    // ever changed the query string used for its own next fetch -- nothing
+    // persisted sidecar.dungeonAutoLayout, so a reload silently discarded it.
     // The world payload is rebuilt from the sidecar on every request, so no cache needs clearing.
     if (pathname === "/api/world/dungeons" && req.method === "POST") {
       // Same "runs after the try/catch" reason as the two routes above.

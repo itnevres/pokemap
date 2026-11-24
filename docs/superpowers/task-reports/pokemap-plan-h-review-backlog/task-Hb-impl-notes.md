@@ -81,3 +81,12 @@ Not run here by instruction (the orchestrator runs vitest/typecheck/build). The
 module imports no `Project`/`GbcProject` and the new test imports no
 `createServer`/`createProjectHandler`/`createGbcProjectHandler`, which is the
 "no family dependency" pin the brief asks for.
+
+## Review-fix round
+
+Comments, rename and tests only; nothing was run (the orchestrator verifies).
+
+- A (sidecarRoutes.ts, comments): restored the `/api/world/dungeons` "Review fix" rationale above the route; `__proto__` comment now says "GBA's guard, shared by both families since Plan H H-b"; header no longer claims "only three places" (three injected deps plus the deliberate guard unifications); placement handler comment notes `jsonBody` answers bad JSON and wrong shape first.
+- B: mount constant renamed `sidecar` -> `sidecarRoute` in index.ts and gbcRoutes.ts (declaration and the one call); gbcRoutes.ts mount comment notes the four dungeon routes now sit before `/api/warps/(.+)` and the order change is neutral.
+- C (sidecarRoutes.test.ts): items 1-11 done. Portable temp guard; handler built once in `mount()`; lazy-world test counts `getWorld` calls via the default `deps()` (counter reset in `beforeEach`); accept 400 text and un-accept; PATCH validation texts and partial PATCH; placement `y` cases; merged `/api/world/dungeons` 400 table with no-sidecar assertion; corrupted `world.json` -> 500 with bytes unchanged (`readSidecar` throws "is not valid JSON" on `{not json`; `console.error` silenced and restored in `finally`); duplicate "writes a real sidecar file" test removed and the unknown-id test collapsed; `{}` comment reworded; PATCH write proven through GET and the `dungeons.json` file.
+- Skipped: nothing.
