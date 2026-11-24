@@ -42,7 +42,7 @@ Indentation is unchanged (the IIFE body sits at the same 6-space depth as the `t
 
 `python -I C:/Users/Serve/.claude/locks/lockrun.py "npm run typecheck"`:
 - Run 2 (before the unused-import prune, after the `allMapsCache` accessor fix): PASS, no errors (run 1 had found the `allMapsCache` write and the over-wide `extends GbaRouteContext`, both fixed).
-- Run 3 (after the unused-import prune, the final tree): STILL QUEUED behind another session's vitest run for the machine-wide lock when the 80-tool-call budget ran out. Output file `C:/Users/Serve/AppData/Local/Temp/tc3.txt` (last line `exit=N` when done). NOT VERIFIED. The prune only deleted names that the script saw in no non-comment code, so a failure would be a missing-name error from a wrongly dropped import in index.ts (candidates: `readBody`, `BodyTooLarge`, `commitSave`); re-run the typecheck first.
+- Run 3 (after the unused-import prune, the final tree, commit fae8afd): PASS, `exit=0`, no errors.
 
 Typecheck does not enable `noUnusedLocals`, so unused imports were pruned with a script that drops any imported name not appearing in non-comment code: 37 names dropped from index.ts, `coverage` and `planSave` dropped from gbaEditRoutes.ts (they were only mentioned in comments).
 
