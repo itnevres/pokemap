@@ -84,6 +84,19 @@ describe("GBA defects for paths that leave the project", () => {
     expect(defects[0]!.message).toContain("LAYOUT_TEST");
     expect(defects[0]!.message).toContain("../../outside.bin");
     expect(defects[0]!.fix).toContain("data/layouts/layouts.json");
+    expect(defects[0]!.message).toContain("blockdata_filepath"); // names the key (D25)
+  });
+
+  it("a broken border_filepath alone is one build defect naming that key; blockdata checks are skipped", () => {
+    const lj = projectPaths(root).layoutsJson;
+    const parsed = JSON.parse(readFileSync(lj, "utf8")) as { layouts: Record<string, unknown>[] };
+    parsed.layouts[0]!.border_filepath = "../../outside-border.bin";
+    writeFileSync(lj, JSON.stringify(parsed));
+    const defects = gbaMapDefects(proj, "Test");
+    expect(defects).toHaveLength(1);
+    expect(defects[0]).toMatchObject({ kind: "build", file: "data/layouts/layouts.json" });
+    expect(defects[0]!.message).toContain("border_filepath");
+    expect(defects[0]!.message).toContain("../../outside-border.bin");
   });
 
   it.each(["/etc/outside.bin", "C:/outside.bin", "..\\..\\outside.bin"])("a layout path of %s is broken too", (path) => {
@@ -100,6 +113,7 @@ describe("GBA defects for paths that leave the project", () => {
     expect(defects[0]).toMatchObject({ kind: "build", file: "src/data/tilesets/headers.h" });
     expect(defects[0]!.message).toContain("gTileset_Primary");
     expect(defects[0]!.message).toContain("../../outside/Primary.bin");
+    expect(defects[0]!.message).toContain(".metatiles"); // names the key (D25)
   });
 
   it("a broken layout and a broken tileset are both reported", () => {

@@ -29,3 +29,17 @@ Other core readers of these paths with no broken-path check: `validate/metatileR
 
 ## Gate
 Gate at fa82caf: 5492 pass / 1 fail / 287 files (286 pass); the 1 failure is the known env fail `engine.test` "parses the subject repo's real porymap.project.cfg"; typecheck pass, UI build pass; subjects unchanged.
+
+## Second and third Opus reviews (orchestrator request: High tier needs separate spec and quality/adversarial passes)
+- `task-F1c-review-core-spec.md`: independent spec-compliance pass, APPROVED, 0 Important, 3 Minor.
+- `task-F1c-review-core-adversarial.md`: independent path-escape re-derivation (`..`, absolute, drive, UNC, case, trailing dots, NUL, ADS, symlink/junction), CHANGES NEEDED, 2 Important, 3 Minor.
+
+Fixes in this PR:
+- **Adversarial Important 1 (real escape, fixed).** `load/tilesets.ts` `dirOf` used `p.slice(0, p.lastIndexOf("/"))`; with no `/` it dropped the last character, so a `.metatiles` INCBIN of `"..a"` and no `.tiles` field derived `tilesPng = "../tiles.png"`, which was never checked and was read by `loadTileset`. `dirOf` now folds `\` to `/` and returns `"."` when there is no separator. Test first (`test/load/tilesetsSlashless.test.ts`, red on the old code: `'../tiles.png'` vs `'./tiles.png'`), then the fix. I did not add the reviewer's option (b) (always check the derived `tilesPng`): with a correct `dirOf` the derived path has the same prefix as the checked `.metatiles` path, so it cannot escape when that one does not.
+- **Spec Minor 2 / adversarial Minor 3.** Tests now assert the key is named (`blockdata_filepath`, `.metatiles`), add a border-only broken layout (defects) and a border-only render refusal (`border: 1`).
+- **Spec Minor 1 (ruling).** A broken tileset also skips the blockdata size check. Kept: the size check and the range check share one read block, and fixing the path surfaces the size defect next. Not a D25 violation (nothing wrong is read, nothing hidden permanently).
+- **Spec Minor 3 / adversarial Minor 1 (server half).** A broken tileset reaches `renderLayout` callers as a plain `Error` from `project.ts:170`, a broken layout as `PathEscapeError`. Server half must map both, or `project.ts` should throw `PathEscapeError(tp.brokenPaths[0])`.
+- **Adversarial Minor 2.** Unknown tileset symbol is masked while any path is broken (documented in the `gba.ts` comment). Accepted.
+
+## Not in F1c core (adversarial Important 2: plan-scope gap, raised to the orchestrator)
+Read sites still unguarded: `signs/suggest.ts:79`, `cli/src/writeCommands.ts:25-26`, `write/binary.ts:57,76`, `validate/metatileRange.ts:56`, `blockEdit/gbaOps.ts:63,91,216`, `blockEdit/usage.ts:415`, server `blockEditRoutes.ts:257`, and (server half) `editSessions.ts:45-46`, `index.ts:426`. Cheapest choke point for the tileset half: make `project.ts tilesetPaths` throw on `brokenPaths`, as `getTileset` does. Symlinks and junctions inside a project are not covered anywhere (containment is lexical; no `realpath`): out of F1c scope, recorded for a possible follow-up row.

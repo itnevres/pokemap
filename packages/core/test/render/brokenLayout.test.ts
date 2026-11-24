@@ -36,4 +36,14 @@ describe("renderLayout with a layout path that leaves the project", () => {
   it("refuses when a border is requested too", () => {
     expect(() => renderLayout(proj, "Broken_Layout", { border: 1 })).toThrow(PathEscapeError);
   });
+
+  it("refuses a layout whose only broken path is the border, when the border is requested", () => {
+    const borderOnly: Layout = {
+      ...broken, name: "Border_Only", blockdataFilepath: "data/layouts/Broken/map.bin",
+      borderFilepath: "../../outside-border.bin",
+      brokenPaths: [{ ...broken.brokenPaths![0]!, key: "border_filepath", path: "../../outside-border.bin" }],
+    };
+    const p = stubProject({ layoutByName: (n) => (n === borderOnly.name ? borderOnly : undefined) });
+    expect(() => renderLayout(p, "Border_Only", { border: 1 })).toThrow(PathEscapeError);
+  });
 });
