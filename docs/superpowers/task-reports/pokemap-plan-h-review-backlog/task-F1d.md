@@ -35,7 +35,7 @@ Tests first (Haiku subagent, brief reviewed by me, commit `fa2d351`), implementa
 Server mutations run on the merged tree through the lock; the file was restored after each (`git diff` clean).
 
 ## Gate
-After merging `origin/master` (2f946f5, no conflicts), through the lock: typecheck exit 0; UI build pass; full vitest 5591 pass / 3 fail / 300 files. Failures: the known env fail `engine.test` "parses the subject repo's real porymap.project.cfg" plus two 8000 ms timeouts in `packages/server/test/gbcAddEventRoutes.test.ts` (GBC add-event, a file F1d does not touch; load flake). Re-run of that file alone: see PR body. Server `brokenPaths.test.ts`: 15/15 pass.
+After merging `origin/master` (2f946f5, no conflicts), through the lock: typecheck exit 0; UI build pass; full vitest 5591 pass / 3 fail / 300 files: the known env fail `engine.test` plus two 8000 ms timeouts in `packages/server/test/gbcAddEventRoutes.test.ts`. Those two time out identically alone on bare master 65af4ce (12715 ms and 11329 ms, 37 pass), so they are pre-existing load fails, not F1d. After merging master 65af4ce (I2b, clean): the F1d verify set (9 files, 44 tests) passes. Server `brokenPaths.test.ts`: 15/15 pass.
 
 ## Follow-ups (not in this diff; none is an outside read)
 - `render-world` (CLI) aborts the whole PNG when one layout in the bbox is broken (`cli/src/index.ts:152`); contradicts the second half of D25; a separate reader.
