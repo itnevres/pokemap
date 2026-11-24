@@ -38,7 +38,10 @@ function checkNewNames(
   return refusals;
 }
 
-export interface InsertOp { path: JsonPath; index: number; value: unknown; }
+/** What a staged add created besides its own JSON element (Plan H B4): dropped with it when the add is deleted before saving.
+ *  `slots` are header renames (`#define from` became `#define to`) held in `scriptReplaces`. */
+export interface OwnedScripts { appends: ScriptAppend[]; newNames: string[]; slots: { path: string; from: string; to: string }[]; }
+export interface InsertOp { path: JsonPath; index: number; value: unknown; owns?: OwnedScripts; }
 export interface RemoveOp { path: JsonPath; index: number; }
 /** A plain-text append targeting a NON-json decomp file -- currently only
  *  `scripts.inc` (Task 17's wild-sign write path). Deliberately NOT a

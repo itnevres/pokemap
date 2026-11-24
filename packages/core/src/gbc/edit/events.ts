@@ -9,6 +9,8 @@ import { escapeRegExp, parseNum, type CodeLine } from "../load/asm.js";
 import { objectConstDefLine, parseMapEvents, scanObjectConsts } from "../load/events.js";
 import type { GbcMapEvents, GbcWarpEvent } from "../model/types.js";
 import { insertLineAfter, locateEventCall, locateEventCalls, removeLine, spliceArg } from "../write/asmSplice.js";
+import type { FileReplace } from "../../addEvent/types.js";
+import type { OwnedGbcAdd } from "../write/save.js";
 
 export type GbcEventKind = "warp" | "coord" | "bg" | "object";
 
@@ -239,6 +241,33 @@ export function deleteGbcEvent(text: string, mapName: string, kind: GbcEventKind
     out = removeLine(text, call.lineStart, call.lineEnd);
   }
   return { text: out, events: parseMapEvents(out, mapName) };
+}
+
+/** The record of the pending add that wrote `event` (same kind, script label and, for an object, event flag), if any. */
+export function findOwnedGbcAdd(owned: OwnedGbcAdd[] | undefined, kind: GbcEventKind, event: { script?: string; eventFlag?: string } | undefined): OwnedGbcAdd | undefined {
+  if (!event || kind === "warp") return undefined;
+  return owned?.find((o) => o.kind === kind && o.script === event.script && o.eventFlag === (kind === "object" ? event.eventFlag : ""));
+}
+
+/** `text` (already without the deleted event line) minus the script blocks, new names and flag constants its add created. */
+export function dropOwnedGbcAdd(
+  state: { eventsText: string; constEdits: FileReplace[]; newNames: string[]; ownedAdds: OwnedGbcAdd[] }, owned: OwnedGbcAdd,
+): { eventsText: string; constEdits: FileReplace[]; newNames: string[]; ownedAdds: OwnedGbcAdd[] } {
+  let eventsText = state.eventsText;
+  const eol = eventsText.includes("\r\n") ? "\r\n" : "\n";
+  for (const block of owned.blocks) {
+    const chunk = block.replace(/\r?\n/g, eol) + eol;
+    const at = eventsText.indexOf(chunk);
+    if (at >= 0) eventsText = eventsText.slice(0, at) + eventsText.slice(at + chunk.length);
+  }
+  const constEdits = state.constEdits.map((edit) => {
+    let after = edit.after;
+    for (const c of owned.consts) if (c.path === edit.path) after = after.replace(new RegExp(`^[ \\t]*const[ \\t]+${escapeRegExp(c.name)}[ \\t]*(?:\\r?\\n|$)`, "m"), "");
+    return { ...edit, after };
+  }).filter((edit) => edit.after !== edit.before);
+  const newNames = [...state.newNames];
+  for (const name of owned.newNames) { const at = newNames.indexOf(name); if (at >= 0) newNames.splice(at, 1); }
+  return { eventsText, constEdits, newNames, ownedAdds: state.ownedAdds.filter((o) => o !== owned) };
 }
 
 export interface GbcWarpRenumberWarning {

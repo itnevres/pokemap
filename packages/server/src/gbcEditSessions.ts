@@ -23,6 +23,7 @@ export interface GbcSessionEntry {
 export interface GbcSnapshot {
   constEdits: NonNullable<GbcEditSession["constEdits"]>;
   newNames: string[];
+  ownedAdds: NonNullable<GbcEditSession["ownedAdds"]>;
   blocks: Block[];
   eventsText: string;
   events: GbcMapEvents;
@@ -32,7 +33,7 @@ export interface GbcSnapshot {
   tilesetEdits: TilesetFileEdit[];
 }
 
-export const gbcSnapshotOf = (s: GbcEditSession): GbcSnapshot => ({ tilesetEdits: s.tilesetEdits ?? [], blocks: s.blocks, eventsText: s.eventsText, events: s.events, constEdits: s.constEdits ?? [], newNames: s.newNames ?? [] });
+export const gbcSnapshotOf = (s: GbcEditSession): GbcSnapshot => ({ tilesetEdits: s.tilesetEdits ?? [], blocks: s.blocks, eventsText: s.eventsText, events: s.events, constEdits: s.constEdits ?? [], newNames: s.newNames ?? [], ownedAdds: s.ownedAdds ?? [] });
 
 /**
  * One `Map<mapName, GbcSessionEntry>` per GBC handler, the counterpart of

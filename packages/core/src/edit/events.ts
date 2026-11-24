@@ -1,6 +1,6 @@
 import type { MapData, ObjectEvent, WarpEvent, CoordEvent, BgEvent } from "../load/maps.js";
 import type { JsonEdit } from "../write/jsonEdit.js";
-import type { InsertOp, RemoveOp } from "../write/save.js";
+import { applyScriptAppend, type InsertOp, type OwnedScripts, type RemoveOp, type ScriptAppend, type ScriptReplace } from "../write/save.js";
 
 export type EventKind = "object" | "warp" | "coord" | "bg";
 
@@ -57,6 +57,37 @@ export function dropPendingInsert(session: IndexSpaceSession, kind: EventKind, i
   return session.insertOps
     .filter((op) => op !== insert)
     .map((op) => (sameArray(op.path, key) && op.index > insert.index ? { ...op, index: op.index - 1 } : op));
+}
+
+export interface ScriptState { scriptAppends: ScriptAppend[]; scriptReplaces: ScriptReplace[]; newNames: string[]; }
+
+const trailingEols = (text: string) => /(?:\r?\n)*$/.exec(text)![0];
+
+/** `text` appended to `after` (by `applyScriptAppend`) comes back out; the separator it added goes with it. */
+function removeAppendedText(after: string, before: string, text: string): string {
+  const at = after.lastIndexOf(text);
+  if (at < 0) return after;
+  const head = after.slice(0, at), tail = after.slice(at + text.length);
+  const base = head.slice(0, head.length - trailingEols(head).length) + trailingEols(before);
+  return tail === "" ? base : applyScriptAppend(base, { path: "", text: tail.replace(/^(?:\r?\n)+/, "") });
+}
+
+/** The script state minus what a deleted pending add created (Plan H B4); nothing it did not create changes.
+ *  An owned append a later sign refresh folded into a `scriptReplaces` entry comes out of that entry's `after`. */
+export function dropOwnedScripts(state: ScriptState, owns: OwnedScripts): ScriptState {
+  const scriptAppends = [...state.scriptAppends];
+  const scriptReplaces = state.scriptReplaces.map((r) => ({ ...r }));
+  for (const owned of owns.appends) {
+    const at = scriptAppends.findIndex((a) => a.path === owned.path && a.text === owned.text);
+    if (at >= 0) { scriptAppends.splice(at, 1); continue; }
+    for (const r of scriptReplaces) if (r.path === owned.path && r.after.includes(owned.text)) { r.after = removeAppendedText(r.after, r.before, owned.text); break; }
+  }
+  for (const { path, from, to } of owns.slots) {
+    for (const r of scriptReplaces) if (r.path === path) r.after = r.after.replace(new RegExp(`^([ \\t]*#define[ \\t]+)${to}\\b`, "m"), `$1${from}`);
+  }
+  const newNames = [...state.newNames];
+  for (const name of owns.newNames) { const at = newNames.indexOf(name); if (at >= 0) newNames.splice(at, 1); }
+  return { scriptAppends, scriptReplaces: scriptReplaces.filter((r) => r.after !== r.before), newNames };
 }
 
 /** Writes x/y (always) and elevation (only when passed) via jsonEdits --

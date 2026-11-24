@@ -440,4 +440,52 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA Indicator and background sign ro
     expect((await commit()).status).toBe(400);
   });
 
+  // B4: a pending Indicator or sign owns the script text its add staged; deleting it drops that text.
+  const scriptState = () => { const s = state(); return { appends: s.scriptAppends ?? [], replaces: s.scriptReplaces ?? [], names: s.newNames ?? [] }; };
+  const del = async (kind: "object" | "bg", index: number) => {
+    const r = await request("event/delete", { kind, index }); expect(r.status, JSON.stringify(r.body)).toBe(200);
+  };
+  it("B4: deleting a pending Indicator removes its script text and leaves an empty plan", async () => {
+    const baseline = scriptState();
+    expect((await addIndicator()).status).toBe(200);
+    expect(scriptState()).not.toEqual(baseline);
+    await del("object", indicatorIndex());
+    const plan = (await request("plan")).body;
+    expect(plan.refusals).toEqual([]); expect(plan.changes).toEqual([]);
+    expect(scriptState()).toEqual(baseline);
+    expect(effectiveGbaScripts(openProject(root), store.open(map).session)).toBe(original);
+  });
+  it("B4: deleting a pending sign removes its script text and leaves an empty plan", async () => {
+    const baseline = scriptState();
+    expect((await put()).status).toBe(200);
+    expect(scriptState()).not.toEqual(baseline);
+    await del("bg", store.open(map).session.map.bgEvents.length - 1);
+    const plan = (await request("plan")).body;
+    expect(plan.refusals).toEqual([]); expect(plan.changes).toEqual([]);
+    expect(scriptState()).toEqual(baseline);
+    expect(effectiveGbaScripts(openProject(root), store.open(map).session)).toBe(original);
+  });
+  it.each(["terminated", "unterminated"])("B4: deleting the second pending sign leaves the first exactly as added (%s scripts.inc EOF)", async eof => {
+    if (eof === "unterminated") writeFileSync(scripts(), original.replace(/(?:\r?\n)+$/, ""));
+    expect((await put("name")).status).toBe(200);
+    const effective = () => effectiveGbaScripts(openProject(root), store.open(map).session);
+    const afterFirst = effective(), firstPlan = (await request("plan")).body.changes;
+    expect((await put("free", "SECOND", { x: 1 })).status).toBe(200);
+    expect(effective()).not.toBe(afterFirst);
+    await del("bg", store.open(map).session.map.bgEvents.length - 1);
+    // Known limit (decisions-h-server B4): on an unterminated file the second add re-hashed the first sign's marker; that stays.
+    const markers = (text: string) => eof === "unterminated" ? text.replace(/(@ pokemap:sign \S+ )[0-9a-f]{8}/g, "$1HASH") : text;
+    expect(markers(effective())).toBe(markers(afterFirst));
+    const plan = (await request("plan")).body;
+    expect(plan.refusals).toEqual([]); expect(plan.changes.map((c: { path: string }) => c.path)).toEqual(firstPlan.map((c: { path: string }) => c.path));
+    if (eof === "terminated") { expect(plan.signNotices).toEqual([]); expect(plan.changes).toEqual(firstPlan); }
+  });
+  it("B4: deleting a pending sign after an Indicator keeps the Indicator's script text", async () => {
+    expect((await addIndicator()).status).toBe(200);
+    const afterIndicator = effectiveGbaScripts(openProject(root), store.open(map).session);
+    expect((await put()).status).toBe(200);
+    await del("bg", store.open(map).session.map.bgEvents.length - 1);
+    expect(effectiveGbaScripts(openProject(root), store.open(map).session)).toBe(afterIndicator);
+    expect(store.open(map).session.map.objectEvents.at(-1)).toMatchObject({ x: 1, y: 1 });
+  });
 });

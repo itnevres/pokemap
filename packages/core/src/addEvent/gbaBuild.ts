@@ -32,6 +32,8 @@ export function defaultGbaLabels(mapName: string, kind: EventKind, check: NameCh
 /** Build a complete candidate; never mutates the map, the context or the session. */
 export function buildGbaAddEvent(map: MapData, scriptsInc: string | null, form: AddEventForm, ctx: GbaAddCtx): {
   value: Record<string, unknown>; scriptAppends: ScriptAppend[]; scriptReplaces: ScriptReplace[]; newNames: string[];
+  /** Header renames this add made (`from` was the free `_UNUSED_` define, `to` the new name). */
+  slots: { path: string; from: string; to: string }[];
   created: { kind: EventKind; index: number };
 } {
   const inc = `data/maps/${ctx.mapName}/scripts.inc`, json = `data/maps/${ctx.mapName}/map.json`;
@@ -42,6 +44,7 @@ export function buildGbaAddEvent(map: MapData, scriptsInc: string | null, form: 
   const paths = projectPaths(ctx.root);
   const abs = (rel: string) => `${paths.root}/${rel}`;
   const newNames: string[] = [];
+  const slots: { path: string; from: string; to: string }[] = [];
   const scriptReplaces = ctx.scriptReplaces.map(r => ({ ...r }));
   const headerText = (rel: string): string => {
     const edit = scriptReplaces.find(r => r.path === abs(rel));
@@ -127,6 +130,7 @@ export function buildGbaAddEvent(map: MapData, scriptsInc: string | null, form: 
     const after = current.replace(new RegExp(`^([ \\t]*#define[ \\t]+)${free}\\b`, "m"), `$1${proposed}`);
     const edit = scriptReplaces.find(r => r.path === abs(rel));
     if (edit) edit.after = after; else scriptReplaces.push({ path: abs(rel), before: current, after });
+    slots.push({ path: abs(rel), from: free!, to: proposed });
     return proposed;
   };
   const flag = (required: boolean, hidden = false): string => {
@@ -261,7 +265,7 @@ export function buildGbaAddEvent(map: MapData, scriptsInc: string | null, form: 
     }
     const eol = scriptsInc?.includes("\r\n") ? "\r\n" : "\n";
     const scriptAppends = blocks.length ? [{ path: paths.mapScriptsInc(ctx.mapName), text: blocks.join("\n").replace(/\n/g, eol) }] : [];
-    return { value, scriptAppends, scriptReplaces, newNames, created: { kind: form.kind, index: addEvent(map, form.kind, value).insertOp.index } };
+    return { value, scriptAppends, scriptReplaces, newNames, slots, created: { kind: form.kind, index: addEvent(map, form.kind, value).insertOp.index } };
   } catch (error) {
     if (error instanceof AddEventRefusal) {
       // Refusals from the shared copy grammar on a synthetic body still name this map's scripts.inc.
