@@ -320,6 +320,23 @@ describe("sidecarRoutes (mounted bare, stub deps only)", () => {
     expect(calls).toEqual([]);
   });
 
+  // Each route is gated on its method; a wrong method on an owned path must
+  // fall through to the caller (404), not be read as a body route.
+  it.each([
+    ["GET", "/api/world/placement"],
+    ["GET", "/api/world/conflicts/accept"],
+    ["GET", "/api/world/dungeons"],
+    ["PUT", "/api/dungeons"],
+    ["GET", "/api/dungeons/abc"],
+    ["POST", "/api/dungeons/abc"],
+  ])("%s %s falls through to the caller (404, nothing written)", async (method, path) => {
+    const r = await fetch(`${base}${path}`, { method });
+    expect(r.status).toBe(404);
+    expect(await r.json()).toEqual({ error: "not found" });
+    expect(existsSync(sidecarPath())).toBe(false);
+    expect(existsSync(dungeonsPath())).toBe(false);
+  });
+
   it("returns false for a sibling path with the same prefix (/api/dungeonsx)", async () => {
     const r = await get("/api/dungeonsx");
     expect(r.status).toBe(404);
