@@ -305,7 +305,7 @@ describe("shared HTTP boundary (no corpus)", () => {
       expect((await probe("POST", ["{", "}"], { "content-type": "application/json" })).status).toBe(200);
     });
 
-    it("lets a bodyless write through whatever its label, and any GET or DELETE", async () => {
+    it("lets a bodyless write through whatever its label, and any GET or bodyless DELETE", async () => {
       expect((await probe("POST", [], { "content-length": "0" })).status).toBe(200);
       expect((await probe("POST", [], { "content-type": "text/plain", "content-length": "0" })).status).toBe(200);
       expect((await probe("POST", [])).status).toBe(200);
