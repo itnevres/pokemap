@@ -275,6 +275,37 @@ describe("hub (non-corpus)", () => {
     }
   });
 
+  it("J3: a text/plain or unlabelled body on POST /api/hub/open answers 415 and opens nothing; a bodyless POST is not a 415", async () => {
+    const hub = await createHub({ port: 0, home: makeHome() });
+    try {
+      const url = `http://127.0.0.1:${hub.port}/api/hub/open`;
+      const body = JSON.stringify({ path: "C:/" });
+      const plain = await fetch(url, { method: "POST", headers: { "content-type": "text/plain" }, body });
+      expect(plain.status).toBe(415);
+      expect(await plain.json()).toEqual({ error: "request body must be application/json" });
+      expect((await fetch(url, { method: "POST", body })).status).toBe(415); // Node's fetch labels a string body text/plain
+      expect(hub.current()).toBeNull();
+      expect((await fetch(url, { method: "POST" })).status).toBe(400); // no body: reaches the route, which wants JSON
+    } finally {
+      await hub.close();
+    }
+  });
+
+  it("J3: a forged Origin is refused with 403 before the content type is looked at", async () => {
+    const hub = await createHub({ port: 0, home: makeHome() });
+    try {
+      const body = JSON.stringify({ path: "C:/" });
+      const r = await rawRequest(hub.port, "/api/hub/open", {
+        method: "POST",
+        headers: { Origin: "http://evil.example", Host: `127.0.0.1:${hub.port}`, "content-type": "text/plain", "content-length": String(Buffer.byteLength(body)) },
+        body,
+      });
+      expect(r.status).toBe(403);
+    } finally {
+      await hub.close();
+    }
+  });
+
   it("SR-F9: a forged Host on GET /api/hub/browse is refused with 403", async () => {
     const hub = await createHub({ port: 0, home: makeHome() });
     try {

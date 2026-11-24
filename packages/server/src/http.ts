@@ -122,6 +122,29 @@ export function refuseOversize(req: IncomingMessage, res: ServerResponse): boole
   return true;
 }
 
+/** True when the request carries a body: a positive `content-length`, or chunked
+ *  framing (which has no length). A bodyless POST (discard, undo) has neither. */
+function declaresBody(req: IncomingMessage): boolean {
+  return Number(req.headers["content-length"]) > 0 || req.headers["transfer-encoding"] !== undefined;
+}
+
+/**
+ * Plan H task J: a POST, PUT or PATCH that carries a body must label it
+ * `application/json` (parameters such as `; charset=utf-8` are fine). A cross-site
+ * page can send `text/plain` with no preflight, so the Origin/Host check was the
+ * only defence; this closes the second one. Replies 415 and returns true. A
+ * bodyless write passes. Like `refuseOversize`, the connection is kept and Node
+ * discards the unread body.
+ */
+export function refuseNonJsonBody(req: IncomingMessage, res: ServerResponse): boolean {
+  if (req.method !== "POST" && req.method !== "PUT" && req.method !== "PATCH") return false;
+  if (!declaresBody(req)) return false;
+  const type = String(req.headers["content-type"] ?? "").split(";")[0]!.trim().toLowerCase();
+  if (type === "application/json") return false;
+  sendJson(res, 415, { error: "request body must be application/json" });
+  return true;
+}
+
 const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
 /**
