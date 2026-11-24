@@ -1063,7 +1063,7 @@ describe("GbcWorldCanvas", () => {
     });
     fireEvent(canvas, drop);
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/world/placement", { method: "POST", body: JSON.stringify({ map: "Interior", x: 8, y: 3 }) }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/world/placement", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ map: "Interior", x: 8, y: 3 }) }));
     const interior = await waitFor(() => {
       const image = FakeImage.instances.find((candidate) => candidate.src.includes("Interior"));
       expect(image).toBeTruthy();
@@ -1086,7 +1086,7 @@ describe("GbcWorldCanvas", () => {
     fireEvent.mouseDown(canvas, { clientX: 20, clientY: 70, button: 0, shiftKey: true }); // world (2,2) in MapA
     fireEvent.mouseMove(canvas, { clientX: 100, clientY: 120, shiftKey: true }); // world (10,7), keeps grab (2,2) -> (8,5)
     fireEvent.mouseUp(canvas);
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/world/placement", { method: "POST", body: JSON.stringify({ map: "MapA", x: 8, y: 5 }) }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/world/placement", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ map: "MapA", x: 8, y: 5 }) }));
     expect(fetchMock.mock.calls.filter(([url]) => url === "/api/world/placement")).toHaveLength(1);
 
     fireEvent.mouseDown(canvas, { clientX: 100, clientY: 120, button: 0, shiftKey: true });
@@ -1105,7 +1105,7 @@ describe("GbcWorldCanvas", () => {
     fireEvent.mouseDown(canvas, { clientX: 20, clientY: 70, button: 0, shiftKey: true });
     fireEvent.mouseMove(canvas, { clientX: 90, clientY: 110, shiftKey: true });
     fireEvent.mouseLeave(canvas);
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/world/placement", { method: "POST", body: JSON.stringify({ map: "MapA", x: 7, y: 4 }) }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/world/placement", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ map: "MapA", x: 7, y: 4 }) }));
     expect(fetchMock.mock.calls.filter(([url]) => url === "/api/world/placement")).toHaveLength(1);
   });
 
