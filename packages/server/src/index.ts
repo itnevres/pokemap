@@ -40,7 +40,7 @@ import { paintCells, floodFill, shiftGrid, type Stamp } from "@pokemap/core/src/
 import { applyScriptAppend, planSave, prepareSave, commitSave, type EditSession } from "@pokemap/core/src/write/save.js";
 import { planFingerprint, type AtomicEntry } from "@pokemap/core/src/write/atomic.js";
 import { formatDiffJson } from "@pokemap/core/src/write/diff.js";
-import { moveEvent, addEvent, deleteEvent, setObjectGraphics, findWarpsTargetingByIndex, eventSlot, appendIndex, dropPendingInsert, type EventKind } from "@pokemap/core/src/edit/events.js";
+import { moveEvent, addEvent, deleteEvent, setObjectGraphics, findWarpsTargetingByIndex, eventSlot, appendIndex, dropPendingInsert, dropOwnedScripts, type EventKind } from "@pokemap/core/src/edit/events.js";
 import { rankIndicatorSpecies, suggestIndicatorPlacement } from "@pokemap/core/src/signs/suggest.js";
 import { buildGbaIndicator, guardGbaIndicatorWrite, findGbaIndicator, updateGbaIndicator, gbaIndicatorGraphics } from "@pokemap/core/src/indicator/gba.js";
 
@@ -1287,7 +1287,12 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
               const { map: nextMap, removeOp } = deleteEvent(map, parsed.kind as EventKind, parsed.index as number);
               // Staged ops speak original indices; deleting a pending add just drops its insert (Plan H B3).
               const slot = eventSlot(entry.session, parsed.kind as EventKind, parsed.index as number);
-              if (slot.pending) entry.session.insertOps = dropPendingInsert(entry.session, parsed.kind as EventKind, slot.insert);
+              if (slot.pending) {
+                // A pending add takes the script edits it created with it (Plan H B4).
+                if (slot.insert.owns) Object.assign(entry.session, dropOwnedScripts({ scriptAppends: entry.session.scriptAppends ?? [],
+                  scriptReplaces: entry.session.scriptReplaces ?? [], newNames: entry.session.newNames ?? [] }, slot.insert.owns));
+                entry.session.insertOps = dropPendingInsert(entry.session, parsed.kind as EventKind, slot.insert);
+              }
               else entry.session.removeOps = [...entry.session.removeOps, { ...removeOp, index: slot.original }];
               const warpRenumberWarnings = parsed.kind === "warp" && !slot.pending
                 ? findWarpsTargetingByIndex(getAllMapsForWarpScan().filter((m) => m.mapId !== map.id), map.id, slot.original)
@@ -1427,20 +1432,29 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
                 // The last body may lack a newline; hash the bytes actually staged.
                 append = append.replace(/^@ pokemap:sign [^\r\n]+/m, formatMarker("gba", mode, signHash(findGbaSign(append, label).body)));
                 session.map = added.map;
-                session.insertOps = [...session.insertOps, { ...added.insertOp, index: appendIndex(session, "bg") }];
                 const pending = { path: project.paths.mapScriptsInc(name), text: append };
+                session.insertOps = [...session.insertOps, { ...added.insertOp, index: appendIndex(session, "bg"), owns: { appends: [pending], newNames: [], slots: [] } }];
                 session.scriptAppends = [...(session.scriptAppends ?? []), pending];
                 // Appending after an unterminated EOF supplies the previous body's newline.
                 // Re-hash only that previously clean marked body; keep hand edits protected.
                 if (!text.endsWith("\n")) {
                   let combined = applyScriptAppend(text, pending);
+                  const rehashed: [string, string][] = [];
                   for (const previous of gbaSignLabels(text)) {
                     const block = findGbaSign(text, previous);
                     if (!block.editable || !block.marker || block.marker.hash !== signHash(block.body)) continue;
                     const fresh = findGbaSign(combined, previous);
-                    if (signHash(fresh.body) !== block.marker.hash) combined = updateGbaSign(combined, fresh, block.marker.mode, block.paragraphs, { force: true });
+                    if (signHash(fresh.body) !== block.marker.hash) {
+                      combined = updateGbaSign(combined, fresh, block.marker.mode, block.paragraphs, { force: true });
+                      rehashed.push([block.marker.hash, findGbaSign(combined, previous).marker!.hash]);
+                    }
                   }
-                  if (combined !== applyScriptAppend(text, pending)) replaceGbaScripts(project, session, combined);
+                  if (combined !== applyScriptAppend(text, pending)) {
+                    replaceGbaScripts(project, session, combined);
+                    // An earlier pending sign's owned text now carries the new marker hash (Plan H B4).
+                    session.insertOps = session.insertOps.map(op => !op.owns ? op : { ...op, owns: { ...op.owns,
+                      appends: op.owns.appends.map(a => ({ ...a, text: rehashed.reduce((t, [from, to]) => t.split(from).join(to), a.text) })) } });
+                  }
                 }
                 command = "place sign";
               }
@@ -1514,8 +1528,9 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
               if (refusals.length) return send(400, { refusals });
               const added = addEvent(session.map, "object", built.objectEvent);
               session.map = added.map;
-              session.insertOps = [...session.insertOps, { ...added.insertOp, index: appendIndex(session, "object") }];
-              session.scriptAppends = [...(session.scriptAppends ?? []), { path: project.paths.mapScriptsInc(name), text: built.scriptAppendText }];
+              const pending = { path: project.paths.mapScriptsInc(name), text: built.scriptAppendText };
+              session.insertOps = [...session.insertOps, { ...added.insertOp, index: appendIndex(session, "object"), owns: { appends: [pending], newNames: [], slots: [] } }];
+              session.scriptAppends = [...(session.scriptAppends ?? []), pending];
               scriptLabel = built.scriptLabel;
             }
             const next = snapshotOf(session);

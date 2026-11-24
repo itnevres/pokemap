@@ -44,7 +44,7 @@ import type { GbcProject } from "@pokemap/core/src/gbc/project.js";
 import type { Block, GbcWarpEvent } from "@pokemap/core/src/gbc/model/types.js";
 import { loadGbcMapEvents } from "@pokemap/core/src/gbc/load/events.js";
 import {
-  addGbcEvent, deleteGbcEvent, findGbcWarpsRetargetedByDelete, moveGbcEvent,
+  addGbcEvent, deleteGbcEvent, dropOwnedGbcAdd, findGbcWarpsRetargetedByDelete, findOwnedGbcAdd, moveGbcEvent,
   type GbcEventEdit, type GbcEventKind,
 } from "@pokemap/core/src/gbc/edit/events.js";
 import { paintCells, floodFill, shiftGrid, type GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
@@ -142,13 +142,15 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
    * parse), so a core bug would also read as a 400 here. Accepted; a typed
    * refusal error in core would split them.
    */
-  function eventOp(entry: GbcSessionEntry, label: string, op: (text: string) => GbcEventEdit): void {
+  function eventOp(entry: GbcSessionEntry, label: string, op: (text: string) => GbcEventEdit,
+    dropOwned?: (prev: ReturnType<typeof gbcSnapshotOf>, edit: GbcEventEdit) => ReturnType<typeof gbcSnapshotOf>): void {
     const prev = gbcSnapshotOf(entry.session);
     let edit: GbcEventEdit;
     try { edit = op(prev.eventsText); }
     catch (e) { return bad(e instanceof Error ? e.message : String(e)); }
     if (edit.text === prev.eventsText) return;
-    entry.stack.push(entry.session, snapshotCommand(label, prev, { ...prev, eventsText: edit.text, events: edit.events }));
+    const next = { ...prev, eventsText: edit.text, events: edit.events };
+    entry.stack.push(entry.session, snapshotCommand(label, prev, dropOwned ? dropOwned(prev, edit) : next));
   }
 
   /**
@@ -439,7 +441,15 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
       const [kind, index] = [kindOf(body), int(body, "index")];
       const entry = store.open(name);
       const preDelete = entry.session.events.warps;
-      eventOp(entry, "delete event", (text) => deleteGbcEvent(text, name, kind, index));
+      // A pending add takes the script blocks, names and flag constants it created with it (Plan H B4).
+      const keys = { object: "objects", warp: "warps", coord: "coords", bg: "bgs" } as const;
+      const owner = findOwnedGbcAdd(entry.session.ownedAdds, kind, entry.session.events[keys[kind]] as { script?: string; eventFlag?: string }[], index);
+      eventOp(entry, "delete event", (text) => deleteGbcEvent(text, name, kind, index), (prev, edit) => {
+        const base = { ...prev, eventsText: edit.text, events: edit.events };
+        if (!owner) return base;
+        const dropped = dropOwnedGbcAdd(base, owner);
+        return { ...base, ...dropped, events: parseMapEvents(dropped.eventsText, name) };
+      });
       const warpRenumberWarnings = kind === "warp"
         ? findGbcWarpsRetargetedByDelete(allWarps(name, preDelete), { mapName: name, mapConst: entry.session.map.constName, index })
         : [];

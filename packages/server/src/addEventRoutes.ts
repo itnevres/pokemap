@@ -292,7 +292,9 @@ export function createGbaAddEventRoutes(project: Project, store: GbaStore, hooks
         charmap: parseGbaCharmap(read(`${root}/charmap.txt`)),
       });
       const added = addEvent(candidate.map, form.kind, built.value);
-      candidate.map = added.map; candidate.insertOps = [...candidate.insertOps, { ...added.insertOp, index: appendIndex(candidate, form.kind) }];
+      candidate.map = added.map; const owns = built.scriptAppends.length || built.newNames.length || built.slots.length
+        ? { appends: built.scriptAppends, newNames: built.newNames, slots: built.slots } : undefined;
+      candidate.insertOps = [...candidate.insertOps, { ...added.insertOp, index: appendIndex(candidate, form.kind), ...(owns ? { owns } : {}) }];
       candidate.scriptAppends = [...(candidate.scriptAppends ?? []), ...built.scriptAppends];
       candidate.scriptReplaces = built.scriptReplaces; candidate.newNames = [...(candidate.newNames ?? []), ...built.newNames];
       // Re-parse the actual save candidate, rather than trusting the builder's parsed view.
@@ -366,6 +368,9 @@ export function createGbcAddEventRoutes(proj: GbcProject, store: GbcStore, hooks
         constEdits: candidate.constEdits ?? [], check: check(name), charmap: parseGbcCharmap(read(`${root}/constants/charmap.asm`)) });
       candidate.eventsText = built.text; candidate.events = parseMapEvents(built.text, name);
       candidate.constEdits = built.constEdits; candidate.newNames = [...(candidate.newNames ?? []), ...built.newNames];
+      if (built.owned && (built.owned.blocks.length || built.owned.consts.length || built.newNames.length)) {
+        candidate.ownedAdds = [...(candidate.ownedAdds ?? []), { ...built.owned, newNames: built.newNames }];
+      }
       checkCandidateNames(candidate, check(name)); hooks.verifyCandidate?.(candidate);
       entry.stack.push(entry.session, snapshotCommand<GbcEditSession>(`add ${form.kind}`, prev, gbcSnapshotOf(candidate)));
       return { blocks: entry.session.blocks, events: entry.session.events, isDirty: entry.session.isDirty,

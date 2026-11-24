@@ -1,23 +1,25 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { readFileSync, writeFileSync } from "node:fs";
-import { renderLayout } from "@pokemap/core/src/render/layout.js";
-import { validateMetatileRange, validatePaletteRange } from "@pokemap/core/src/validate/metatileRange.js";
-import { buildWorld, resolveWorldPlacements } from "@pokemap/core/src/world/resolve.js";
-import { readSidecar } from "@pokemap/core/src/world/sidecar.js";
-import { createRaster, blitScaled } from "@pokemap/core/src/render/raster.js";
-import { parseEncounters, speciesChances, type SpeciesChance } from "@pokemap/core/src/load/encounters.js";
-import { whereSpecies, coverage } from "@pokemap/core/src/analyse/coverage.js";
-import { detectEngineFamily, type EngineFamily } from "@pokemap/core/src/family.js";
-import { encodePng } from "./png.js";
+import { detectEngineFamily } from "@pokemap/core/src/family.js";
+import type { EngineFamily } from "@pokemap/core/src/family.js";
+import type { SpeciesChance } from "@pokemap/core/src/load/encounters.js";
 import { resolveProject, resolveRoot, layoutNameFor } from "./context.js";
 import { parseBorder, parseBbox, parseScale, parseTime } from "./args.js";
-import { resolvePlacementRect } from "./renderWorld.js";
-import { runIndicatorSuggest, runIndicatorAdd, runIndicatorList, runPaint, runDiff } from "./writeCommands.js";
-import { runGbcRender, runGbcQuery, runGbcRenderWorld, runGbcEncounters, runGbcWhere, runGbcCoverage, runGbcPaint, runGbcDiff, runGbcEventMove, runGbcEventAdd, runGbcEventDelete, type GbcCommandResult } from "./gbcCommands.js";
+import type { GbcCommandResult } from "./gbcCommands.js";
 
 const program = new Command();
 program.name("pokemap").option("-p, --project <path>", "decomp root");
+
+// Heavy command modules load inside the action that needs them (Plan 4 row
+// 6b), so `pokemap render` does not pay for every other command's import graph.
+async function loadGbcCommands() {
+  return import("./gbcCommands.js");
+}
+
+async function loadWriteCommands() {
+  return import("./writeCommands.js");
+}
 
 /**
  * The one root-resolution step every command shares (Task 10): resolve the
@@ -56,15 +58,18 @@ program
   .option("-o, --out <file>", "output path", "out.png")
   .option("--border <rings>", "rings of border to draw", parseBorder, 0)
   .option("--time <time>", "time of day (gbc only): morn, day, or nite", parseTime, "day")
-  .action((target: string, opts: { out: string; border: number; time: "morn" | "day" | "nite" }) => {
+  .action(async (target: string, opts: { out: string; border: number; time: "morn" | "day" | "nite" }) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
     if (family === "gbc") {
+      const { runGbcRender } = await loadGbcCommands();
       const { stdout, stderr } = runGbcRender(root, target, { out: opts.out, border: opts.border, time: opts.time });
       if (stderr) process.stderr.write(stderr);
       process.stdout.write(stdout);
       return;
     }
-    const proj = resolveProject(root);
+    const { renderLayout } = await import("@pokemap/core/src/render/layout.js");
+    const { encodePng } = await import("./png.js");
+    const proj = await resolveProject(root);
     const r = renderLayout(proj, layoutNameFor(proj, target), { border: opts.border });
     writeFileSync(opts.out, encodePng(r));
     process.stdout.write(`${opts.out} ${r.width}x${r.height} outOfRange=${r.outOfRangeCount}\n`);
@@ -88,7 +93,7 @@ program
   .option("--scale <n>", "pixels per tile/block (gba default 4, gbc default 8)", parseScale)
   .option("--no-dungeons", "exclude auto-placed dungeon maps (gba only; ignored for gbc)")
   .option("--time <time>", "time of day (gbc only): morn, day, or nite", parseTime, "day")
-  .action((opts: { bbox: ReturnType<typeof parseBbox>; out: string; scale?: number; dungeons: boolean; time: "morn" | "day" | "nite" }) => {
+  .action(async (opts: { bbox: ReturnType<typeof parseBbox>; out: string; scale?: number; dungeons: boolean; time: "morn" | "day" | "nite" }) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
     if (family === "gbc") {
       // --no-dungeons is a GBA-only concept (dungeon auto-layout has no GBC
@@ -106,12 +111,19 @@ program
       // The simpler form is exactly the same shape GBA already uses two
       // lines down (`opts.scale ?? 4`), and needs no `Command` parameter.
       const scale = opts.scale ?? 8;
+      const { runGbcRenderWorld } = await loadGbcCommands();
       const { stdout, stderr } = runGbcRenderWorld(root, { bbox: opts.bbox, out: opts.out, scale, time: opts.time });
       if (stderr) process.stderr.write(stderr);
       process.stdout.write(stdout);
       return;
     }
-    const proj = resolveProject(root);
+    const { buildWorld, resolveWorldPlacements } = await import("@pokemap/core/src/world/resolve.js");
+    const { readSidecar } = await import("@pokemap/core/src/world/sidecar.js");
+    const { createRaster, blitScaled } = await import("@pokemap/core/src/render/raster.js");
+    const { resolvePlacementRect } = await import("./renderWorld.js");
+    const { renderLayout } = await import("@pokemap/core/src/render/layout.js");
+    const { encodePng } = await import("./png.js");
+    const proj = await resolveProject(root);
     const { x: bx, y: by, w: bw, h: bh } = opts.bbox;
     const scale = opts.scale ?? 4;
 
@@ -151,15 +163,16 @@ program
   .option("--header", "header fields only")
   .option("--connections", "connections only")
   .option("--events", "events only")
-  .action((map: string, opts: { header?: boolean; connections?: boolean; events?: boolean }) => {
+  .action(async (map: string, opts: { header?: boolean; connections?: boolean; events?: boolean }) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
     if (family === "gbc") {
+      const { runGbcQuery } = await loadGbcCommands();
       const { stdout, stderr } = runGbcQuery(root, map, opts);
       if (stderr) process.stderr.write(stderr);
       process.stdout.write(stdout);
       return;
     }
-    const proj = resolveProject(root);
+    const proj = await resolveProject(root);
     const m = proj.map(map);
     // layoutForMap, not layoutById(m.layout): it throws naming both map.json
     // and layouts.json when the layout id is dangling, instead of a
@@ -191,10 +204,11 @@ program
   .option("--metatile-range", "check every metatile id against its layout's split")
   .option("--palette-range", "check every tile entry's palette index resolves")
   .option("--json", "machine-readable output")
-  .action((opts: { metatileRange?: boolean; paletteRange?: boolean; json?: boolean }) => {
+  .action(async (opts: { metatileRange?: boolean; paletteRange?: boolean; json?: boolean }) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
     refuseIfGbc(family, "validate");
-    const proj = resolveProject(root);
+    const { validateMetatileRange, validatePaletteRange } = await import("@pokemap/core/src/validate/metatileRange.js");
+    const proj = await resolveProject(root);
 
     // Selecting no check runs every check. `opts.metatileRange === false` is
     // never true -- commander sets a bare flag to `true` or leaves it
@@ -222,15 +236,17 @@ program
   .command("encounters <map>")
   .description("wild encounters for a map, with true percentages")
   .option("--json", "machine-readable output")
-  .action((map: string, opts: { json?: boolean }) => {
+  .action(async (map: string, opts: { json?: boolean }) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
     if (family === "gbc") {
+      const { runGbcEncounters } = await loadGbcCommands();
       const { stdout, stderr } = runGbcEncounters(root, map, opts);
       if (stderr) process.stderr.write(stderr);
       process.stdout.write(stdout);
       return;
     }
-    const proj = resolveProject(root);
+    const { parseEncounters, speciesChances } = await import("@pokemap/core/src/load/encounters.js");
+    const proj = await resolveProject(root);
     const enc = parseEncounters(readFileSync(proj.paths.wildEncountersJson, "utf8"));
     const mapId = proj.map(map).id;
     const result = Object.fromEntries(
@@ -251,19 +267,21 @@ program
   .command("where <species>")
   .description("every map a species can be caught on")
   .option("--json", "machine-readable output")
-  .action((species: string, opts: { json?: boolean }) => {
+  .action(async (species: string, opts: { json?: boolean }) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
     if (family === "gbc") {
       // Raw, unmodified input -- runGbcWhere calls normalizeGbcSpecies
       // (core/gbc/analyse/atlas.ts) to do the uppercasing and "SPECIES_"
       // stripping (fix round 1, spec review M7; moved to core in Plan 6b
       // Task 2, fix round 1 finding 6a).
+      const { runGbcWhere } = await loadGbcCommands();
       const { stdout, stderr } = runGbcWhere(root, species, opts);
       if (stderr) process.stderr.write(stderr);
       process.stdout.write(stdout);
       return;
     }
-    const proj = resolveProject(root);
+    const { whereSpecies } = await import("@pokemap/core/src/analyse/coverage.js");
+    const proj = await resolveProject(root);
     const hits = whereSpecies(proj, species.startsWith("SPECIES_") ? species : `SPECIES_${species.toUpperCase()}`);
     if (opts.json) return void process.stdout.write(JSON.stringify(hits, null, 2));
     if (hits.length === 0) return void process.stdout.write(`${species} appears in no encounter table\n`);
@@ -278,15 +296,17 @@ program
   .option("--empty", "list maps with no encounter table")
   .option("--unused", "list species in no encounter table")
   .option("--json", "machine-readable output")
-  .action((opts: { empty?: boolean; unused?: boolean; json?: boolean }) => {
+  .action(async (opts: { empty?: boolean; unused?: boolean; json?: boolean }) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
     if (family === "gbc") {
+      const { runGbcCoverage } = await loadGbcCommands();
       const { stdout, stderr } = runGbcCoverage(root, opts);
       if (stderr) process.stderr.write(stderr);
       process.stdout.write(stdout);
       return;
     }
-    const proj = resolveProject(root);
+    const { coverage } = await import("@pokemap/core/src/analyse/coverage.js");
+    const proj = await resolveProject(root);
     const c = coverage(proj);
     if (opts.json) return void process.stdout.write(JSON.stringify(c, null, 2));
     process.stdout.write(`${c.mapsWithEncounters} maps with encounters, ${c.mapsWithoutEncounters.length} without\n`);
@@ -310,10 +330,11 @@ const indicator = program.command("indicator").description("Pok\u00e9mon Indicat
 indicator
   .command("suggest <map>")
   .description("rank catchable species and suggest a placement for a Pok\u00e9mon Indicator on this map")
-  .action((map: string) => {
+  .action(async (map: string) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
     refuseIfGbc(family, "indicator suggest");
-    const proj = resolveProject(root);
+    const { runIndicatorSuggest } = await loadWriteCommands();
+    const proj = await resolveProject(root);
     process.stdout.write(`${runIndicatorSuggest(proj, map)}\n`);
   });
 
@@ -326,20 +347,22 @@ indicator
   .requiredOption("--y <n>", "tile y", Number)
   .option("--elevation <n>", "tile elevation", Number, 0)
   .option("--yes", "actually write")
-  .action((map: string, opts: { species: string; text: string; x: number; y: number; elevation: number; yes?: boolean }) => {
+  .action(async (map: string, opts: { species: string; text: string; x: number; y: number; elevation: number; yes?: boolean }) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
     refuseIfGbc(family, "indicator add");
-    const proj = resolveProject(root);
+    const { runIndicatorAdd } = await loadWriteCommands();
+    const proj = await resolveProject(root);
     process.stdout.write(`${runIndicatorAdd(proj, { map, x: opts.x, y: opts.y, elevation: opts.elevation, species: opts.species, text: opts.text, yes: !!opts.yes })}\n`);
   });
 
 indicator
   .command("list <map>")
   .description("list existing Pok\u00e9mon Indicators (overworld-species object events) on a map")
-  .action((map: string) => {
+  .action(async (map: string) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
     refuseIfGbc(family, "indicator list");
-    const proj = resolveProject(root);
+    const { runIndicatorList } = await loadWriteCommands();
+    const proj = await resolveProject(root);
     process.stdout.write(`${runIndicatorList(proj, map)}\n`);
   });
 
@@ -353,13 +376,15 @@ program
   .option("--y1 <n>", "rect's second corner y (tiles; gbc: blocks)", Number)
   .requiredOption("--metatile <id>", "metatile id to stamp", Number)
   .option("--yes", "actually write")
-  .action((map: string, opts: { tool: "pencil" | "rect" | "bucket"; x: number; y: number; x1?: number; y1?: number; metatile: number; yes?: boolean }) => {
+  .action(async (map: string, opts: { tool: "pencil" | "rect" | "bucket"; x: number; y: number; x1?: number; y1?: number; metatile: number; yes?: boolean }) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
     if (family === "gbc") {
+      const { runGbcPaint } = await loadGbcCommands();
       emit(runGbcPaint(root, map, { tool: opts.tool, x: opts.x, y: opts.y, x1: opts.x1, y1: opts.y1, metatile: opts.metatile, yes: !!opts.yes }));
       return;
     }
-    const proj = resolveProject(root);
+    const { runPaint } = await loadWriteCommands();
+    const proj = await resolveProject(root);
     process.stdout.write(`${runPaint(proj, { map, tool: opts.tool, x: opts.x, y: opts.y, x1: opts.x1, y1: opts.y1, metatileId: opts.metatile, yes: !!opts.yes })}\n`);
   });
 
@@ -372,13 +397,15 @@ program
   .option("--x1 <n>", "rect's second corner x (tiles; gbc: blocks)", Number)
   .option("--y1 <n>", "rect's second corner y (tiles; gbc: blocks)", Number)
   .requiredOption("--metatile <id>", "metatile id to stamp", Number)
-  .action((map: string, opts: { tool: "pencil" | "rect" | "bucket"; x: number; y: number; x1?: number; y1?: number; metatile: number }) => {
+  .action(async (map: string, opts: { tool: "pencil" | "rect" | "bucket"; x: number; y: number; x1?: number; y1?: number; metatile: number }) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
     if (family === "gbc") {
+      const { runGbcDiff } = await loadGbcCommands();
       emit(runGbcDiff(root, map, { tool: opts.tool, x: opts.x, y: opts.y, x1: opts.x1, y1: opts.y1, metatile: opts.metatile }));
       return;
     }
-    const proj = resolveProject(root);
+    const { runDiff } = await loadWriteCommands();
+    const proj = await resolveProject(root);
     process.stdout.write(`${runDiff(proj, { map, tool: opts.tool, x: opts.x, y: opts.y, x1: opts.x1, y1: opts.y1, metatileId: opts.metatile })}\n`);
   });
 
@@ -401,8 +428,10 @@ event
   .requiredOption("--x <n>", "event x (16 px steps)", Number)
   .requiredOption("--y <n>", "event y (16 px steps)", Number)
   .option("--yes", "actually write")
-  .action((map: string, opts: { kind: string; index: number; x: number; y: number; yes?: boolean }) => {
-    emit(runGbcEventMove(gbcOnlyRoot("move"), map, { ...opts, yes: !!opts.yes }));
+  .action(async (map: string, opts: { kind: string; index: number; x: number; y: number; yes?: boolean }) => {
+    const root = gbcOnlyRoot("move");
+    const { runGbcEventMove } = await loadGbcCommands();
+    emit(runGbcEventMove(root, map, { ...opts, yes: !!opts.yes }));
   });
 
 event
@@ -412,8 +441,10 @@ event
   .requiredOption("--args <list>", "comma-separated macro arguments (4 for warp/coord/bg, 13 for object)")
   .option("--const <NAME>", "object only: name of the new object_const_def const")
   .option("--yes", "actually write")
-  .action((map: string, opts: { kind: string; args: string; const?: string; yes?: boolean }) => {
-    emit(runGbcEventAdd(gbcOnlyRoot("add"), map, { ...opts, yes: !!opts.yes }));
+  .action(async (map: string, opts: { kind: string; args: string; const?: string; yes?: boolean }) => {
+    const root = gbcOnlyRoot("add");
+    const { runGbcEventAdd } = await loadGbcCommands();
+    emit(runGbcEventAdd(root, map, { ...opts, yes: !!opts.yes }));
   });
 
 event
@@ -422,14 +453,16 @@ event
   .requiredOption("--kind <kind>", "warp, coord, bg or object")
   .requiredOption("--index <n>", "0-based index within that kind", Number)
   .option("--yes", "actually write")
-  .action((map: string, opts: { kind: string; index: number; yes?: boolean }) => {
-    emit(runGbcEventDelete(gbcOnlyRoot("delete"), map, { ...opts, yes: !!opts.yes }));
+  .action(async (map: string, opts: { kind: string; index: number; yes?: boolean }) => {
+    const root = gbcOnlyRoot("delete");
+    const { runGbcEventDelete } = await loadGbcCommands();
+    emit(runGbcEventDelete(root, map, { ...opts, yes: !!opts.yes }));
   });
 
-// parseAsync, not a sync parse()+try/catch: every action handler today is
-// synchronous so a sync catch would work today, but Plan 2's write commands
-// will be async, and a sync try/catch silently does not observe a rejected
-// promise thrown from inside an async action. Set the shape once. This also
+// parseAsync, not a sync parse()+try/catch: every action handler is async
+// (they load their modules with await import(), Plan 4 row 6b), and a sync
+// try/catch silently does not observe a rejected promise thrown from inside
+// an async action. This also
 // matches what Node already does on an uncaught throw (exit 1) and what
 // commander does for its own errors (e.g. an unknown option), so the only
 // change in behaviour is that our own thrown Errors get a one-line message

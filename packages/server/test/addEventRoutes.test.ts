@@ -577,4 +577,75 @@ PreviewMultiText:
       expect((await edit("redo", {})).status).toBe(200); expect(state()).toEqual(applied);
     });
   }
+
+  // B4: a pending add owns the script edits its creation staged; deleting it drops them together.
+  const scriptState = () => { const s = state(); return { appends: s.scriptAppends ?? [], replaces: s.scriptReplaces ?? [], names: s.newNames ?? [] }; };
+  const lastObject = () => store.open(map).session.map.objectEvents.length - 1;
+  const planPaths = async () => ((await edit("plan")).body.changes as { path: string }[]).map(c => c.path.replace(/\\/g, "/")).sort();
+  const withFlag = (label: string, flag: string) => ({ ...npc(label), flag: { mode: "new", name: flag } });
+  const changedLines = (before: string, after: string) => {
+    const a = before.split(/\r?\n/), b = after.split(/\r?\n/);
+    return b.flatMap((line, i) => line === a[i] ? [] : [line]);
+  };
+  const deleteLast = async () => {
+    const r = await edit("event/delete", { kind: "object", index: lastObject() }); expect(r.status, JSON.stringify(r.body)).toBe(200);
+  };
+  it.each([
+    ["an NPC with a new script and a new flag", () => withFlag("Route101_EventScript_B4Owned", "FLAG_POKEMAP_B4_OWNED"), () => [header(), mapFile(), source()]],
+    ["an item ball with a new flag", () => ball("FLAG_POKEMAP_B4_OWNED"), () => [header(), mapFile(), source()]],
+  ])("B4: deleting a pending %s removes its script and flag edits with it", async (_name, form, paths) => {
+    const baseline = scriptState();
+    await create(form());
+    expect(scriptState()).not.toEqual(baseline);
+    expect(await planPaths()).toEqual(paths().sort());
+    await deleteLast();
+    const plan = (await edit("plan")).body;
+    expect(plan.refusals).toEqual([]); expect(plan.changes).toEqual([]);
+    expect(scriptState()).toEqual(baseline);
+    expect(state().insertOps).toEqual([]);
+  });
+  it("B4: with two pending adds, deleting the first leaves only the second's script and flag", async () => {
+    const before = readFileSync(header(), "utf8");
+    const first = withFlag("Route101_EventScript_B4First", "FLAG_POKEMAP_B4_FIRST");
+    const second = withFlag("Route101_EventScript_B4Second", "FLAG_POKEMAP_B4_SECOND");
+    const firstIndex = store.open(map).session.map.objectEvents.length;
+    await create(first); await create(second);
+    const r = await edit("event/delete", { kind: "object", index: firstIndex }); expect(r.status, JSON.stringify(r.body)).toBe(200);
+    const s = scriptState();
+    expect(s.appends).toHaveLength(1);
+    expect(JSON.stringify(s.appends)).toContain("B4Second"); expect(JSON.stringify(s.appends)).not.toContain("B4First");
+    expect(s.names).toContain("Route101_EventScript_B4Second");
+    expect(JSON.stringify(s.names)).not.toContain("B4First"); expect(JSON.stringify(s.names)).not.toContain("B4_FIRST");
+    expect(s.replaces).toHaveLength(1);
+    expect(s.replaces[0]!.before).toBe(before);
+    expect(changedLines(before, s.replaces[0]!.after).map(l => l.match(/FLAG_\w+/)![0])).toEqual(["FLAG_POKEMAP_B4_SECOND"]);
+    const events = store.open(map).session.map.objectEvents;
+    expect(events.at(-1)).toMatchObject({ script: "Route101_EventScript_B4Second" });
+    expect(events.some(e => e.script === "Route101_EventScript_B4First")).toBe(false);
+    const plan = (await edit("plan")).body; expect(plan.refusals).toEqual([]);
+    expect(await planPaths()).toEqual([header(), mapFile(), source()].sort());
+  });
+  it("B4: undo of the delete restores the event with its script edits and redo drops them again", async () => {
+    const baseline = scriptState();
+    await create(withFlag("Route101_EventScript_B4Owned", "FLAG_POKEMAP_B4_OWNED"));
+    const added = scriptState(), addedPlan = await planPaths();
+    await deleteLast();
+    expect(scriptState()).toEqual(baseline);
+    expect((await edit("undo", {})).status).toBe(200);
+    expect(scriptState()).toEqual(added); expect(await planPaths()).toEqual(addedPlan);
+    expect(store.open(map).session.map.objectEvents.at(-1)).toMatchObject({ script: "Route101_EventScript_B4Owned" });
+    expect((await edit("redo", {})).status).toBe(200);
+    expect(scriptState()).toEqual(baseline); expect((await edit("plan")).body.changes).toEqual([]);
+    expect((await edit("undo", {})).status).toBe(200);
+    expect(scriptState()).toEqual(added);
+  });
+  it("B4: deleting an original on-disk event leaves the pending add's script state untouched", async () => {
+    expect((await edit("event/delete", { kind: "object", index: 0 })).status).toBe(200);
+    expect(scriptState()).toEqual({ appends: [], replaces: [], names: [] });
+    await create(withFlag("Route101_EventScript_B4Owned", "FLAG_POKEMAP_B4_OWNED"));
+    const added = scriptState();
+    expect((await edit("event/delete", { kind: "object", index: 1 })).status).toBe(200);
+    expect(scriptState()).toEqual(added);
+    expect(store.open(map).session.map.objectEvents.at(-1)).toMatchObject({ script: "Route101_EventScript_B4Owned" });
+  });
 });

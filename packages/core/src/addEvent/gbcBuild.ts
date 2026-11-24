@@ -1,6 +1,7 @@
 import { codeLines, escapeRegExp, scanCalls } from "../gbc/load/asm.js";
 import { gbcEventGap } from "../gbc/load/constCounter.js";
 import { objectConstDefLine, parseMapEvents } from "../gbc/load/events.js";
+import type { OwnedGbcAdd } from "../gbc/write/save.js";
 import { addGbcEvent } from "../gbc/edit/events.js";
 import type { GbcMapEvents } from "../gbc/model/types.js";
 import { insertLineAfter, replaceLines } from "../gbc/write/asmSplice.js";
@@ -27,12 +28,15 @@ export function defaultGbcLabel(mapName: string, kind: EventKind, check: NameChe
 /** Build a complete candidate; never mutates context, text, or the session. */
 export function buildGbcAddEvent(text: string, mapName: string, form: AddEventForm, ctx: GbcAddCtx): {
   text: string; events: GbcMapEvents; constEdits: FileReplace[]; newNames: string[]; created: { kind: EventKind; index: number };
+  /** What this add owns, for the delete that drops it (Plan H B4); `null` for a warp. */
+  owned: Omit<OwnedGbcAdd, "newNames"> | null;
 } {
   const path = `maps/${mapName}.asm`;
   const fail = (code: RefusalCode, message: string, file = path): never => {
     throw new AddEventRefusal(code, `${mapName}: ${file}: ${message}`, file);
   };
   const newNames: string[] = [];
+  const flagConsts: string[] = [];
   const constEdits = ctx.constEdits.map(e => ({ ...e }));
   // Macro-generated definitions missed by the symbol index cannot be checked
   // by NameCheck; the project's assembly build remains the spec's backstop.
@@ -85,6 +89,7 @@ export function buildGbcAddEvent(text: string, mapName: string, form: AddEventFo
     const proposed = form.flag.name.startsWith("EVENT_") ? form.flag.name : `EVENT_${form.flag.name}`;
     if (!/^EVENT_[A-Z_][A-Z0-9_]*$/.test(proposed)) fail("NAME_INVALID", `invalid event constant ${proposed}`, file);
     const name = claim(proposed, file);
+    flagConsts.push(name);
     const edit = constEdits.find(e => e.path === file);
     const before = edit?.before ?? ctx.eventFlagsDisk;
     const current = edit?.after ?? before;
@@ -228,7 +233,9 @@ export function buildGbcAddEvent(text: string, mapName: string, form: AddEventFo
       const out = replaceLines(result.text, anchor!.lineIndex, anchor!.lineIndex, blocks.join("\n").split("\n"));
       result = { text: out, events: parseMapEvents(out, mapName) };
     }
-    return { ...result, constEdits, newNames, created: { kind: form.kind, index } };
+    const owned = form.kind === "warp" ? null : { kind: form.kind as "object" | "coord" | "bg", script: form.kind === "object" ? args![11]! : args![3]!,
+      eventFlag: form.kind === "object" ? args![12]! : "", blocks: [...blocks], consts: flagConsts.map(name => ({ path: "constants/event_flags.asm", name })) };
+    return { ...result, constEdits, newNames, created: { kind: form.kind, index }, owned };
   } catch (error) {
     if (error instanceof AddEventRefusal) {
       if (error.path !== path && error.path !== "constants/event_flags.asm") fail(error.code, error.message);
