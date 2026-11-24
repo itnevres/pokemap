@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { openProject, type Project } from "@pokemap/core/src/project.js";
+import type { Project } from "@pokemap/core/src/project.js";
 
 /**
  * Resolves the decomp root either from `--project <path>` or from
@@ -59,7 +59,10 @@ export function resolveRoot(explicit?: string): string {
 /** `openProject(resolveRoot(explicit))` -- unchanged behaviour and messages
  *  for every existing GBA caller (Task 10 only factored `resolveRoot` out of
  *  this function; it did not change what either half does). */
-export function resolveProject(explicit?: string): Project {
+export async function resolveProject(explicit?: string): Promise<Project> {
+  // Loaded here, not at the top, so a GBC command never pays for the GBA
+  // project module's import graph (Plan 4 row 6b).
+  const { openProject } = await import("@pokemap/core/src/project.js");
   return openProject(resolveRoot(explicit));
 }
 
