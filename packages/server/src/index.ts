@@ -543,6 +543,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
         const id = Number(metatileMatch[2]);
         const layout = project.layoutByName(layoutName);
         if (!layout) return send(404, { error: `no layout ${layoutName}` });
+        refuseBrokenLayout(project, layout); // D25: a broken tileset would otherwise surface as a plain 500
         if (!Number.isInteger(id) || id < 0) return send(400, { error: `metatile id must be a non-negative integer, got ${metatileMatch[2]}` });
 
         const key = `${layoutName}:${id}`;
@@ -1162,6 +1163,8 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
         const name = decodeSegment(indicatorSuggestMatch[1]!);
         if (name === undefined) return send(400, { error: "malformed percent-escape in path" });
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
+        const suggestLayout = project.layoutById(project.map(name).layout);
+        if (suggestLayout) refuseBrokenLayout(project, suggestLayout); // D25 (outside the try: a typed 409, not a 400)
         try {
           const names = gbaSpeciesNames(project);
           const occupied = editSessions.has(name)

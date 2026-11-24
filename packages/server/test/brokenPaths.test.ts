@@ -108,6 +108,18 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("F1c server: broken layout or tileset
     expect(session.blocks).toEqual([]);
   }, 300_000);
 
+  it("routes that read the layout or its tilesets outside the edit family refuse too (metatile thumbnails, indicator suggestions)", async () => {
+    await expectRefusal(await fetch(`${base}/api/metatile/${probeLayoutName(LAYOUT_MAP)}/1.png`), "../../outside.bin");
+    await expectRefusal(await fetch(`${base}/api/metatile/${probeLayoutName(TILESET_MAP)}/1.png`), "../../outside/metatiles.bin");
+    await expectRefusal(await fetch(`${base}/api/indicator/${LAYOUT_MAP}/suggestions`), "../../outside.bin");
+    await expectRefusal(await fetch(`${base}/api/indicator/${TILESET_MAP}/suggestions`), "../../outside/metatiles.bin");
+  }, 300_000);
+
+  it("an edit route with its own 400 handler (event/create) still answers the typed 409", async () => {
+    await expectRefusal(await post(`/api/edit/${LAYOUT_MAP}/event/create`, { kind: "object", x: 1, y: 1 }), "../../outside.bin");
+    await expectRefusal(await post(`/api/edit/${TILESET_MAP}/event/create`, { kind: "object", x: 1, y: 1 }), "../../outside/metatiles.bin");
+  }, 300_000);
+
   it("the session store itself refuses (defence in depth for callers that bypass the routes)", () => {
     const store = createEditSessionStore(openProject(root));
     expect(() => store.open(LAYOUT_MAP)).toThrow(PathEscapeError);
