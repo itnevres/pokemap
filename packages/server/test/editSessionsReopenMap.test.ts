@@ -29,14 +29,16 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("createEditSessionStore re-reads the 
 });
 
 describe.skipIf(!hasProject(SUBJECT_ROOT))("createEditSessionStore opening one entry", () => {
-  const project = openProject(SUBJECT_ROOT);
+  // Opened per test, not in the describe body: a skipped suite's body still runs.
+  const open = () => openProject(SUBJECT_ROOT);
 
   it("exposes the project root", () => {
+    const project = open();
     expect(createEditSessionStore(project).root).toBe(project.paths.root);
   });
 
   it("records a baseline hash per editable sign label on open", () => {
-    const { signBaselines } = createEditSessionStore(project).open("NewBarkTown");
+    const { signBaselines } = createEditSessionStore(open()).open("NewBarkTown");
     expect([...signBaselines.keys()]).toEqual(expect.arrayContaining(["NewBarkTown_EventScript_LabSign"]));
     expect(signBaselines.get("NewBarkTown_EventScript_LabSign")).toEqual(expect.any(String));
   });

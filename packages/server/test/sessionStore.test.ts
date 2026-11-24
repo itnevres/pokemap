@@ -34,6 +34,21 @@ describe("createSessionStore (Plan H I2a)", () => {
     expect(opened).toEqual(["A", "A"]);
   });
 
+  it("close and has touch only the named map (another open session survives)", () => {
+    const { store } = make();
+    const a = store.open("A"); const b = store.open("B");
+    a.session.isDirty = true;
+    store.close("B");
+    expect(store.has("B")).toBe(false);
+    expect(store.has("A")).toBe(true);
+    expect(store.has("C")).toBe(false);
+    expect(store.open("A")).toBe(a);
+    expect(store.dirty()).toEqual(["A"]);
+    store.close("C"); // closing an unopened map is a no-op
+    expect(store.has("A")).toBe(true);
+    void b;
+  });
+
   it("an opener that throws stores nothing and a retry opens again", () => {
     const { store } = make();
     expect(() => store.open("Nope")).toThrow("unknown map Nope");
