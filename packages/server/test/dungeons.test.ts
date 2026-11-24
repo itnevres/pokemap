@@ -34,6 +34,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("dungeons api", () => {
     await withCleanDungeonsFile(async () => {
       const create = await fetch(`http://127.0.0.1:${s.port}/api/dungeons`, {
         method: "POST",
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({ name: "Test Dungeon", maps: ["NewBarkTown_Lab", "NewBarkTown"] }),
       });
       expect(create.status).toBe(200);
@@ -57,6 +58,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("dungeons api", () => {
     await withCleanDungeonsFile(async () => {
       const create = await fetch(`http://127.0.0.1:${s.port}/api/dungeons`, {
         method: "POST",
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({ name: "From Seed", seedMap: "NewBarkTown_Lab" }),
       });
       expect(create.status).toBe(200);
@@ -73,6 +75,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("dungeons api", () => {
     await withCleanDungeonsFile(async () => {
       const r = await fetch(`http://127.0.0.1:${s.port}/api/dungeons`, {
         method: "POST",
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({ name: "Bad", seedMap: "NoSuchMap" }),
       });
       expect(r.status).toBe(400);
@@ -84,12 +87,14 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("dungeons api", () => {
       const created = await (
         await fetch(`http://127.0.0.1:${s.port}/api/dungeons`, {
           method: "POST",
+          headers: { "content-type": "application/json" },
           body: JSON.stringify({ name: "Before", maps: ["NewBarkTown"] }),
         })
       ).json() as any;
 
       const patch = await fetch(`http://127.0.0.1:${s.port}/api/dungeons/${created.id}`, {
         method: "PATCH",
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({ name: "After", maps: ["NewBarkTown", "Route29"] }),
       });
       expect(patch.status).toBe(200);
@@ -104,6 +109,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("dungeons api", () => {
       const created = await (
         await fetch(`http://127.0.0.1:${s.port}/api/dungeons`, {
           method: "POST",
+          headers: { "content-type": "application/json" },
           body: JSON.stringify({ name: "Original", maps: ["NewBarkTown"] }),
         })
       ).json() as any;
@@ -114,6 +120,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("dungeons api", () => {
       // name here even though POST correctly refuses the same value.
       const patch = await fetch(`http://127.0.0.1:${s.port}/api/dungeons/${created.id}`, {
         method: "PATCH",
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({ name: "   " }),
       });
       expect(patch.status).toBe(400);
@@ -126,18 +133,18 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("dungeons api", () => {
   it("PATCHes only the keys present in the body, leaving the others untouched", async () => {
     await withCleanDungeonsFile(async () => {
       const c = await (await fetch(`http://127.0.0.1:${s.port}/api/dungeons`, {
-        method: "POST", body: JSON.stringify({ name: "Before", maps: ["NewBarkTown"] }),
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "Before", maps: ["NewBarkTown"] }),
       })).json() as any;
       // Task 12's useDungeons.rename sends { name } alone; setMaps sends
       // { maps } alone. A mutant that overwrites both fields
       // unconditionally passes every other test in this file, and would
       // silently wipe the user's own curated map list.
       const named = await (await fetch(`http://127.0.0.1:${s.port}/api/dungeons/${c.id}`, {
-        method: "PATCH", body: JSON.stringify({ name: "After" }),
+        method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "After" }),
       })).json() as any;
       expect(named).toEqual({ id: c.id, name: "After", maps: ["NewBarkTown"] });
       const mapped = await (await fetch(`http://127.0.0.1:${s.port}/api/dungeons/${c.id}`, {
-        method: "PATCH", body: JSON.stringify({ maps: ["Route29"] }),
+        method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ maps: ["Route29"] }),
       })).json() as any;
       expect(mapped).toEqual({ id: c.id, name: "After", maps: ["Route29"] });
     });
@@ -145,14 +152,14 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("dungeons api", () => {
 
   it("404s a PATCH or DELETE for an unknown dungeon id", async () => {
     await withCleanDungeonsFile(async () => {
-      expect((await fetch(`http://127.0.0.1:${s.port}/api/dungeons/no-such-id`, { method: "PATCH", body: "{}" })).status).toBe(404);
+      expect((await fetch(`http://127.0.0.1:${s.port}/api/dungeons/no-such-id`, { method: "PATCH", headers: { "content-type": "application/json" }, body: "{}" })).status).toBe(404);
       expect((await fetch(`http://127.0.0.1:${s.port}/api/dungeons/no-such-id`, { method: "DELETE" })).status).toBe(404);
     });
   }, 300_000);
 
   it("400s a create with no name", async () => {
     await withCleanDungeonsFile(async () => {
-      const r = await fetch(`http://127.0.0.1:${s.port}/api/dungeons`, { method: "POST", body: JSON.stringify({ maps: [] }) });
+      const r = await fetch(`http://127.0.0.1:${s.port}/api/dungeons`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ maps: [] }) });
       expect(r.status).toBe(400);
     });
   }, 300_000);
@@ -166,6 +173,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("dungeons api", () => {
     await withCleanDungeonsFile(async () => {
       const r = await fetch(`http://127.0.0.1:${s.port}/api/dungeons`, {
         method: "POST",
+        headers: { "content-type": "application/json" },
         body: "not json",
       });
       expect(r.status).toBe(400);
@@ -179,12 +187,14 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("dungeons api", () => {
       const created = await (
         await fetch(`http://127.0.0.1:${s.port}/api/dungeons`, {
           method: "POST",
+          headers: { "content-type": "application/json" },
           body: JSON.stringify({ name: "Malformed Patch Target", maps: [] }),
         })
       ).json() as any;
 
       const r = await fetch(`http://127.0.0.1:${s.port}/api/dungeons/${created.id}`, {
         method: "PATCH",
+        headers: { "content-type": "application/json" },
         body: "not json",
       });
       expect(r.status).toBe(400);

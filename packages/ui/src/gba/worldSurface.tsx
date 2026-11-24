@@ -9,7 +9,7 @@ import { BADGE_SIZE } from "../shared/worldBadges.js";
 import { BORDER_BAND } from "../encounters/borderSide.js";
 import { isGbaEncountersPayload } from "../encounters/guards.js";
 import { summariseGba } from "../encounters/summary.js";
-import { fetchGuarded } from "../hooks/useGuardedFetch.js";
+import { fetchGuarded, postJson } from "../hooks/useGuardedFetch.js";
 import { useCoverage } from "../hooks/useCoverage.js";
 import { isDrawnByDefault } from "../world/visibility.js";
 import { isRecord, isWireConflict } from "../world/conflictAcceptance.js";
@@ -171,12 +171,12 @@ export function createGbaWorldSurface(): WorldSurfaceAdapter<GbaWorldPlacement, 
     useWorld: useGbaWorld,
     postPlacement: async ({ map, x, y }) => {
       // fetch rejects only network failures; HTTP 400/500 must also surface as dismissible save errors.
-      const response = await fetch("/api/world/placement", { method: "POST", body: JSON.stringify({ map, x, y }) });
+      const response = await postJson("/api/world/placement", { map, x, y });
       if (!response.ok) throw new Error(`POST /api/world/placement -> ${response.status}`);
     },
     postDungeons: async (enabled) => {
       // Persist the toggle rather than changing only the next GET's query. The surface reloads after settlement.
-      const response = await fetch("/api/world/dungeons", { method: "POST", body: JSON.stringify({ enabled }) });
+      const response = await postJson("/api/world/dungeons", { enabled });
       if (!response.ok) throw new Error(`POST /api/world/dungeons -> ${response.status}`);
     },
     // Save failures live in one dismissible slot, separate from GET failures, even after a later successful POST.

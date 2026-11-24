@@ -77,7 +77,7 @@ for (const family of ["gba", "gbc"] as const) {
 
     const req = async (path: string, body?: unknown) => {
       const response = await fetch(base + path, body === undefined ? {} : {
-        method: "POST", body: JSON.stringify(body),
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
       });
       return { status: response.status, body: await response.json() as any };
     };

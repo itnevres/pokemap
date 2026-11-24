@@ -149,7 +149,7 @@ describe("useEditSessionCore", () => {
     await result.current.post("/x");
     await result.current.post("/x", {});
     expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/edit/A/x", { method: "POST" });
-    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/edit/A/x", { method: "POST", body: "{}" });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/edit/A/x", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
   });
 
   it("applies without a ticket to the current map, starting from its seed", () => {

@@ -12,7 +12,7 @@ import { resolve } from "node:path";
 
 let s: PokemapServer;
 const post = async (path: string, body: unknown) =>
-  fetch(`http://127.0.0.1:${s.port}${path}`, { method: "POST", body: JSON.stringify(body) });
+  fetch(`http://127.0.0.1:${s.port}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 
 describe.skipIf(!hasProject(SUBJECT_ROOT))("Q1: GBA session snapshots (hermetic temp copy)", () => {
   let root: string;
@@ -25,7 +25,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("Q1: GBA session snapshots (hermetic 
   };
   const get = (name: string) => fetch(`${base}/api/edit/${name}/session`);
   const post = (name: string, action: string, body: unknown = {}) =>
-    fetch(`${base}/api/edit/${name}/${action}`, { method: "POST", body: JSON.stringify(body) });
+    fetch(`${base}/api/edit/${name}/${action}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const paint = async (name: string) => {
     const begun = await post(name, "paint/begin");
     expect(begun.status).toBe(200);
@@ -103,7 +103,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("Q3: GBA paint with a missing metatil
   let split: number;
   let files: Record<"primary" | "secondary", string>; // canonical repo-relative metatiles.bin paths
   const post = (action: string, body: unknown = {}) =>
-    fetch(`${base}/api/edit/${MAP}/${action}`, { method: "POST", body: JSON.stringify(body) });
+    fetch(`${base}/api/edit/${MAP}/${action}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const session = async () => (await fetch(`${base}/api/edit/${MAP}/session`)).json() as Promise<{ blocks: unknown[] }>;
 
   beforeAll(async () => {

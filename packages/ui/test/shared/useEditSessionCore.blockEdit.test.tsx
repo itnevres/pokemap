@@ -358,28 +358,28 @@ for (const family of ["gba", "gbc"] as const) {
       stubMutationFetch(fetcher);
       const { result } = mount();
       await act(async () => { expect(await result.current.blockApply({ mode: "ok" }, "rev1")).toBe(true); });
-      expect(fetcher).toHaveBeenCalledWith("/api/edit/A/block/apply", { method: "POST", body: JSON.stringify({ mode: "ok", revision: "rev1" }) });
+      expect(fetcher).toHaveBeenCalledWith("/api/edit/A/block/apply", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: "ok", revision: "rev1" }) });
       await act(async () => {
         expect(await result.current.blockCheck({ mode: "ok" }, "rev1")).toEqual({ usage: { blocks: 1 }, confirm: false, warnings: [] });
       });
-      expect(fetcher).toHaveBeenCalledWith("/api/edit/A/block/check", { method: "POST", body: JSON.stringify({ mode: "ok", revision: "rev1" }) });
+      expect(fetcher).toHaveBeenCalledWith("/api/edit/A/block/check", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: "ok", revision: "rev1" }) });
       await act(async () => {
         expect(await result.current.blockPreview({ mode: "ok" })).toEqual({ png: "data:image/png;base64,AAAA" });
       });
-      expect(fetcher).toHaveBeenCalledWith("/api/edit/A/block/preview", { method: "POST", body: JSON.stringify({ mode: "ok" }) });
+      expect(fetcher).toHaveBeenCalledWith("/api/edit/A/block/preview", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: "ok" }) });
       expect(fetcher).toHaveBeenCalledTimes(3);
       const request = { mode: "ok", tileset: "primary", tile: { index: 4, palette: 2 } };
       await act(async () => { expect(await result.current.blockApply(request, "rev2")).toBe(true); });
       expect(fetcher).toHaveBeenCalledWith("/api/edit/A/block/apply", {
-        method: "POST", body: JSON.stringify({ mode: "ok", tileset: "primary", tile: { index: 4, palette: 2 }, revision: "rev2" }),
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: "ok", tileset: "primary", tile: { index: 4, palette: 2 }, revision: "rev2" }),
       });
       await act(async () => { await result.current.blockCheck(request, "rev2"); });
       expect(fetcher).toHaveBeenCalledWith("/api/edit/A/block/check", {
-        method: "POST", body: JSON.stringify({ mode: "ok", tileset: "primary", tile: { index: 4, palette: 2 }, revision: "rev2" }),
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: "ok", tileset: "primary", tile: { index: 4, palette: 2 }, revision: "rev2" }),
       });
       await act(async () => { await result.current.blockPreview(request); });
       expect(fetcher).toHaveBeenCalledWith("/api/edit/A/block/preview", {
-        method: "POST", body: JSON.stringify({ mode: "ok", tileset: "primary", tile: { index: 4, palette: 2 } }),
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: "ok", tileset: "primary", tile: { index: 4, palette: 2 } }),
       });
       expect(fetcher).toHaveBeenCalledTimes(6);
     });

@@ -66,7 +66,7 @@ import { parseBorder, parseTime, type TimeOfDay } from "@pokemap/cli/src/args.js
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { loadGbcFrontSprite, loadGbcPicFolders } from "@pokemap/core/src/gbc/load/sprites.js";
 import type { ProjectHandler } from "./index.js";
-import { decodeSegment, refuseOversize, sendJson } from "./http.js";
+import { decodeSegment, refuseNonJsonBody, refuseOversize, sendJson } from "./http.js";
 import { warmEach, type WarmResult } from "./warmUp.js";
 import { createGbcEditRoutes } from "./gbcEditRoutes.js";
 import { sidecarRoutes } from "./sidecarRoutes.js";
@@ -400,6 +400,7 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
       return;
     }
     if (refuseOversize(req, res)) return;
+    if (refuseNonJsonBody(req, res)) return;
     const url = new URL(req.url ?? "/", "http://localhost");
     const send = (code: number, body: unknown) => sendJson(res, code, body);
 

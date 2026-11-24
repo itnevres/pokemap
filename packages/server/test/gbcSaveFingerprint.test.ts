@@ -35,11 +35,11 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC preview-bound saves (temp
   });
 
   const request = async (route: string, body?: unknown) => {
-    const response = await fetch(`${base}/api/edit/${map}/${route}`, body === undefined ? {} : { method: "POST", body: JSON.stringify(body) });
+    const response = await fetch(`${base}/api/edit/${map}/${route}`, body === undefined ? {} : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     return { status: response.status, body: await response.json() as any };
   };
   const rawCommit = async (body?: string) => {
-    const response = await fetch(`${base}/api/edit/${map}/commit`, { method: "POST", body });
+    const response = await fetch(`${base}/api/edit/${map}/commit`, { method: "POST", headers: { "content-type": "application/json" }, body });
     return { status: response.status, body: await response.json() as any };
   };
   const preview = async () => {

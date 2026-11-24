@@ -114,12 +114,12 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA warmUp", () => {
     await new Promise<void>((resolve) => srv.listen(0, "127.0.0.1", resolve));
     const base = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
     try {
-      await fetch(`${base}/api/edit/Route102/paint/begin`, { method: "POST", body: "{}" });
+      await fetch(`${base}/api/edit/Route102/paint/begin`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
       // One in-memory pencil stroke makes the session dirty; the discard below drops it, so disk is never written.
-      await fetch(`${base}/api/edit/Route102/paint/apply`, { method: "POST", body: JSON.stringify({
+      await fetch(`${base}/api/edit/Route102/paint/apply`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({
         tool: "pencil", targets: [{ x: 0, y: 0 }], stamp: { width: 1, height: 1, cells: [{ metatileId: 42 }] }, origin: { x: 0, y: 0 },
       }) });
-      await fetch(`${base}/api/edit/Route102/paint/end`, { method: "POST", body: "{}" });
+      await fetch(`${base}/api/edit/Route102/paint/end`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
       expect(handler.dirtyMaps()).toContain("Route102");
 
       // warmUp should skip this map
@@ -130,7 +130,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA warmUp", () => {
       expect(gbaMocks.renderLayoutCalls).toBe(0);
 
       // Discard the session
-      await fetch(`${base}/api/edit/Route102/discard`, { method: "POST", body: "{}" });
+      await fetch(`${base}/api/edit/Route102/discard`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
       expect(handler.dirtyMaps()).not.toContain("Route102");
 
       // Now GET should render
@@ -333,12 +333,12 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC warmUp", () => {
     await new Promise<void>((resolve) => srv.listen(0, "127.0.0.1", resolve));
     const base = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
     try {
-      await fetch(`${base}/api/edit/Route30/paint/begin`, { method: "POST", body: "{}" });
+      await fetch(`${base}/api/edit/Route30/paint/begin`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
       // One in-memory pencil stroke makes the session dirty; the discard below drops it, so disk is never written.
-      await fetch(`${base}/api/edit/Route30/paint/apply`, { method: "POST", body: JSON.stringify({
+      await fetch(`${base}/api/edit/Route30/paint/apply`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({
         tool: "pencil", targets: [{ x: 0, y: 0 }], stamp: { width: 1, height: 1, cells: [{ metatileId: 42 }] }, origin: { x: 0, y: 0 },
       }) });
-      await fetch(`${base}/api/edit/Route30/paint/end`, { method: "POST", body: "{}" });
+      await fetch(`${base}/api/edit/Route30/paint/end`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
       expect(handler.dirtyMaps()).toContain("Route30");
 
       const result = await handler.warmUp(["Route30"]);
@@ -347,7 +347,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC warmUp", () => {
       expect(result.failed).toBe(0);
       expect(gbcMocks.renderGbcMapCalls).toBe(0);
 
-      await fetch(`${base}/api/edit/Route30/discard`, { method: "POST", body: "{}" });
+      await fetch(`${base}/api/edit/Route30/discard`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
       expect(handler.dirtyMaps()).not.toContain("Route30");
 
       const r = await fetch(`${base}/api/render/Route30.png?time=day`);

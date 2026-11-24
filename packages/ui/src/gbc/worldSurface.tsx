@@ -10,7 +10,7 @@ import { JUMP_FILL_FRACTION, jumpFit as worldJumpFit, singletonSizes,
   zoomWorldAboutPivot as worldZoomAboutPivot } from "../canvas/worldView.js";
 import { BORDER_BAND } from "../encounters/borderSide.js";
 import { summariseGbc } from "../encounters/summary.js";
-import { fetchGuarded } from "../hooks/useGuardedFetch.js";
+import { fetchGuarded, postJson } from "../hooks/useGuardedFetch.js";
 import { useGbcWorld } from "./hooks/useGbcWorld.js";
 import { useGbcCoverage } from "./hooks/useGbcCoverage.js";
 import { isGbcEncountersPayload, isGbcWarpsPayload, isRecord } from "./guards.js";
@@ -275,14 +275,10 @@ export function createGbcWorldSurface(time: GbcTimeOfDay): WorldSurfaceAdapter<G
     nativePx: BLOCK_PX,
     useWorld: useGbcSurfaceWorld,
     postPlacement: async ({ map, x, y }) => {
-      await fetchGuarded("/api/world/placement", isPlacementSaved, undefined, {
-        method: "POST", body: JSON.stringify({ map, x, y }),
-      });
+      await postJson("/api/world/placement", { map, x, y }, isPlacementSaved);
     },
     postDungeons: async (enabled) => {
-      await fetchGuarded("/api/world/dungeons", isLayoutSaved, undefined, {
-        method: "POST", body: JSON.stringify({ enabled }),
-      });
+      await postJson("/api/world/dungeons", { enabled }, isLayoutSaved);
     },
     // A success clears only its own map's failure, never one the user has not read yet (final review M5).
     saveErrorPolicy: "per-map",
