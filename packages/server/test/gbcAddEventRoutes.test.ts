@@ -40,7 +40,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC add-event routes over a t
   const mapFile = () => `${root}/maps/Route29.asm`;
   const state = () => structuredClone(sessions.gbcSnapshotOf(store.open(map).session));
   const req = async (path: string, body?: unknown) => {
-    const r = await fetch(base + path, body === undefined ? {} : { method: "POST", body: JSON.stringify(body) });
+    const r = await fetch(base + path, body === undefined ? {} : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     return { status: r.status, body: await r.json() as any };
   };
   const edit = (route: string, body?: unknown, name = map) => req(`/api/edit/${name}/${route}`, body);

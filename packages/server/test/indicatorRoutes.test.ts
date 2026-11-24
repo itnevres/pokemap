@@ -26,7 +26,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA Indicator and background sign ro
   const json = () => `${root}/data/maps/${map}/map.json`;
   const disk = () => readFileSync(scripts(), "utf8");
   const request = async (route: string, body?: unknown) => {
-    const r = await fetch(`http://127.0.0.1:${server.port}/api/edit/${map}/${route}`, body === undefined ? {} : { method: "POST", body: JSON.stringify(body) });
+    const r = await fetch(`http://127.0.0.1:${server.port}/api/edit/${map}/${route}`, body === undefined ? {} : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     return { status: r.status, body: await r.json() as any };
   };
   const commit = async () => {

@@ -43,7 +43,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA add-event routes over a temporar
   const mapFile = () => `${root}/data/maps/Route101/map.json`;
   const state = () => structuredClone(sessions.snapshotOf(store.open(map).session));
   const req = async (path: string, body?: unknown) => {
-    const r = await fetch(base + path, body === undefined ? {} : { method: "POST", body: JSON.stringify(body) });
+    const r = await fetch(base + path, body === undefined ? {} : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     return { status: r.status, body: await r.json() as any };
   };
   const edit = (route: string, body?: unknown, name = map) => req(`/api/edit/${name}/${route}`, body);

@@ -56,9 +56,9 @@ const stop = (): Promise<void> => new Promise((resolvePromise) => server.close((
 
 const get = (path: string) => fetch(`${base}${path}`);
 const sendJsonBody = (method: string, path: string, body: unknown) =>
-  fetch(`${base}${path}`, { method, body: JSON.stringify(body) });
+  fetch(`${base}${path}`, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 const post = (path: string, body: unknown) => sendJsonBody("POST", path, body);
-const postRaw = (path: string, body: string) => fetch(`${base}${path}`, { method: "POST", body });
+const postRaw = (path: string, body: string) => fetch(`${base}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body });
 
 beforeEach(async () => {
   root = mkdtempSync(join(tmpdir(), "pokemap-sidecar-routes-"));
@@ -171,7 +171,7 @@ describe("sidecarRoutes (mounted bare, stub deps only)", () => {
 
   it("PATCH validates name and maps with exact texts, and a partial PATCH leaves the other key alone", async () => {
     const created = await (await post("/api/dungeons", { name: "D", maps: ["Route17"] })).json() as { id: string };
-    const patchRaw = (body: string) => fetch(`${base}/api/dungeons/${created.id}`, { method: "PATCH", body });
+    const patchRaw = (body: string) => fetch(`${base}/api/dungeons/${created.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body });
     const before = readFileSync(dungeonsPath());
 
     const blank = await patchRaw('{"name":" "}');
@@ -188,7 +188,7 @@ describe("sidecarRoutes (mounted bare, stub deps only)", () => {
 
   it("400s a malformed percent-escape dungeon id on both PATCH and DELETE", async () => {
     for (const method of ["PATCH", "DELETE"]) {
-      const r = await fetch(`${base}/api/dungeons/%E0%A4%A`, { method, body: method === "PATCH" ? "{}" : undefined });
+      const r = await fetch(`${base}/api/dungeons/%E0%A4%A`, { method, headers: { "content-type": "application/json" }, body: method === "PATCH" ? "{}" : undefined });
       expect(r.status, method).toBe(400);
       expect(await r.json()).toEqual({ error: "malformed dungeon id %E0%A4%A" });
     }
@@ -363,7 +363,7 @@ describe("sidecarRoutes (mounted bare, stub deps only)", () => {
     // a plain id ("x") is not mistaken for a malformed escape.
     const before = existsSync(dungeonsPath()) ? readFileSync(dungeonsPath()) : null;
     for (const body of ["null", "[]"]) {
-      const r = await fetch(`${base}/api/dungeons/x`, { method: "PATCH", body });
+      const r = await fetch(`${base}/api/dungeons/x`, { method: "PATCH", headers: { "content-type": "application/json" }, body });
       expect(r.status, body).toBe(400);
       const reply = await r.json() as { error: string };
       expect(reply.error).toBe(`expected a dungeon object, got ${body}`);

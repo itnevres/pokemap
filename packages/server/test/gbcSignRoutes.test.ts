@@ -27,7 +27,7 @@ describe("GBC sign routes", () => {
   const disk = () => readFileSync(path(), "utf8");
   const get = async (route: string) => (await fetch(`${base}/api/edit/Route29/${route}`)).json() as Promise<WireBody>;
   const post = async (route: string, body = {}) => {
-    const response = await fetch(`${base}/api/edit/Route29/${route}`, { method: "POST", body: JSON.stringify(body) });
+    const response = await fetch(`${base}/api/edit/Route29/${route}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     return { status: response.status, body: await response.json() as WireBody };
   };
   const commitPreview = async () => post("commit", { fingerprint: (await get("plan")).fingerprint ?? "refused-plan" });

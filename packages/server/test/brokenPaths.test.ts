@@ -100,7 +100,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("F1c server: broken layout or tileset
     if (root) removeGbaTemp(root);
   });
 
-  const post = (path: string, body: unknown = {}) => fetch(`${base}${path}`, { method: "POST", body: JSON.stringify(body) });
+  const post = (path: string, body: unknown = {}) => fetch(`${base}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const expectRefusal = async (res: Response, pathPart: string) => {
     expect(res.status).toBe(409);
     const body = await res.json() as Refusal;

@@ -6,7 +6,7 @@ import { openProject } from "@pokemap/core/src/project.js";
 
 let s: PokemapServer;
 const post = async (path: string, body: unknown = {}) =>
-  fetch(`http://127.0.0.1:${s.port}${path}`, { method: "POST", body: JSON.stringify(body) });
+  fetch(`http://127.0.0.1:${s.port}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 
 describe.skipIf(!hasProject(SUBJECT_ROOT))("event routes", () => {
   beforeAll(async () => { s = await createServer({ projectPath: SUBJECT_ROOT, port: 0 }); });

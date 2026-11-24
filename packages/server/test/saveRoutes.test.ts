@@ -6,7 +6,7 @@ import { openProject } from "@pokemap/core/src/project.js";
 
 let s: PokemapServer;
 const post = async (path: string, body: unknown = {}) =>
-  fetch(`http://127.0.0.1:${s.port}${path}`, { method: "POST", body: JSON.stringify(body) });
+  fetch(`http://127.0.0.1:${s.port}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 const commit = async (path: string) => {
   const plan = await (await get(path.replace(/commit$/, "plan"))).json() as { fingerprint: string | null };
   return post(path, { fingerprint: plan.fingerprint ?? "refused-plan" });

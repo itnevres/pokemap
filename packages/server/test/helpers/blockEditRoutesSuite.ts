@@ -47,7 +47,7 @@ export function suite(family: "gba" | "gbc") {
     const encoded = (name: string) => encodeURIComponent(name);
     const request = async (path: string, body?: unknown) => {
       const response = await fetch(base + path, body === undefined ? {} : {
-        method: "POST", body: JSON.stringify(body),
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
       });
       return { status: response.status, body: await response.json() as any };
     };

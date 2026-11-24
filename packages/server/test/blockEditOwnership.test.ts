@@ -202,7 +202,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA block-edit ownership (Plan 14.2 
     };
   };
   const req = async (path: string, body?: unknown) => {
-    const r = await fetch(base + path, body === undefined ? {} : { method: "POST", body: JSON.stringify(body) });
+    const r = await fetch(base + path, body === undefined ? {} : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     return { status: r.status, body: await r.json() as any };
   };
   const edit = (route: string, body?: unknown, name = mapA) => req(`/api/edit/${name}/${route}`, body);
@@ -757,7 +757,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC block-edit ownership (Pla
     };
   };
   const req = async (path: string, body?: unknown) => {
-    const r = await fetch(base + path, body === undefined ? {} : { method: "POST", body: JSON.stringify(body) });
+    const r = await fetch(base + path, body === undefined ? {} : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     return { status: r.status, body: await r.json() as any };
   };
   const edit = (route: string, body?: unknown, name = mapA) => req(`/api/edit/${name}/${route}`, body);

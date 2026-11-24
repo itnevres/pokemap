@@ -38,7 +38,7 @@ afterAll(() => {
 
 const getJson = async (port: number, path: string) => (await fetch(`http://127.0.0.1:${port}${path}`)).json();
 const postJson = async (port: number, path: string, body: unknown) =>
-  fetch(`http://127.0.0.1:${port}${path}`, { method: "POST", body: JSON.stringify(body) });
+  fetch(`http://127.0.0.1:${port}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 
 // `fetch` refuses to let a caller set its own `Host` header (a forbidden
 // header per the Fetch spec) -- SR-F9's tests need exactly that, so they go
@@ -213,7 +213,7 @@ describe("hub (non-corpus)", () => {
     touch(tmp, "yellow/constants/map_constants.asm");
 
     const hub = await createHub({ port: 0, home: makeHome() });
-    const postRaw = (body: string) => fetch(`http://127.0.0.1:${hub.port}/api/hub/open`, { method: "POST", body });
+    const postRaw = (body: string) => fetch(`http://127.0.0.1:${hub.port}/api/hub/open`, { method: "POST", headers: { "content-type": "application/json" }, body });
     try {
       expect((await postRaw("{not json")).status).toBe(400);
       // SR-F2: valid JSON that isn't an object at all (null, or a bare

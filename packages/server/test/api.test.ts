@@ -18,7 +18,7 @@ import { stageTilesetPlan } from "../src/blockEditOwnership.js";
 let s: PokemapServer;
 const get = async (path: string) => fetch(`http://127.0.0.1:${s.port}${path}`);
 const post = async (path: string, body: unknown) =>
-  fetch(`http://127.0.0.1:${s.port}${path}`, { method: "POST", body: JSON.stringify(body) });
+  fetch(`http://127.0.0.1:${s.port}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 
 // The hooks live INSIDE the describe, not beside it. `createServer` opens the
 // real project, so an `it`-level guard is too late -- but so is a
