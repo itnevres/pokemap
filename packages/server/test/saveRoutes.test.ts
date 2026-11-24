@@ -109,6 +109,30 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("save/commit routes", () => {
     }
   }, 300_000);
 
+  // Plan H I2b mutation check: dropping the `editSessions.close(name)` after a successful commit survived every
+  // other test (a kept session diffs to zero changes against the file it just wrote). A kept session would answer
+  // undo with its live state; a closed one answers the "nothing open" shape.
+  it("after a successful commit, POST /undo answers the 'nothing open' shape (the session really was closed)", async () => {
+    const proj = openProject(SUBJECT_ROOT);
+    const layout = proj.layoutForMap("BlackthornCity");
+    const binPath = `${SUBJECT_ROOT}/${layout.blockdataFilepath}`;
+    const before = readFileSync(binPath);
+    try {
+      await post("/api/edit/BlackthornCity/paint/begin");
+      await post("/api/edit/BlackthornCity/paint/apply", {
+        tool: "pencil", targets: [{ x: 0, y: 0 }], stamp: { width: 1, height: 1, cells: [{ metatileId: 2 }] }, origin: { x: 0, y: 0 },
+      });
+      await post("/api/edit/BlackthornCity/paint/end");
+      expect((await commit("/api/edit/BlackthornCity/commit")).status).toBe(200);
+
+      const undoRes = await post("/api/edit/BlackthornCity/undo");
+      expect(undoRes.status).toBe(200);
+      expect(await undoRes.json()).toEqual({ blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false, tilesetVersion: expect.any(Number), tilesetInstance: expect.any(String) });
+    } finally {
+      writeFileSync(binPath, before);
+    }
+  }, 300_000);
+
   // Plan 2 follow-up 5: POST /api/edit/:map/discard -- editSessions.ts's own
   // close(), exposed as an explicit route for the first time outside a
   // successful commit. AzaleaTown/AzaleaTown_Mart are used nowhere else in
