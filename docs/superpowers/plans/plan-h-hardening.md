@@ -394,7 +394,7 @@ if (url.pathname === "/api/world/conflicts/accept" && req.method === "POST")
   return jsonBody(req, send, isAcceptConflictBody, "{ key: string, accepted: boolean }", (body) => { /* ... */ });
 ```
 
-**Requirement (review finding on E2).** The GBC `POST /api/world/placement` route needs the same known-map check the GBA route got in E2 (reject a placement for a map name the project does not have, same status and message). Add it when the route moves, with a test in `gbcRoutes.test.ts`; this is the one allowed behaviour change in H-b.
+**Requirement (review finding on E2).** The GBC `POST /api/world/placement` route needs the same known-map check the GBA route got in E2 (reject a placement for a map name the project does not have, same status and message). Add it when the route moves, with a test in `gbcRoutes.test.ts`; this is the one allowed behaviour change in H-b, plus the guard unifications the implementation brief allowed (ruled by the conductor 2026-11-24 under CLAUDE.md, recorded in `decisions-h-server.md`): both families use the stricter GBC body guards (a `null` body on `POST /api/world/dungeons`, `POST /api/dungeons` and `PATCH /api/dungeons/<id>` is a 400 on GBA instead of a 500; on GBA an array or primitive body to `POST /api/dungeons` now reads `expected a dungeon object, got <body>`, and to `PATCH` is a 400 instead of a no-op 200), and the malformed dungeon-id text is `malformed dungeon id <raw>` for both.
 
 **Acceptance.** Both families' sidecar tests pass with no test edited. A new test mounts `sidecarRoutes` on a bare temp root, which pins that it has no family dependency. The report gives the line count removed from each handler.
 

@@ -26,6 +26,13 @@ import type { AddEventHooks } from "./addEventRoutes.js";
  * dispatch list of `if (match) return send(200, buildX(...))` lines, the same shape
  * Task 2's five new routes should follow rather than growing this function
  * into one 400-line handler the way `index.ts` did.
+ *
+ * Plan H task H-b: the seven sidecar routes (`/api/world/conflicts/accept`,
+ * `/api/world/placement`, `/api/world/dungeons`, `GET|POST /api/dungeons`,
+ * `PATCH|DELETE /api/dungeons/<id>`) moved to `sidecarRoutes.ts`, shared with
+ * GBA and mounted once below with GBC's own deps (`knownMap` = `mapNames.has`,
+ * `expandSeed` = `gbcWarpConnectedMapsFrom(seed, getWarps())`, and the
+ * `{ dungeonAutoLayout: <new value> }` reply).
  */
 import { checkGbcMapDefects } from "@pokemap/core/src/defects/gbc.js";
 import type { SymbolIndex } from "@pokemap/core/src/defects/symbols.js";
@@ -36,8 +43,6 @@ import { renderGbcMap, renderGbcMapMetatile } from "@pokemap/core/src/gbc/render
 import { buildGbcWorld, type GbcWorld } from "@pokemap/core/src/gbc/world/connections.js";
 import { placeNearWarps, type WarpLink } from "@pokemap/core/src/world/nearWarp.js";
 import { gbcWarpLinks, gbcWarpConnectedMapsFrom } from "@pokemap/core/src/world/nearWarpAdapters.js";
-import { readDungeons, writeDungeons } from "@pokemap/core/src/world/dungeons.js";
-import { randomUUID } from "node:crypto";
 import {
   gbcEncounterSources,
   gbcWhereSpecies,
@@ -54,16 +59,17 @@ import type {
   GbcWorldPayload,
   GbcEncountersPayload,
 } from "@pokemap/core/src/gbc/wire.js";
-import { applySidecar, readSidecar, writeSidecar, type Sidecar } from "@pokemap/core/src/world/sidecar.js";
-import { conflictKey, isAcceptConflictBody, updatedAcceptedConflicts, wireConflicts } from "@pokemap/core/src/world/conflictAcceptance.js";
+import { applySidecar, readSidecar, type Sidecar } from "@pokemap/core/src/world/sidecar.js";
+import { wireConflicts } from "@pokemap/core/src/world/conflictAcceptance.js";
 import { encodePng } from "@pokemap/cli/src/png.js";
 import { parseBorder, parseTime, type TimeOfDay } from "@pokemap/cli/src/args.js";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { loadGbcFrontSprite, loadGbcPicFolders } from "@pokemap/core/src/gbc/load/sprites.js";
 import type { ProjectHandler } from "./index.js";
-import { BodyTooLarge, decodeSegment, readBody, refuseOversize, sendJson } from "./http.js";
+import { decodeSegment, refuseOversize, sendJson } from "./http.js";
 import { warmEach, type WarmResult } from "./warmUp.js";
 import { createGbcEditRoutes } from "./gbcEditRoutes.js";
+import { sidecarRoutes } from "./sidecarRoutes.js";
 
 /**
  * GBA-only routes this server refuses with a 501, the HTTP counterpart of
@@ -355,6 +361,21 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
     },
   });
 
+  // Plan H H-b: the seven sidecar routes both families share. GBC's own
+  // deps: the `mapNames` Set above for `knownMap`, `gbcWarpConnectedMapsFrom`
+  // over the cached normalized warp list for the dungeon seed BFS (so a seed
+  // expansion does not reload map events), and the
+  // `{ dungeonAutoLayout: <new value> }` reply `gbcRoutes.test.ts` and the
+  // GBC UI pin. `getWorld` is passed, never called: the world must not be
+  // built at mount time.
+  const sidecarRoute = sidecarRoutes({
+    root: proj.root,
+    getWorld,
+    knownMap: (name) => mapNames.has(name),
+    expandSeed: (seedMap) => gbcWarpConnectedMapsFrom(seedMap, getWarps()),
+    autoLayoutReply: (v) => ({ dungeonAutoLayout: v }),
+  });
+
   // loadGbcSpeciesConstants reads one small .asm file and returns it already
   // sorted -- cheap even uncached, but the answer can't change for the life
   // of this read-only-decomp process (I8), same reasoning as every other
@@ -504,79 +525,13 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
         return send(200, buildGbcWorldPayload(proj, getWorld(), readSidecar(proj.root), getWarps(), { scope }));
       }
 
-      if (url.pathname === "/api/world/conflicts/accept" && req.method === "POST") {
-        return readBody(req).then((body) => {
-          let parsed: unknown;
-          try { parsed = JSON.parse(body); }
-          catch (e) { return send(400, { error: `invalid JSON body: ${(e as Error).message}` }); }
-          if (!isAcceptConflictBody(parsed)) return send(400, { error: `expected { key: string, accepted: boolean }, got ${body}` });
-          if (!getWorld().conflicts.some((conflict) => conflictKey(conflict) === parsed.key)) {
-            return send(404, { error: `unknown conflict key ${parsed.key}` });
-          }
-          const sidecar = readSidecar(proj.root);
-          sidecar.acceptedConflicts = updatedAcceptedConflicts(sidecar.acceptedConflicts ?? [], parsed.key, parsed.accepted);
-          writeSidecar(proj.root, sidecar);
-          return send(200, { acceptedConflicts: sidecar.acceptedConflicts });
-        }).catch((e: unknown) => {
-          if (e instanceof BodyTooLarge) return send(413, { error: "request body too large" });
-          console.error(e);
-          send(500, { error: e instanceof Error ? e.message : String(e) });
-        });
-      }
-
-      // The world payload is rebuilt from the sidecar on every request, so no cache needs clearing.
-      if (url.pathname === "/api/world/dungeons" && req.method === "POST") {
-        return readBody(req)
-          .then((body) => {
-            let parsed: { enabled?: unknown };
-            try {
-              parsed = JSON.parse(body) as typeof parsed;
-            } catch (e) {
-              return send(400, { error: `invalid JSON body: ${(e as Error).message}` });
-            }
-            if (parsed === null || typeof parsed !== "object" || typeof parsed.enabled !== "boolean") {
-              return send(400, { error: `expected { enabled: boolean }, got ${body}` });
-            }
-            const sidecar = readSidecar(proj.root);
-            sidecar.dungeonAutoLayout = parsed.enabled;
-            writeSidecar(proj.root, sidecar);
-            return send(200, { dungeonAutoLayout: sidecar.dungeonAutoLayout });
-          })
-          .catch((e: unknown) => {
-            if (e instanceof BodyTooLarge) return send(413, { error: "request body too large" });
-            console.error(e);
-            send(500, { error: e instanceof Error ? e.message : String(e) });
-          });
-      }
-
-      if (url.pathname === "/api/world/placement" && req.method === "POST") {
-        return readBody(req)
-          .then((body) => {
-            let parsed: unknown;
-            try {
-              parsed = JSON.parse(body);
-            } catch (e) {
-              return send(400, { error: `invalid JSON body: ${(e as Error).message}` });
-            }
-            const placement = parsed as { map?: unknown; x?: unknown; y?: unknown };
-            if (
-              parsed === null || typeof parsed !== "object" || Array.isArray(parsed)
-              || typeof placement.map !== "string" || typeof placement.x !== "number" || typeof placement.y !== "number"
-              || !Number.isFinite(placement.x) || !Number.isFinite(placement.y)
-            ) {
-              return send(400, { error: `expected { map: string, x: number, y: number }, got ${body}` });
-            }
-            const sidecar = readSidecar(proj.root);
-            sidecar.manualPlacements[placement.map] = { x: placement.x, y: placement.y };
-            writeSidecar(proj.root, sidecar);
-            return send(200, { ok: true });
-          })
-          .catch((e: unknown) => {
-            if (e instanceof BodyTooLarge) return send(413, { error: "request body too large" });
-            console.error(e);
-            send(500, { error: e instanceof Error ? e.message : String(e) });
-          });
-      }
+      // Plan H H-b: the seven sidecar routes both families share live in
+      // sidecarRoutes.ts, mounted here where the first of them
+      // (`/api/world/conflicts/accept`) used to sit -- i.e. AFTER the
+      // `/api/world` payload above, which must keep priority on its own
+      // exact path. The four dungeon routes now sit before
+      // `/api/warps/(.+)`; no path overlaps, so the order change is neutral.
+      if (sidecarRoute(req, url, send)) return;
 
       // `(.+)`, not `[^/]+` -- same reasoning as `/api/map/:name` above: a
       // map name never contains a slash in this corpus, but matching the
@@ -591,86 +546,6 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
         if (name === undefined) return send(400, { error: `malformed map name ${rawName}` });
         if (!mapNames.has(name)) return send(404, { error: `no map ${name}` });
         return send(200, buildGbcWarpsPayload(proj, name));
-      }
-
-      if (url.pathname === "/api/dungeons" && req.method === "GET") {
-        return send(200, readDungeons(proj.root).dungeons);
-      }
-      if (url.pathname === "/api/dungeons" && req.method === "POST") {
-        return readBody(req).then((body) => {
-          let parsed: unknown;
-          try { parsed = JSON.parse(body); }
-          catch (e) { return send(400, { error: `invalid JSON body: ${(e as Error).message}` }); }
-          if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-            return send(400, { error: `expected a dungeon object, got ${body}` });
-          }
-          const input = parsed as { name?: unknown; seedMap?: unknown; maps?: unknown };
-          if (typeof input.name !== "string" || input.name.trim() === "") {
-            return send(400, { error: `expected a non-empty "name" string, got ${body}` });
-          }
-          if (input.seedMap !== undefined && typeof input.seedMap !== "string") {
-            return send(400, { error: `"seedMap" must be a string when present, got ${body}` });
-          }
-          if (input.maps !== undefined && (!Array.isArray(input.maps) || input.maps.some((m) => typeof m !== "string"))) {
-            return send(400, { error: `"maps" must be a string array when present, got ${body}` });
-          }
-          let maps: string[];
-          if (typeof input.seedMap === "string") {
-            if (!mapNames.has(input.seedMap)) return send(400, { error: `seedMap ${input.seedMap} is not a known map` });
-            maps = [...gbcWarpConnectedMapsFrom(input.seedMap, getWarps())].sort();
-          } else {
-            maps = (input.maps as string[] | undefined) ?? [];
-          }
-          const dungeons = readDungeons(proj.root);
-          const dungeon = { id: randomUUID(), name: input.name, maps };
-          dungeons.dungeons.push(dungeon);
-          writeDungeons(proj.root, dungeons);
-          return send(200, dungeon);
-        }).catch((e: unknown) => {
-          if (e instanceof BodyTooLarge) return send(413, { error: "request body too large" });
-          console.error(e);
-          send(500, { error: e instanceof Error ? e.message : String(e) });
-        });
-      }
-      const dungeonIdMatch = /^\/api\/dungeons\/(.+)$/.exec(url.pathname);
-      if (dungeonIdMatch && (req.method === "PATCH" || req.method === "DELETE")) {
-        const rawId = dungeonIdMatch[1]!;
-        const id = decodeSegment(rawId);
-        if (id === undefined) return send(400, { error: `malformed dungeon id ${rawId}` });
-        if (req.method === "DELETE") {
-          const dungeons = readDungeons(proj.root);
-          const before = dungeons.dungeons.length;
-          dungeons.dungeons = dungeons.dungeons.filter((d) => d.id !== id);
-          if (dungeons.dungeons.length === before) return send(404, { error: `no dungeon ${id}` });
-          writeDungeons(proj.root, dungeons);
-          return send(200, { ok: true });
-        }
-        return readBody(req).then((body) => {
-          let parsed: unknown;
-          try { parsed = JSON.parse(body); }
-          catch (e) { return send(400, { error: `invalid JSON body: ${(e as Error).message}` }); }
-          if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-            return send(400, { error: `expected a dungeon object, got ${body}` });
-          }
-          const input = parsed as { name?: unknown; maps?: unknown };
-          if (input.name !== undefined && (typeof input.name !== "string" || input.name.trim() === "")) {
-            return send(400, { error: `"name" must be a non-empty string when present, got ${body}` });
-          }
-          if (input.maps !== undefined && (!Array.isArray(input.maps) || input.maps.some((m) => typeof m !== "string"))) {
-            return send(400, { error: `"maps" must be a string array when present, got ${body}` });
-          }
-          const dungeons = readDungeons(proj.root);
-          const dungeon = dungeons.dungeons.find((d) => d.id === id);
-          if (!dungeon) return send(404, { error: `no dungeon ${id}` });
-          if (typeof input.name === "string") dungeon.name = input.name;
-          if (Array.isArray(input.maps)) dungeon.maps = input.maps as string[];
-          writeDungeons(proj.root, dungeons);
-          return send(200, dungeon);
-        }).catch((e: unknown) => {
-          if (e instanceof BodyTooLarge) return send(413, { error: "request body too large" });
-          console.error(e);
-          send(500, { error: e instanceof Error ? e.message : String(e) });
-        });
       }
 
       const encountersMatch = /^\/api\/encounters\/(.+)$/.exec(url.pathname);
