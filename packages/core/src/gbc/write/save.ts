@@ -112,6 +112,15 @@ export interface GbcEditSession {
   /** Names (labels, constants, defines) created by this session. Checked
    *  at plan and commit time via the caller-supplied NameCheck. */
   newNames?: string[];
+  /** Script blocks, names and constants each still-pending add created (Plan H B4); dropped with it on delete. */
+  ownedAdds?: OwnedGbcAdd[];
+}
+
+/** What one add-dialog event staged besides its own line. It is found again by (`kind`, `script`, `eventFlag`):
+ *  `eventFlag` is the object line's last argument (`""` for coord/bg). `consts` are `const NAME` lines in `constEdits`. */
+export interface OwnedGbcAdd {
+  kind: "object" | "coord" | "bg"; script: string; eventFlag: string;
+  blocks: string[]; newNames: string[]; consts: { path: string; name: string }[];
 }
 
 export interface GbcSavePlan {

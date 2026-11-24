@@ -439,4 +439,105 @@ PreviewMulti${ending}Text:
     expect(result.status).toBe(400); expect(result.body.code).toBe("BAD_OPTION");
     expect(result.body.error).toContain(target.map.constName); expect(state()).toEqual(before);
   });
+
+  // B4: a pending add owns the script blocks, names and constants its creation staged; delete drops them together.
+  const owned = () => { const s = state(); return { text: s.eventsText, consts: s.constEdits, names: s.newNames }; };
+  const withFlag = (label: string, flag: string) => ({ ...npc(label), flag: { mode: "new", name: flag } });
+  const deleteObject = async (script: string) => {
+    const index = store.open(map).session.events.objects.findIndex(o => o.script === script);
+    expect(index, script).toBeGreaterThanOrEqual(0);
+    const r = await edit("event/delete", { kind: "object", index }); expect(r.status, JSON.stringify(r.body)).toBe(200);
+  };
+  it("B4: deleting a pending NPC with a new script and a new flag restores text, constants and names", async () => {
+    const baseline = owned();
+    await create(withFlag("Route29B4Owned", "EVENT_POKEMAP_B4_OWNED"));
+    expect(owned()).not.toEqual(baseline);
+    await deleteObject("Route29B4Owned");
+    expect(owned()).toEqual(baseline);
+    expect((await edit("plan")).body.changes).toEqual([]);
+  });
+  it("B4: with two pending adds, deleting the first leaves only the second's script, flag and names", async () => {
+    await create(withFlag("Route29B4First", "EVENT_POKEMAP_B4_FIRST"));
+    const afterFirst = owned();
+    await create(withFlag("Route29B4Second", "EVENT_POKEMAP_B4_SECOND"));
+    await deleteObject("Route29B4First");
+    const s = owned();
+    expect(s.text).toContain("Route29B4Second"); expect(s.text).not.toContain("Route29B4First");
+    expect(s.names).toContain("Route29B4Second");
+    expect(JSON.stringify(s.names)).not.toContain("B4First"); expect(JSON.stringify(s.names)).not.toContain("B4_FIRST");
+    expect(s.consts).toHaveLength(1);
+    expect(s.consts[0]!.after).toContain("EVENT_POKEMAP_B4_SECOND"); expect(s.consts[0]!.after).not.toContain("EVENT_POKEMAP_B4_FIRST");
+    expect(s.consts[0]!.after).not.toBe(s.consts[0]!.before);
+    expect(s.text).not.toBe(afterFirst.text);
+    expect(store.open(map).session.events.objects.some(o => o.script === "Route29B4First")).toBe(false);
+    const plan = (await edit("plan")).body; expect(plan.refusals).toEqual([]);
+  });
+  it("B4: two pending NPCs sharing an existing script label are told apart by their event flag", async () => {
+    const options = await req(`/api/event-options/${map}`);
+    expect(options.status, JSON.stringify(options.body)).toBe(200);
+    const label = (options.body.entryPoints as string[])[0]!;
+    expect(label).toBeTruthy();
+    const [flag1, flag2] = ["EVENT_POKEMAP_B4_SHARED_ONE", "EVENT_POKEMAP_B4_SHARED_TWO"];
+    const shared = (flag: string) => ({ ...npc(), script: { mode: "existing", label }, flag: { mode: "new", name: flag } });
+    await create(shared(flag1!)); await create(shared(flag2!));
+    const before = owned();
+    expect(JSON.stringify(before.consts)).toContain(flag1); expect(JSON.stringify(before.consts)).toContain(flag2);
+    expect(before.names).toContain(flag1); expect(before.names).toContain(flag2);
+    // Delete the SECOND add: a lookup that ignored the flag would pick the first record.
+    const index = store.open(map).session.events.objects.findIndex(o => o.eventFlag === flag2);
+    expect(index).toBeGreaterThanOrEqual(0);
+    const r = await edit("event/delete", { kind: "object", index }); expect(r.status, JSON.stringify(r.body)).toBe(200);
+    const objects = store.open(map).session.events.objects;
+    expect(objects.some(o => o.eventFlag === flag2)).toBe(false);
+    expect(objects.some(o => o.eventFlag === flag1 && o.script === label)).toBe(true);
+    const s = owned();
+    expect(JSON.stringify(s.consts)).toContain(`const ${flag1}`); expect(JSON.stringify(s.consts)).not.toContain(flag2);
+    expect(s.names).toContain(flag1); expect(s.names).not.toContain(flag2);
+  });
+  it("B4: a second pending event on the same new script never takes that script's blocks with it", async () => {
+    await create(npc("Route29B4Dup"));
+    const before = owned();
+    expect(before.text).toContain("Route29B4Dup:");
+    await create({ ...npc(), script: { mode: "existing", label: "Route29B4Dup" } });
+    const added = owned();
+    const index = store.open(map).session.events.objects.length - 1;
+    expect((await edit("event/delete", { kind: "object", index })).status).toBe(200);
+    expect(owned().text).toContain("Route29B4Dup:");
+    expect(owned().names).toEqual(expect.arrayContaining(before.names));
+    expect(store.open(map).session.events.objects.some(o => o.script === "Route29B4Dup")).toBe(true);
+    expect(added.names.length).toBeGreaterThan(before.names.length);
+  });
+  it("B4: undo of the delete restores the event with its script edits and redo drops them again", async () => {
+    const baseline = owned();
+    await create(withFlag("Route29B4Owned", "EVENT_POKEMAP_B4_OWNED"));
+    const added = owned();
+    await deleteObject("Route29B4Owned");
+    expect(owned()).toEqual(baseline);
+    expect((await edit("undo", {})).status).toBe(200);
+    expect(owned()).toEqual(added);
+    expect(store.open(map).session.events.objects.some(o => o.script === "Route29B4Owned")).toBe(true);
+    expect((await edit("redo", {})).status).toBe(200);
+    expect(owned()).toEqual(baseline); expect((await edit("plan")).body.changes).toEqual([]);
+    expect((await edit("undo", {})).status).toBe(200);
+    expect(owned()).toEqual(added);
+  });
+  it("B4: deleting an original on-disk event leaves the pending add's script state untouched", async () => {
+    await create(withFlag("Route29B4Owned", "EVENT_POKEMAP_B4_OWNED"));
+    const added = owned();
+    expect(store.open(map).session.events.warps.length).toBeGreaterThan(0);
+    expect((await edit("event/delete", { kind: "warp", index: 0 })).status).toBe(200);
+    expect(store.open(map).session.events.objects.some(o => o.script === "Route29B4Owned")).toBe(true);
+    expect(owned().consts).toEqual(added.consts); expect(owned().names).toEqual(added.names);
+    expect(owned().text).toContain("Route29B4Owned");
+    expect(owned().text).not.toMatch(/^\s*warp_event/m);
+    expect((await edit("plan")).body.changes.some((c: { path: string }) => c.path.endsWith("Route29.asm"))).toBe(true);
+  });
+  it("B4: deleting an original coord with no owner records still removes its line from the staged text", async () => {
+    expect(store.open(map).session.events.coords.length).toBeGreaterThan(0);
+    expect((await edit("event/delete", { kind: "coord", index: 0 })).status).toBe(200);
+    expect(owned().text).not.toMatch(/^\s*coord_event\s+53,\s*8,/m);
+    expect(store.open(map).session.events.coords.some(c => c.script === "Route29Tutorial1")).toBe(false);
+    expect((await edit("plan")).body.changes.some((c: { path: string }) => c.path.endsWith("Route29.asm"))).toBe(true);
+  });
+
 });
