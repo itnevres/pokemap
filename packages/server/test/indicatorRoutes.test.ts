@@ -480,6 +480,21 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA Indicator and background sign ro
     expect(plan.refusals).toEqual([]); expect(plan.changes.map((c: { path: string }) => c.path)).toEqual(firstPlan.map((c: { path: string }) => c.path));
     if (eof === "terminated") { expect(plan.signNotices).toEqual([]); expect(plan.changes).toEqual(firstPlan); }
   });
+  it("B4: deleting the first of two pending signs on an unterminated scripts.inc joins the folded text cleanly", async () => {
+    writeFileSync(scripts(), original.replace(/(?:\r?\n)+$/, ""));
+    const effective = () => effectiveGbaScripts(openProject(root), store.open(map).session);
+    const [label1, label2] = [`${map}_EventScript_PokemapSign1`, `${map}_EventScript_PokemapSign2`];
+    expect((await put("free", "FIRSTTXT")).status).toBe(200);
+    expect(effective()).toContain(label1);
+    expect((await put("free", "SECONDTXT", { x: 1 })).status).toBe(200);
+    expect(effective()).toContain(label2);
+    expect(store.open(map).session.map.bgEvents.length).toBeGreaterThanOrEqual(2);
+    await del("bg", store.open(map).session.map.bgEvents.length - 2);
+    const text = effective();
+    expect(text).toContain(label2); expect(text).toContain("SECONDTXT");
+    expect(text).not.toContain(label1); expect(text).not.toContain("FIRSTTXT");
+    expect(text).not.toMatch(/(?:\r?\n){3,}/);
+  });
   it("B4: deleting a pending sign after an Indicator keeps the Indicator's script text", async () => {
     expect((await addIndicator()).status).toBe(200);
     const afterIndicator = effectiveGbaScripts(openProject(root), store.open(map).session);

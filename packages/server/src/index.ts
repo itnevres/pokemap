@@ -1439,13 +1439,22 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
                 // Re-hash only that previously clean marked body; keep hand edits protected.
                 if (!text.endsWith("\n")) {
                   let combined = applyScriptAppend(text, pending);
+                  const rehashed: [string, string][] = [];
                   for (const previous of gbaSignLabels(text)) {
                     const block = findGbaSign(text, previous);
                     if (!block.editable || !block.marker || block.marker.hash !== signHash(block.body)) continue;
                     const fresh = findGbaSign(combined, previous);
-                    if (signHash(fresh.body) !== block.marker.hash) combined = updateGbaSign(combined, fresh, block.marker.mode, block.paragraphs, { force: true });
+                    if (signHash(fresh.body) !== block.marker.hash) {
+                      combined = updateGbaSign(combined, fresh, block.marker.mode, block.paragraphs, { force: true });
+                      rehashed.push([block.marker.hash, findGbaSign(combined, previous).marker!.hash]);
+                    }
                   }
-                  if (combined !== applyScriptAppend(text, pending)) replaceGbaScripts(project, session, combined);
+                  if (combined !== applyScriptAppend(text, pending)) {
+                    replaceGbaScripts(project, session, combined);
+                    // An earlier pending sign's owned text now carries the new marker hash (Plan H B4).
+                    session.insertOps = session.insertOps.map(op => !op.owns ? op : { ...op, owns: { ...op.owns,
+                      appends: op.owns.appends.map(a => ({ ...a, text: rehashed.reduce((t, [from, to]) => t.split(from).join(to), a.text) })) } });
+                  }
                 }
                 command = "place sign";
               }

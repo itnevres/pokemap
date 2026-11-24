@@ -243,10 +243,15 @@ export function deleteGbcEvent(text: string, mapName: string, kind: GbcEventKind
   return { text: out, events: parseMapEvents(out, mapName) };
 }
 
-/** The record of the pending add that wrote `event` (same kind, script label and, for an object, event flag), if any. */
-export function findOwnedGbcAdd(owned: OwnedGbcAdd[] | undefined, kind: GbcEventKind, event: { script?: string; eventFlag?: string } | undefined): OwnedGbcAdd | undefined {
+/** The record of the pending add that wrote `events[index]` (same kind, script label and, for an object, event flag).
+ *  Undefined when no record matches or when another live event has the same key (a pending add and an original, or two
+ *  adds sharing one existing script): then nothing can say whose record it is, so no script text is touched. */
+export function findOwnedGbcAdd(owned: OwnedGbcAdd[] | undefined, kind: GbcEventKind, events: { script?: string; eventFlag?: string }[], index: number): OwnedGbcAdd | undefined {
+  const event = events[index];
   if (!event || kind === "warp") return undefined;
-  return owned?.find((o) => o.kind === kind && o.script === event.script && o.eventFlag === (kind === "object" ? event.eventFlag : ""));
+  const flagOf = (e: { eventFlag?: string }) => (kind === "object" ? e.eventFlag : "");
+  if (events.filter((e) => e.script === event.script && flagOf(e) === flagOf(event)).length !== 1) return undefined;
+  return owned?.find((o) => o.kind === kind && o.script === event.script && o.eventFlag === flagOf(event));
 }
 
 /** `text` (already without the deleted event line) minus the script blocks, new names and flag constants its add created. */

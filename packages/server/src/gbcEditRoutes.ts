@@ -443,10 +443,12 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
       const preDelete = entry.session.events.warps;
       // A pending add takes the script blocks, names and flag constants it created with it (Plan H B4).
       const keys = { object: "objects", warp: "warps", coord: "coords", bg: "bgs" } as const;
-      const owner = findOwnedGbcAdd(entry.session.ownedAdds, kind, (entry.session.events[keys[kind]] as { script?: string; eventFlag?: string }[])[index]);
+      const owner = findOwnedGbcAdd(entry.session.ownedAdds, kind, entry.session.events[keys[kind]] as { script?: string; eventFlag?: string }[], index);
       eventOp(entry, "delete event", (text) => deleteGbcEvent(text, name, kind, index), (prev, edit) => {
-        const dropped = owner ? dropOwnedGbcAdd({ ...prev, eventsText: edit.text }, owner) : prev;
-        return { ...prev, ...dropped, eventsText: dropped.eventsText, events: owner ? parseMapEvents(dropped.eventsText, name) : edit.events };
+        const base = { ...prev, eventsText: edit.text, events: edit.events };
+        if (!owner) return base;
+        const dropped = dropOwnedGbcAdd(base, owner);
+        return { ...base, ...dropped, events: parseMapEvents(dropped.eventsText, name) };
       });
       const warpRenumberWarnings = kind === "warp"
         ? findGbcWarpsRetargetedByDelete(allWarps(name, preDelete), { mapName: name, mapConst: entry.session.map.constName, index })
