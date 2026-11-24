@@ -36,6 +36,7 @@ import { encodePng } from "@pokemap/cli/src/png.js";
 import { parseBorder } from "@pokemap/cli/src/args.js";
 import { randomUUID } from "node:crypto";
 import { createEditSessionStore, snapshotOf, snapshotCommand } from "./editSessions.js";
+import { brokenPathBody, brokenPathOfLayout, refusalBody, refuseBrokenLayout } from "./brokenComponents.js";
 import { paintCells, floodFill, shiftGrid, type Stamp } from "@pokemap/core/src/edit/paint.js";
 import { applyScriptAppend, planSave, prepareSave, commitSave, type EditSession } from "@pokemap/core/src/write/save.js";
 import { planFingerprint, type AtomicEntry } from "@pokemap/core/src/write/atomic.js";
@@ -156,6 +157,8 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
       ? name
       : project.mapNames().includes(name) ? project.layoutById(project.map(name).layout)?.name : undefined;
     if (!layoutName) return undefined;
+    // D25: a broken layout or tileset is refused (409 at the route), never rendered.
+    refuseBrokenLayout(project, project.layoutByName(layoutName)!);
     png = encodePng(renderLayout(project, layoutName, { border }));
     pngCache.set(key, png);
     return png;
@@ -362,6 +365,17 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
     const send = (code: number, body: unknown) => sendJson(res, code, body);
 
     try {
+      // D25: every edit route (except the no-op session/undo/redo/discard, which have no session to act on) refuses a map whose
+      // layout or tileset path leaves the project, before any route reads or opens anything. editSessions.open() refuses too.
+      const editGate = /^\/api\/edit\/([^/]+)\/(.+)$/.exec(url.pathname);
+      if (editGate && !/^(session|undo|redo|discard)$/.test(editGate[2]!)) {
+        const gateName = decodeSegment(editGate[1]!);
+        if (gateName !== undefined && project.mapNames().includes(gateName)) {
+          const gateLayout = project.layoutById(project.map(gateName).layout);
+          const gateBroken = gateLayout && brokenPathOfLayout(project, gateLayout);
+          if (gateBroken) return send(409, refusalBody(gateBroken));
+        }
+      }
       if (blockEdits.handle(req, url, (code, body) => {
         if (Buffer.isBuffer(body)) {
           res.writeHead(code, { "content-type": "image/png", "cache-control": "no-cache" });
@@ -384,6 +398,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
           catch (error) { send(400, eventFailure("gba", name, error)); }
         }).catch(error => {
           if (error instanceof BodyTooLarge) return send(413, { error: "request body too large" });
+          const broken = brokenPathBody(error); if (broken) return send(409, broken);
           send(400, eventFailure("gba", name, error));
         });
       }
@@ -412,6 +427,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
         const map = project.map(name);
         const layout = project.layoutById(map.layout);
         if (!layout) return send(404, { error: `no layout ${map.layout}` });
+        refuseBrokenLayout(project, layout); // D25: the defects route reports it; this route refuses
         const split = project.splitFor(layout);
 
         // Raw blocks, plus each one's resolved tile behaviour -- the canvas
@@ -867,6 +883,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
           })
           .catch((e: unknown) => {
             if (e instanceof BodyTooLarge) return send(413, { error: "request body too large" });
+            const broken = brokenPathBody(e); if (broken) return send(409, broken);
             if (e instanceof BlockEditRefusal) return send(409, { error: `${name}: ${e.message}`, code: e.code });
             console.error(e);
             send(500, { error: e instanceof Error ? e.message : String(e) });
@@ -1019,6 +1036,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
           return send(200, body);
         }).catch(error => {
           if (error instanceof BodyTooLarge) return send(413, { error: "request body too large" });
+          const broken = brokenPathBody(error); if (broken) return send(409, broken);
           send(400, { error: error instanceof Error ? error.message : String(error) });
         });
       }
@@ -1066,6 +1084,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
           })
           .catch((e: unknown) => {
             if (e instanceof BodyTooLarge) return send(413, { error: "request body too large" });
+            const broken = brokenPathBody(e); if (broken) return send(409, broken);
             console.error(e);
             send(500, { error: e instanceof Error ? e.message : String(e) });
           });
@@ -1093,6 +1112,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
           })
           .catch((e: unknown) => {
             if (e instanceof BodyTooLarge) return send(413, { error: "request body too large" });
+            const broken = brokenPathBody(e); if (broken) return send(409, broken);
             console.error(e);
             send(500, { error: e instanceof Error ? e.message : String(e) });
           });
@@ -1131,6 +1151,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
           })
           .catch((e: unknown) => {
             if (e instanceof BodyTooLarge) return send(413, { error: "request body too large" });
+            const broken = brokenPathBody(e); if (broken) return send(409, broken);
             console.error(e);
             send(500, { error: e instanceof Error ? e.message : String(e) });
           });
@@ -1293,6 +1314,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
           } catch (error) { return send(400, signFailure(name, error)); }
         }).catch((error: unknown) => {
           if (error instanceof BodyTooLarge) return send(413, { error: "request body too large" });
+          const broken = brokenPathBody(error); if (broken) return send(409, broken);
           send(400, signFailure(name, error));
         });
       }
@@ -1367,12 +1389,15 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
           } catch (error) { return send(400, indicatorFailure(name, error)); }
         }).catch(error => {
           if (error instanceof BodyTooLarge) return send(413, { error: "request body too large" });
+          const broken = brokenPathBody(error); if (broken) return send(409, broken);
           send(400, indicatorFailure(name, error));
         });
       }
 
       return send(404, { error: "not found" });
     } catch (e) {
+      const broken = brokenPathBody(e);
+      if (broken) return send(409, broken);
       console.error(e);
       return send(500, { error: (e as Error).message });
     }
@@ -1409,7 +1434,9 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
       if (editSessions.has(name)) return "skipped";
       const key = `${name}:0`;
       if (pngCache.has(key)) return "skipped";
-      const png = cachedRender(name, 0);
+      let png: Buffer | undefined;
+      try { png = cachedRender(name, 0); }
+      catch (e) { if (brokenPathBody(e)) return "skipped"; throw e; } // a broken layout/tileset is a defect, not a warm-up failure
       if (!png) throw new Error(`no layout or map ${name}`);
       return "rendered";
     }, () => disposed);

@@ -7,6 +7,7 @@ import type { EditSession } from "@pokemap/core/src/write/save.js";
 import type { TilesetFileEdit } from "@pokemap/core/src/blockEdit/types.js";
 import { EditCommandStack, type EditCommand } from "@pokemap/core/src/edit/commands.js";
 import { parseBlocks } from "@pokemap/core/src/load/blocks.js";
+import { refuseBrokenLayout } from "./brokenComponents.js";
 
 export interface SessionEntry {
   session: EditSession;
@@ -42,6 +43,8 @@ export function createEditSessionStore(project: Project) {
 
     const map = project.map(mapName);
     const layout = project.layoutForMap(mapName);
+    // D25: a layout or tileset whose path leaves the project is a defect, never read or opened for editing.
+    refuseBrokenLayout(project, layout);
     const blocks = parseBlocks(readFileSync(`${project.paths.root}/${layout.blockdataFilepath}`), project.profile);
     const border = parseBlocks(readFileSync(`${project.paths.root}/${layout.borderFilepath}`), project.profile);
     const originalMapJson = readFileSync(project.paths.mapJson(mapName), "utf8");
