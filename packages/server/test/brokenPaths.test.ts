@@ -27,6 +27,8 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("F1c server: broken layout or tileset
   let base: string;
   let brokenLayoutId: string;
   let brokenTileset: string;
+  let primaryMap: string;
+  let brokenPrimary: string;
 
   beforeAll(async () => {
     root = copyGbaTilesetProject();
@@ -42,15 +44,26 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("F1c server: broken layout or tileset
     expect([control.primaryTileset, control.secondaryTileset]).not.toContain(brokenTileset);
     expect(layout.primaryTileset === brokenTileset || layout.secondaryTileset === brokenTileset).toBe(false);
 
+    // A map whose PRIMARY tileset is broken (a different tileset, so the secondary-only case above cannot hide a primary-only gap).
+    const taken = new Set([layout.primaryTileset, layout.secondaryTileset, tilesetLayout.primaryTileset, tilesetLayout.secondaryTileset, control.primaryTileset, control.secondaryTileset]);
+    const found = probe.mapNames().map((m) => ({ m, l: probe.layoutForMap(m) }))
+      .find(({ l }) => !taken.has(l.primaryTileset) && !taken.has(l.secondaryTileset) && l.id !== layout.id && l.id !== tilesetLayout.id && l.id !== control.id);
+    expect(found, "a map with its own primary tileset exists in the subject copy").toBeDefined();
+    primaryMap = found!.m;
+    brokenPrimary = found!.l.primaryTileset;
+
     const lj = `${root}/data/layouts/layouts.json`;
     const parsed = JSON.parse(readFileSync(lj, "utf8")) as { layouts: { id: string; blockdata_filepath: string }[] };
     parsed.layouts.find((l) => l.id === layout.id)!.blockdata_filepath = "../../outside.bin";
     writeFileSync(lj, JSON.stringify(parsed));
-    const metatilesBin = probe.tilesetPaths(brokenTileset).metatilesBin;
     const mh = `${root}/src/data/tilesets/metatiles.h`;
-    const text = readFileSync(mh, "utf8");
-    expect(text).toContain(`"${metatilesBin}"`);
-    writeFileSync(mh, text.replace(`"${metatilesBin}"`, `"../../outside/metatiles.bin"`));
+    let text = readFileSync(mh, "utf8");
+    for (const [sym, out] of [[brokenTileset, "../../outside/metatiles.bin"], [brokenPrimary, "../../outside/primary-metatiles.bin"]] as const) {
+      const metatilesBin = probe.tilesetPaths(sym).metatilesBin;
+      expect(text).toContain(`"${metatilesBin}"`);
+      text = text.replace(`"${metatilesBin}"`, `"${out}"`);
+    }
+    writeFileSync(mh, text);
 
     handler = createProjectHandler(root);
     server = createHttpServer(handler.handle);
@@ -118,6 +131,13 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("F1c server: broken layout or tileset
   it("an edit route with its own 400 handler (event/create) still answers the typed 409", async () => {
     await expectRefusal(await post(`/api/edit/${LAYOUT_MAP}/event/create`, { kind: "object", x: 1, y: 1 }), "../../outside.bin");
     await expectRefusal(await post(`/api/edit/${TILESET_MAP}/event/create`, { kind: "object", x: 1, y: 1 }), "../../outside/metatiles.bin");
+  }, 300_000);
+
+  it("a broken PRIMARY tileset is refused on render, map and edit too", async () => {
+    await expectRefusal(await fetch(`${base}/api/render/${primaryMap}.png`), "../../outside/primary-metatiles.bin");
+    await expectRefusal(await fetch(`${base}/api/map/${primaryMap}`), "../../outside/primary-metatiles.bin");
+    await expectRefusal(await post(`/api/edit/${primaryMap}/paint/begin`), "../../outside/primary-metatiles.bin");
+    expect(() => createEditSessionStore(openProject(root)).open(primaryMap)).toThrow(PathEscapeError);
   }, 300_000);
 
   it("the session store itself refuses (defence in depth for callers that bypass the routes)", () => {
