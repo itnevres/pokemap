@@ -43,3 +43,6 @@ Fixes in this PR:
 
 ## Not in F1c core (adversarial Important 2: plan-scope gap, raised to the orchestrator)
 Read sites still unguarded: `signs/suggest.ts:79`, `cli/src/writeCommands.ts:25-26`, `write/binary.ts:57,76`, `validate/metatileRange.ts:56`, `blockEdit/gbaOps.ts:63,91,216`, `blockEdit/usage.ts:415`, server `blockEditRoutes.ts:257`, and (server half) `editSessions.ts:45-46`, `index.ts:426`. Cheapest choke point for the tileset half: make `project.ts tilesetPaths` throw on `brokenPaths`, as `getTileset` does. Symlinks and junctions inside a project are not covered anywhere (containment is lexical; no `realpath`): out of F1c scope, recorded for a possible follow-up row.
+
+## Orchestrator ruling on the unguarded readers, and accepted limit
+Orchestrator 2 ruled: F1c scope stays as is, not widened. The unguarded readers are now Plan H row F1d (High, after the F1c server half), added to `plans/plan-h-hardening.md`. Accepted limit (out of scope): containment is lexical only (`insideRoot`, no `realpath`), so a symlink or junction inside a project that points outside is not caught anywhere in Plan H Task F.
