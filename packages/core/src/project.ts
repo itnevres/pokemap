@@ -10,6 +10,7 @@ import { parseEncounters, type Encounters } from "./load/encounters.js";
 import type { FileOverlay } from "./blockEdit/types.js";
 import { canonicalTilesetPath } from "./blockEdit/canonicalTilesetPath.js";
 import type { Layout, Split } from "./model/types.js";
+import { PathEscapeError } from "./gbc/load/pathGuard.js";
 
 export interface Project {
   readonly paths: ProjectPaths;
@@ -35,9 +36,16 @@ export interface Project {
   splitFor(layout: Layout): Split;
   tileset(symbol: string): Tileset;
   /** The resolved paths (repo-relative) the loader reads for `symbol` -- the
-   *  identity every block edit is keyed by. Throws on an unknown symbol, like
-   *  `tileset`. */
+   *  identity every block edit is keyed by. Throws `PathEscapeError` when the
+   *  tileset has a broken path (D25), and a plain `Error` on an unknown symbol,
+   *  like `tileset`. */
   tilesetPaths(symbol: string): TilesetPaths;
+  /** The same paths INCLUDING `brokenPaths` (a path that leaves the project,
+   *  D25): never throws for a broken tileset (only for an unknown symbol, like
+   *  `tilesetPaths`). For walks over every tileset that must keep serving the
+   *  healthy ones; a reader acting on one named tileset wants `tilesetPaths`,
+   *  which refuses a broken one. */
+  tilesetPathsUnchecked(symbol: string): TilesetPaths;
   /** Replace every tileset file read with these staged bytes (empty map =
    *  disk state). Clears the tileset cache and bumps `tilesetGeneration`. */
   setTilesetOverlay(o: FileOverlay): void;
@@ -165,9 +173,9 @@ export function openProject(root: string): Project {
   const getTileset = (symbol: string): Tileset => {
     let t = tilesetCache.get(symbol);
     if (!t) {
-      const tp = getTilesetPaths(symbol);
+      const tp = getTilesetPathsUnchecked(symbol);
       if (tp.brokenPaths?.length) {
-        throw new Error(tp.brokenPaths.map(({ message, fix }) => `${message} ${fix}`).join("\n"));
+        throw new PathEscapeError(tp.brokenPaths[0]!);
       }
       t = loadTileset(paths, tp, profile, readTilesetFile);
       tilesetCache.set(symbol, t);
@@ -175,7 +183,7 @@ export function openProject(root: string): Project {
     return t;
   };
 
-  const getTilesetPaths = (symbol: string): TilesetPaths => {
+  const getTilesetPathsUnchecked = (symbol: string): TilesetPaths => {
     const tp = tsPaths.get(symbol);
     if (!tp) {
       throw new Error(`unknown tileset symbol ${symbol}: no "const struct Tileset ${symbol}" resolved from ${paths.tilesetHeadersH}`);
@@ -188,6 +196,12 @@ export function openProject(root: string): Project {
       tilesPng: canonicalTilesetPath(tp.tilesPng),
       palettes: tp.palettes.map(canonicalTilesetPath),
     };
+  };
+
+  const getTilesetPathsChecked = (symbol: string): TilesetPaths => {
+    const tp = getTilesetPathsUnchecked(symbol);
+    if (tp.brokenPaths?.length) throw new PathEscapeError(tp.brokenPaths[0]!);
+    return tp;
   };
 
   const layoutForMap = (mapName: string): Layout => {
@@ -209,7 +223,8 @@ export function openProject(root: string): Project {
     layoutForMap,
     splitFor: (l) => resolveSplit(l, constants),
     tileset: getTileset,
-    tilesetPaths: getTilesetPaths,
+    tilesetPaths: getTilesetPathsChecked,
+    tilesetPathsUnchecked: getTilesetPathsUnchecked,
     setTilesetOverlay: (o) => {
       overlay = new Map([...o].map(([path, bytes]) => [canonicalTilesetPath(path), bytes]));
       tilesetCache.clear();

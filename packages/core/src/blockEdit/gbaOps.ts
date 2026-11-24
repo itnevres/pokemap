@@ -17,6 +17,8 @@ import { canonicalTilesetPath } from "./canonicalTilesetPath.js";
 import { assertNotTripleLayer, patchGbaAttribute, patchGbaMetatile } from "./gbaPatch.js";
 import { blockEditRevision } from "./gbcOps.js";
 import { gbaBlockUsage, gbaConsumingLayouts, gbaMapsByGridFile, gbaMapsByLayout } from "./usage.js";
+import { assertLayoutUsable } from "../brokenComponents.js";
+import { PathEscapeError } from "../gbc/load/pathGuard.js";
 import { BlockEditRefusal, type BlockEditPlan, type FileOverlay, type GridIds, type StagedGrids } from "./types.js";
 
 export interface GbaBlockDraft { entries: TileEntry[]; behavior: number; layerType: number }
@@ -228,6 +230,7 @@ export function planGbaBlockEdit(proj: Project, req: GbaBlockEditRequest, staged
   try {
     return planGbaBlockEditInner(proj, req, staged, grids);
   } catch (error) {
+    if (error instanceof PathEscapeError) throw error;
     if (error instanceof BlockEditRefusal) throw error;
     throw new BlockEditRefusal(
       "BAD_VALUE",
@@ -243,6 +246,7 @@ function planGbaBlockEditInner(proj: Project, req: GbaBlockEditRequest, staged: 
   if (!Number.isInteger(req.metatileId) || req.metatileId < 0) bad(`${req.map}: invalid metatile id ${req.metatileId}`);
 
   const layout = proj.layoutForMap(req.map);
+  assertLayoutUsable(proj, layout);
   const split = proj.splitFor(layout);
   const primaryRole = req.metatileId < split.metatiles;
   const symbol = primaryRole ? layout.primaryTileset : layout.secondaryTileset;
