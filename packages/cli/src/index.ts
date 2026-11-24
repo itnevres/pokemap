@@ -69,7 +69,7 @@ program
     }
     const { renderLayout } = await import("@pokemap/core/src/render/layout.js");
     const { encodePng } = await import("./png.js");
-    const proj = resolveProject(root);
+    const proj = await resolveProject(root);
     const r = renderLayout(proj, layoutNameFor(proj, target), { border: opts.border });
     writeFileSync(opts.out, encodePng(r));
     process.stdout.write(`${opts.out} ${r.width}x${r.height} outOfRange=${r.outOfRangeCount}\n`);
@@ -123,7 +123,7 @@ program
     const { resolvePlacementRect } = await import("./renderWorld.js");
     const { renderLayout } = await import("@pokemap/core/src/render/layout.js");
     const { encodePng } = await import("./png.js");
-    const proj = resolveProject(root);
+    const proj = await resolveProject(root);
     const { x: bx, y: by, w: bw, h: bh } = opts.bbox;
     const scale = opts.scale ?? 4;
 
@@ -172,7 +172,7 @@ program
       process.stdout.write(stdout);
       return;
     }
-    const proj = resolveProject(root);
+    const proj = await resolveProject(root);
     const m = proj.map(map);
     // layoutForMap, not layoutById(m.layout): it throws naming both map.json
     // and layouts.json when the layout id is dangling, instead of a
@@ -208,7 +208,7 @@ program
     const { root, family } = resolveRootAndFamily(program.opts().project);
     refuseIfGbc(family, "validate");
     const { validateMetatileRange, validatePaletteRange } = await import("@pokemap/core/src/validate/metatileRange.js");
-    const proj = resolveProject(root);
+    const proj = await resolveProject(root);
 
     // Selecting no check runs every check. `opts.metatileRange === false` is
     // never true -- commander sets a bare flag to `true` or leaves it
@@ -246,7 +246,7 @@ program
       return;
     }
     const { parseEncounters, speciesChances } = await import("@pokemap/core/src/load/encounters.js");
-    const proj = resolveProject(root);
+    const proj = await resolveProject(root);
     const enc = parseEncounters(readFileSync(proj.paths.wildEncountersJson, "utf8"));
     const mapId = proj.map(map).id;
     const result = Object.fromEntries(
@@ -281,7 +281,7 @@ program
       return;
     }
     const { whereSpecies } = await import("@pokemap/core/src/analyse/coverage.js");
-    const proj = resolveProject(root);
+    const proj = await resolveProject(root);
     const hits = whereSpecies(proj, species.startsWith("SPECIES_") ? species : `SPECIES_${species.toUpperCase()}`);
     if (opts.json) return void process.stdout.write(JSON.stringify(hits, null, 2));
     if (hits.length === 0) return void process.stdout.write(`${species} appears in no encounter table\n`);
@@ -306,7 +306,7 @@ program
       return;
     }
     const { coverage } = await import("@pokemap/core/src/analyse/coverage.js");
-    const proj = resolveProject(root);
+    const proj = await resolveProject(root);
     const c = coverage(proj);
     if (opts.json) return void process.stdout.write(JSON.stringify(c, null, 2));
     process.stdout.write(`${c.mapsWithEncounters} maps with encounters, ${c.mapsWithoutEncounters.length} without\n`);
@@ -334,7 +334,7 @@ indicator
     const { root, family } = resolveRootAndFamily(program.opts().project);
     refuseIfGbc(family, "indicator suggest");
     const { runIndicatorSuggest } = await loadWriteCommands();
-    const proj = resolveProject(root);
+    const proj = await resolveProject(root);
     process.stdout.write(`${runIndicatorSuggest(proj, map)}\n`);
   });
 
@@ -351,7 +351,7 @@ indicator
     const { root, family } = resolveRootAndFamily(program.opts().project);
     refuseIfGbc(family, "indicator add");
     const { runIndicatorAdd } = await loadWriteCommands();
-    const proj = resolveProject(root);
+    const proj = await resolveProject(root);
     process.stdout.write(`${runIndicatorAdd(proj, { map, x: opts.x, y: opts.y, elevation: opts.elevation, species: opts.species, text: opts.text, yes: !!opts.yes })}\n`);
   });
 
@@ -362,7 +362,7 @@ indicator
     const { root, family } = resolveRootAndFamily(program.opts().project);
     refuseIfGbc(family, "indicator list");
     const { runIndicatorList } = await loadWriteCommands();
-    const proj = resolveProject(root);
+    const proj = await resolveProject(root);
     process.stdout.write(`${runIndicatorList(proj, map)}\n`);
   });
 
@@ -384,7 +384,7 @@ program
       return;
     }
     const { runPaint } = await loadWriteCommands();
-    const proj = resolveProject(root);
+    const proj = await resolveProject(root);
     process.stdout.write(`${runPaint(proj, { map, tool: opts.tool, x: opts.x, y: opts.y, x1: opts.x1, y1: opts.y1, metatileId: opts.metatile, yes: !!opts.yes })}\n`);
   });
 
@@ -405,7 +405,7 @@ program
       return;
     }
     const { runDiff } = await loadWriteCommands();
-    const proj = resolveProject(root);
+    const proj = await resolveProject(root);
     process.stdout.write(`${runDiff(proj, { map, tool: opts.tool, x: opts.x, y: opts.y, x1: opts.x1, y1: opts.y1, metatileId: opts.metatile })}\n`);
   });
 

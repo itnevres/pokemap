@@ -33,4 +33,10 @@ describe("cli index.ts start-up imports", () => {
       expect(SRC).toContain(`import("${spec}")`);
     }
   });
+
+  it("context.ts loads the GBA project module lazily, so a GBC command never pays for it", () => {
+    const ctx = readFileSync(join(process.cwd(), "packages/cli/src/context.ts"), "utf8");
+    expect(staticImports(ctx)).toEqual(["node:fs"]);
+    expect(ctx).toContain('import("@pokemap/core/src/project.js")');
+  });
 });
