@@ -13,3 +13,6 @@ Vite served the changed `useMapLayout.ts` and `FamilyApp.tsx` (grep found `Broke
 
 ## Review minors left
 Warp-popup branch has no test of its own (shares `BrokenPathPlaceholder` with the canvas branch). `line` is not type-checked in the body guard (server-controlled). `reload()` failing on a now-broken map reports the defect message instead of the HTTP status (within spec).
+
+## Gate
+Gate at `2dd85bb` (master `0eb1340`, nothing newer on origin/master; one lock run): 5605 pass / 1 fail / 302 files (301 passed); typecheck pass, UI build pass; subjects unchanged (git status of both subject roots identical before and after). The 1 fail is the known `core/test/config/engine.test.ts` "parses the subject repo's real porymap.project.cfg" env fail (RESUME and LESSONS list it). A "Timeout terminating forks worker" line for `ui/test/shell/adapter.test.ts` was logged at teardown; that file passed. The two touched test files also passed alone first: 2 files, 25 tests.
