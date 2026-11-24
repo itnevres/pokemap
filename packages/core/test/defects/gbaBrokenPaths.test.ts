@@ -63,7 +63,6 @@ const u16 gAttributes_${s}[] = INCBIN_U16("./${s}.attributes.bin");`).join("\n")
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-const warp = { x: 1, y: 1, elevation: 0, dest_map: "MAP_DEST", dest_warp_id: "0" };
 
 function breakLayout(path = "../../outside.bin") {
   const lj = projectPaths(root).layoutsJson;
@@ -87,7 +86,7 @@ describe("GBA defects for paths that leave the project", () => {
     expect(defects[0]!.fix).toContain("data/layouts/layouts.json");
   });
 
-  it.each(["/etc/outside.bin", "C:/outside.bin", "..\..\outside.bin"])("a layout path of %s is broken too", (path) => {
+  it.each(["/etc/outside.bin", "C:/outside.bin", "..\\..\\outside.bin"])("a layout path of %s is broken too", (path) => {
     breakLayout(path);
     const defects = gbaMapDefects(proj, "Test");
     expect(defects).toHaveLength(1);

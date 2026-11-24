@@ -5,6 +5,7 @@ import { sizeDefect } from "../defects/size.js";
 import { createRaster, blit, type Raster } from "./raster.js";
 import { renderMetatile, type MetatileRaster } from "./metatile.js";
 import type { Block } from "../model/types.js";
+import { PathEscapeError } from "../gbc/load/pathGuard.js";
 
 export interface LayoutRaster extends Raster {
   layoutName: string;
@@ -54,6 +55,9 @@ export function renderLayout(proj: Project, layoutName: string, opts: RenderLayo
       `${proj.paths.layoutsJson}. Have a map name instead? Use proj.layoutForMap(name).`,
     );
   }
+
+  // D25: the layout cannot be rendered until its escaping path is fixed.
+  if (layout.brokenPaths?.length) throw new PathEscapeError(layout.brokenPaths[0]!);
 
   const split = proj.splitFor(layout);
   const primary = proj.tileset(layout.primaryTileset);
