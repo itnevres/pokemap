@@ -327,6 +327,29 @@ describe("useMapLayout", () => {
     expect(result.current.brokenPath).toBeNull();
   });
 
+  it("keeps the old error for a broken-path body whose defect lacks a string fix", async () => {
+    const defect = { file: "f", key: "k", path: "p", message: "bad" };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 409, json: async () => ({ code: "broken-path", defect }) }));
+
+    const { result } = renderHook(() => useMapLayout("Foo"));
+    await waitFor(() => expect(result.current.error).not.toBeNull());
+
+    expect(result.current.error).toBe("GET /api/map/Foo -> 409");
+    expect(result.current.brokenPath).toBeNull();
+  });
+
+  it("clears brokenPath when the selection becomes null", async () => {
+    const defect = { file: "f", key: "k", path: "p", message: "bad", fix: "fix" };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 409, json: async () => ({ code: "broken-path", defect }) }));
+
+    const { result, rerender } = renderHook(({ name }) => useMapLayout(name), { initialProps: { name: "Foo" as string | null } });
+    await waitFor(() => expect(result.current.brokenPath).not.toBeNull());
+
+    rerender({ name: null });
+    expect(result.current.brokenPath).toBeNull();
+    expect(result.current.error).toBeNull();
+  });
+
   it("clears brokenPath and error when a healthy map is selected after a broken one", async () => {
     const defect = { file: "f", key: "k", path: "p", message: "bad", fix: "fix" };
     const fetchMock = vi.fn()
