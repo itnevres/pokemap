@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import type { Project } from "../project.js";
 import { parseBlocks } from "../load/blocks.js";
 import { speciesChances, FISHING_RODS, type Method } from "../load/encounters.js";
+import { assertLayoutUsable } from "../brokenComponents.js";
 
 const METHODS: Method[] = ["land_mons", "water_mons", "rock_smash_mons", "fishing_mons"];
 
@@ -66,6 +67,7 @@ export interface SignPlacement {
  */
 export function suggestIndicatorPlacement(proj: Project, mapName: string, occupied?: ReadonlySet<string>): SignPlacement | null {
   const layout = proj.layoutForMap(mapName);
+  assertLayoutUsable(proj, layout);
   const split = proj.splitFor(layout);
   const primary = proj.tileset(layout.primaryTileset);
   const secondary = proj.tileset(layout.secondaryTileset);

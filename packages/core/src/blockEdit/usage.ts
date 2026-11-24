@@ -26,6 +26,7 @@ import type { Project } from "../project.js";
 import type { Layout, Split } from "../model/types.js";
 import { parseBlocks } from "../load/blocks.js";
 import { canonicalTilesetPath } from "./canonicalTilesetPath.js";
+import { brokenPathOfLayout } from "../brokenComponents.js";
 import type { StagedGrids, MapUse, BlockUsage } from "./types.js";
 
 const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
@@ -292,7 +293,11 @@ const gbaCache = new WeakMap<Project, GbaRelations>();
 function buildGbaRelations(proj: Project): GbaRelations {
   const pathsBySymbol = new Map<string, { metatiles: string; attributes: string }>();
   for (const symbol of proj.tilesetSymbols()) {
-    const paths = proj.tilesetPaths(symbol);
+    // A broken tileset gets NO pathsBySymbol entry: a reader walking every
+    // tileset must keep serving the healthy ones, and nothing keyed by a path
+    // outside the project should ever exist.
+    const paths = proj.tilesetPathsUnchecked(symbol);
+    if (paths.brokenPaths?.length) continue;
     pathsBySymbol.set(symbol, {
       metatiles: canonicalTilesetPath(paths.metatilesBin),
       attributes: canonicalTilesetPath(paths.attributesBin),
@@ -307,6 +312,9 @@ function buildGbaRelations(proj: Project): GbaRelations {
   };
 
   for (const layout of proj.layouts) {
+    // A broken layout contributes no consuming use, so the planner never calls
+    // proj.tileset on its other half or reads its files downstream.
+    if (brokenPathOfLayout(proj, layout)) continue;
     // R8a: each slot has its own use, even when both slots alias the same files.
     for (const role of ["primary", "secondary"] as const) {
       const tileset = role === "primary" ? layout.primaryTileset : layout.secondaryTileset;

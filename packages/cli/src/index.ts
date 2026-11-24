@@ -229,7 +229,12 @@ program
       }
       process.stdout.write(`${findings.length} finding(s)\n`);
     }
-    process.exitCode = findings.length ? 1 : 0;
+    // F1d: the validators skip a layout or tileset whose path leaves the project; say so, never report a clean run.
+    const { brokenComponentsOf } = await import("@pokemap/core/src/brokenComponents.js");
+    const skipped = brokenComponentsOf(proj);
+    for (const b of skipped) process.stderr.write(`warning: not checked, ${b.message} ${b.fix}
+`);
+    process.exitCode = findings.length || skipped.length ? 1 : 0;
   });
 
 program

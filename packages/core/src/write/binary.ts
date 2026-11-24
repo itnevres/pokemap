@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import type { EngineProfile } from "../config/engine.js";
 import type { Block, Layout } from "../model/types.js";
 import { encodeBlocks } from "../load/blocks.js";
+import { assertLayoutFilesInside } from "../brokenComponents.js";
 
 export interface BinaryWrite { path: string; bytes: Buffer; changedBlocks: number[]; }
 
@@ -54,6 +55,7 @@ function buildPlan(path: string, next: Buffer, keepTail = false): BinaryWrite | 
 export function planBlockdataWrite(
   root: string, layout: Layout, blocks: Block[], profile: EngineProfile,
 ): BinaryWrite | null {
+  assertLayoutFilesInside(layout);
   const path = `${root}/${layout.blockdataFilepath}`;
   const next = encodeBlocks(blocks, profile); // throws on an out-of-mask value -- I7, not this function's job to catch twice
   return buildPlan(path, next, true);
@@ -73,6 +75,7 @@ export function planBlockdataWrite(
 export function planBorderWrite(
   root: string, layout: Layout, border: Block[], profile: EngineProfile,
 ): BinaryWrite | null {
+  assertLayoutFilesInside(layout);
   const path = `${root}/${layout.borderFilepath}`;
   const next = encodeBlocks(border, profile);
   return buildPlan(path, next);

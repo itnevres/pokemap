@@ -9,6 +9,7 @@ import { rankIndicatorSpecies, suggestIndicatorPlacement } from "@pokemap/core/s
 import { buildGbaIndicator, guardGbaIndicatorWrite } from "@pokemap/core/src/indicator/gba.js";
 import { planSave, commitSave, type EditSession } from "@pokemap/core/src/write/save.js";
 import { formatDiffText } from "@pokemap/core/src/write/diff.js";
+import { assertLayoutUsable } from "@pokemap/core/src/brokenComponents.js";
 
 /** Mirrors packages/server/src/editSessions.ts's own `open()` exactly (see
  *  this task's own Step 1) -- the CLI has no server process to hold a
@@ -22,6 +23,7 @@ import { formatDiffText } from "@pokemap/core/src/write/diff.js";
 export function openCliEditSession(proj: Project, mapName: string): EditSession {
   const map = proj.map(mapName);
   const layout = proj.layoutForMap(mapName);
+  assertLayoutUsable(proj, layout);
   const blocks = parseBlocks(readFileSync(`${proj.paths.root}/${layout.blockdataFilepath}`), proj.profile);
   const border = parseBlocks(readFileSync(`${proj.paths.root}/${layout.borderFilepath}`), proj.profile);
   const originalMapJson = readFileSync(proj.paths.mapJson(mapName), "utf8");

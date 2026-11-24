@@ -207,6 +207,20 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("F1c server: broken layout or tileset
     expect(await handler.warmUp([LAYOUT_MAP, TILESET_MAP])).toMatchObject({ rendered: 0, skipped: 2, failed: 0 });
   }, 300_000);
 
+  it("F1d: the block sheet (not under /api/edit) answers the typed 409 for a broken layout, tileset and primary tileset", async () => {
+    await expectRefusal(await fetch(`${base}/api/block-sheet/${LAYOUT_MAP}.png`), "../../outside.bin");
+    await expectRefusal(await fetch(`${base}/api/block-sheet/${TILESET_MAP}.png`), "../../outside/metatiles.bin");
+    await expectRefusal(await fetch(`${base}/api/block-sheet/${primaryMap}.png`), "../../outside/primary-metatiles.bin");
+  }, 300_000);
+
+  it("F1d: a healthy map's block editor still works while other maps' layouts and tilesets are broken", async () => {
+    const sheet = await fetch(`${base}/api/block-sheet/${CONTROL_MAP}.png`);
+    expect(sheet.status).toBe(200);
+    expect(sheet.headers.get("content-type")).toBe("image/png");
+    const block = await fetch(`${base}/api/edit/${CONTROL_MAP}/block?x=0&y=0`);
+    expect(block.status).toBe(200);
+  }, 300_000);
+
   it("a healthy control map still renders, loads and edits", async () => {
     const png = await fetch(`${base}/api/render/${CONTROL_MAP}.png`);
     expect(png.status).toBe(200);
