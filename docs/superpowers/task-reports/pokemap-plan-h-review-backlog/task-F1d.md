@@ -30,10 +30,12 @@ Tests first (Haiku subagent, brief reviewed by me, commit `fa2d351`), implementa
 | M12 CLI guard removed | 1 fails |
 | M13 `brokenPathOfLayout` ignores tilesets | 3 fail |
 | M14 `assertLayoutFilesInside` no-op | 2 fail |
-Server mutations S1 (`context()` guard) and S2 (`fail()` 409 mapping): see status below.
+| S1 server `blockEditRoutes.ts` `context()` guard removed | 1 fails (the F1d block-sheet 409 case; 14 pass) |
+| S2 server `fail()` 409 mapping removed | 1 fails (same case; 14 pass) |
+Server mutations run on the merged tree through the lock; the file was restored after each (`git diff` clean).
 
 ## Gate
-Full vitest after commit `3680ba4`: 5593 pass / 1 fail / 300 files (299 pass); the 1 failure is the known env fail `engine.test` "parses the subject repo's real porymap.project.cfg". UI build pass. Typecheck at that commit failed with one TS1117 (duplicate property in `test/helpers/stubProject.ts`, mine); fixed in the next commit; the re-run is owed (see status). Server `brokenPaths.test.ts` with the two new F1d cases: 15/15 pass (before the review fixes).
+After merging `origin/master` (2f946f5, no conflicts), through the lock: typecheck exit 0; UI build pass; full vitest 5591 pass / 3 fail / 300 files. Failures: the known env fail `engine.test` "parses the subject repo's real porymap.project.cfg" plus two 8000 ms timeouts in `packages/server/test/gbcAddEventRoutes.test.ts` (GBC add-event, a file F1d does not touch; load flake). Re-run of that file alone: see PR body. Server `brokenPaths.test.ts`: 15/15 pass.
 
 ## Follow-ups (not in this diff; none is an outside read)
 - `render-world` (CLI) aborts the whole PNG when one layout in the bbox is broken (`cli/src/index.ts:152`); contradicts the second half of D25; a separate reader.
