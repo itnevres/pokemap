@@ -163,7 +163,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
   // is cheap per call (a plain array walk over already-parsed MapData) but
   // building the (mapId, MapData) list itself means calling project.map()
   // for all 1,209 names, which is worth doing once rather than per delete.
-  // Same staleness caveat as the commit route's own comment below: a commit
+  // Historical staleness caveat (the commit route in gbaEditRoutes.ts now resets this cache, Plan H G2): a commit
   // on map A changes A's warp events on disk but NOT this cache's copy of
   // A (built from project.map(), which commitSave never invalidates) -- a
   // later /event/delete on map B computes warpRenumberWarnings against
@@ -241,7 +241,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
   // know whether there's anything to undo/redo without guessing client-side
   // -- entry.stack already tracks this exactly (see EditCommandStack's own
   // canUndo()/canRedo()), so every route that touches the stack (paint end,
-  // undo, redo, and the event-op routes below) reports it for free through
+  // undo, redo, and the event-op routes in gbaEditRoutes.ts) reports it for free through
   // this one shared response shape.
   const sendSession = (send: (code: number, body: unknown) => void, code: number, entry: ReturnType<typeof editEntryFor>) => {
     // `syncOverlay()` first, then the counts: `project.tileset` is what the overlay replaces, so
@@ -281,7 +281,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
     cachedRender, pngCache, iconCache, getWorld, getEncounters, getCoverage, getSpecies,
   });
 
-  // Shared by all three event routes below: the prev-snapshot / mutate /
+  // Shared by all three event routes (gbaEditRoutes.ts): the prev-snapshot / mutate /
   // push-undo-command sequence is identical across move/add/delete, only
   // (a) which core function to call, (b) which of jsonEdits/insertOps/
   // removeOps to append to, and (c) any extra per-route response data
@@ -322,7 +322,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
       return;
     }
     // ponytail: this guard only catches a request whose HEADERS arrive
-    // before a swap. A POST route below awaits `readBody(req)` before doing
+    // before a swap. A POST route (gbaEditRoutes.ts) awaits `readBody(req)` before doing
     // any real work -- if the swap (and this handler's own `dispose()`)
     // lands during that await, the body-handling code still runs against
     // this now-disposed handler's `project`/`editSessions` and can answer
@@ -335,7 +335,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
     // S3: refuse a body that already declares itself oversize before any
     // route runs -- the cheap half of the cap. `readBody`'s own streaming
     // limit is the backstop for a chunked body that declares no length: every
-    // `readBody` rejection path below answers 413 for `BodyTooLarge`, so a
+    // `readBody` rejection path in the route modules answers 413 for `BodyTooLarge`, so a
     // chunked oversize body gets the same 413. The connection is kept (see
     // `refuseOversize`).
     if (refuseOversize(req, res)) return;

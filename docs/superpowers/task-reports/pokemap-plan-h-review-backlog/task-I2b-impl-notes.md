@@ -36,7 +36,7 @@ Both ranges dumped, every line stripped of leading/trailing whitespace, blank li
 +project.forgetMap(name); ctx.allMapsCache = undefined;
 ```
 
-Indentation is unchanged (the IIFE body sits at the same 6-space depth as the `try {` body in index.ts), so the move is identical even before stripping. The two comments naming `editSessions.ts`'s `close()` are untouched.
+Indentation is unchanged (the IIFE body sits at the same 6-space depth as the `try {` body in index.ts), so the move is identical even before stripping. The two comments naming `editSessions.ts`'s `close()` were re-pointed at `sessionStore.ts` in a separate commit (94840fe).
 
 ## 4. Typecheck
 
@@ -62,6 +62,6 @@ Extra fields: `signFailure`, `indicatorFailure`, `indicatorParagraphs`, `signPla
 
 1. `allMapsCache` setter (above): the brief anticipated only `disposed`; the typecheck found the write. Two lines of moved text changed in total (both listed in section 3).
 2. `validateStampAndOrigin` (module-level, unexported, doc comment included) was used only by the moved paint routes, so it moved to gbaEditRoutes.ts with its doc comment instead of becoming a ctx field. index.ts no longer has it.
-3. The `// Plan H I1:` comment above the read-route mount in index.ts still says "The option-lookup block that used to sit above `createEventMatch` now runs below it". It was outside the move range so it was left; `createEventMatch` now lives in gbaEditRoutes.ts, so that sentence is slightly stale (a later doc step can fix it).
+3. (Fixed after review) The `// Plan H I1:` comment above the read-route mount was reworded in the move commit and is now accurate; other stale "below" comments in index.ts were repointed at gbaEditRoutes.ts.
 4. Route order change: `createEventMatch` now runs after the read-route and sidecar mounts, as the brief specified. Disjointness verified by grep: the read routes match only `/api/project|groups|defects|map|render|metatile|species|encounters|warps|coverage|where|world` and `handleOptions` is GET-only; sidecar routes match `/api/world/*` and `/api/dungeons*`; blockEdits matches `/api/edit/<n>/block`, `/block/preview`, `/block/(check|apply)`. None matches `POST /api/edit/<name>/event/create`. The mount comment says so.
 5. `gbaEditRoute` is built right after `let disposed = false;` (after `handleEventOp`, `signPlan`, `sendSession`, `addEvents`, etc. all exist), not next to `gbaReadRoute`, because `disposed` must already be declared for the accessor to read.

@@ -50,7 +50,7 @@ function validateStampAndOrigin(stamp: unknown, origin: unknown): string | undef
 export function gbaEditRoutes(ctx: GbaEditRouteContext): (req: IncomingMessage, res: ServerResponse, url: URL, send: Send) => boolean {
   const { project, symbols, addEvents, editSessions, syncOverlay, overlayStamp, editEntryFor, pngCache, signFailure, indicatorFailure, indicatorParagraphs, signPlan, sendSession, handleEventOp, getAllMapsForWarpScan, EVENT_KINDS } = ctx;
   return (req, res, url, send) => {
-    // The moved text answers with `return send(...)` / `return res.end(...)` / bare `return`, and falls
+    // The moved text answers with `return send(...)` / `return readBody(...)` / `return sendSession(...)`, and falls
     // off the end for a path it does not own. `fellThrough` turns that into the boolean the loop needs
     // without touching a single moved line (the exceptions: bare `disposed` reads became `ctx.disposed` and the
     // `allMapsCache = undefined` write became `ctx.allMapsCache = undefined`, because both are `let`s in
