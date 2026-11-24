@@ -16,3 +16,4 @@ Warp-popup branch has no test of its own (shares `BrokenPathPlaceholder` with th
 
 ## Gate
 Gate at `2dd85bb` (master `0eb1340`, nothing newer on origin/master; one lock run): 5605 pass / 1 fail / 302 files (301 passed); typecheck pass, UI build pass; subjects unchanged (git status of both subject roots identical before and after). The 1 fail is the known `core/test/config/engine.test.ts` "parses the subject repo's real porymap.project.cfg" env fail (RESUME and LESSONS list it). A "Timeout terminating forks worker" line for `ui/test/shell/adapter.test.ts` was logged at teardown; that file passed. The two touched test files also passed alone first: 2 files, 25 tests.
+Re-verify after merging origin/master `1d07455` (RESUME conflict only, kept both sides): 4 files / 66 tests pass (useMapLayout, BrokenPathBanner, App, shell/adapter), typecheck pass, UI build pass, through the lock.
