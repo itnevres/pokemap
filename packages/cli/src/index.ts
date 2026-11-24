@@ -459,10 +459,10 @@ event
     emit(runGbcEventDelete(root, map, { ...opts, yes: !!opts.yes }));
   });
 
-// parseAsync, not a sync parse()+try/catch: every action handler today is
-// synchronous so a sync catch would work today, but Plan 2's write commands
-// will be async, and a sync try/catch silently does not observe a rejected
-// promise thrown from inside an async action. Set the shape once. This also
+// parseAsync, not a sync parse()+try/catch: every action handler is async
+// (they load their modules with await import(), Plan 4 row 6b), and a sync
+// try/catch silently does not observe a rejected promise thrown from inside
+// an async action. This also
 // matches what Node already does on an uncaught throw (exit 1) and what
 // commander does for its own errors (e.g. an unknown option), so the only
 // change in behaviour is that our own thrown Errors get a one-line message

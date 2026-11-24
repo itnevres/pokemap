@@ -1,6 +1,6 @@
 # Plan 4 row 6b: CLI start-up (lazy imports)
 
-Tier: Medium (CLI refactor; the CLI spawn tests and a new import-list guard catch a wrong answer automatically). Implementer: `chain.py --tier sonnet --no-codex`, DeepSeek V4.1 Flash hop (`0d13539`); `context.ts` follow-up by the orchestrator (about 6 lines). Review: one combined pass (Nemotron Ultra via `ask.py`; Gemini returned 503), no real findings (it raised module-load order on error paths and `family.js` staying static; neither changes output, and `family.js` is light by measurement).
+Tier: Medium (CLI refactor; the CLI spawn tests and a new import-list guard catch a wrong answer automatically). Implementer: `chain.py --tier sonnet --no-codex`, DeepSeek V4.1 Flash hop (`0d13539`); `context.ts` follow-up by the orchestrator (about 6 lines). Review: one combined spec-and-quality pass by DeepSeek V4.1 Flash (OpenCode, read-only; full reply in `task-6b-review.md`). Verdict APPROVED. It confirmed all 12 `resolveProject` call sites `await` it (no caller outside `packages/cli/src/index.ts`), all 15 actions are async under `parseAsync`, refusals still run before any dynamic load, and the GBA/GBC load graphs match the spec. Two LOW findings, both fixed in the follow-up commit: a stale comment above `main()` (said every handler is synchronous) and the guard test's regex missing side-effect imports and re-exports. An earlier Nemotron Ultra pass found nothing real.
 
 ## What the 6a numbers asked for
 

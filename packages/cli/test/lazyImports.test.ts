@@ -12,6 +12,9 @@ const SRC = readFileSync(join(process.cwd(), "packages/cli/src/index.ts"), "utf8
 function staticImports(src: string): string[] {
   const out: string[] = [];
   for (const m of src.matchAll(/^import\s+(?!type\b)[^;]*?from\s+"([^"]+)";/gms)) out.push(m[1]!);
+  // Side-effect imports and re-exports load a module just the same.
+  for (const m of src.matchAll(/^import\s+"([^"]+)";/gm)) out.push(m[1]!);
+  for (const m of src.matchAll(/^export\s+(?!type\b)[^;]*?from\s+"([^"]+)";/gms)) out.push(m[1]!);
   return out;
 }
 
