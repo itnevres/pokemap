@@ -23,7 +23,7 @@ interface BlockInfo extends Record<string, unknown> {
 }
 type Mode = "ok" | "saveAsNew";
 const STALE = "The block changed since this editor opened; reopen it";
-const errorMessage = (error: unknown) => error instanceof EditSessionError && error.code === "STALE"
+const editorErrorMessage = (error: unknown) => error instanceof EditSessionError && error.code === "STALE"
   ? STALE : errorMessage(error);
 
 export function useBlockEditor(args: EditorArgs): {
@@ -78,7 +78,7 @@ export function useBlockEditor(args: EditorArgs): {
         updateDraft(initial);
         changeStatus("ready");
       } catch (error) {
-        if (!cancelled) { setMessage(errorMessage(error)); changeStatus("error"); }
+        if (!cancelled) { setMessage(editorErrorMessage(error)); changeStatus("error"); }
       }
     })();
     return () => { cancelled = true; generation.current++; checkCounter.current++; previewCounter.current++; checkedRequest.current = null; };
@@ -120,7 +120,7 @@ export function useBlockEditor(args: EditorArgs): {
       } else changeStatus("ready");
     } catch (error) {
       if (owner !== generation.current) return;
-      setMessage(errorMessage(error));
+      setMessage(editorErrorMessage(error));
       changeStatus("ready");
     }
   }
@@ -149,7 +149,7 @@ export function useBlockEditor(args: EditorArgs): {
     } catch (error) {
       if (call !== checkCounter.current) return;
       checkedRequest.current = null;
-      setMessage(errorMessage(error));
+      setMessage(editorErrorMessage(error));
       changeStatus("ready");
     }
   }
