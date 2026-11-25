@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { readFileSync, writeFileSync } from "node:fs";
-import { detectEngineFamily } from "@pokemap/core/src/family.js";
-import type { EngineFamily } from "@pokemap/core/src/family.js";
-import type { SpeciesChance } from "@pokemap/core/src/load/encounters.js";
+import { detectEngineFamily } from "@pokemap/core/family";
+import type { EngineFamily } from "@pokemap/core/family";
+import type { SpeciesChance } from "@pokemap/core/load/encounters";
 import { resolveProject, resolveRoot, layoutNameFor } from "./context.js";
 import { parseBorder, parseBbox, parseScale, parseTime } from "./args.js";
 import type { GbcCommandResult } from "./gbcCommands.js";
-import { errorMessage } from "@pokemap/core/src/errorMessage.js";
+import { errorMessage } from "@pokemap/core/errorMessage";
 
 const program = new Command();
 program.name("pokemap").option("-p, --project <path>", "decomp root");
@@ -68,7 +68,7 @@ program
       process.stdout.write(stdout);
       return;
     }
-    const { renderLayout } = await import("@pokemap/core/src/render/layout.js");
+    const { renderLayout } = await import("@pokemap/core/render/layout");
     const { encodePng } = await import("./png.js");
     const proj = await resolveProject(root);
     const r = renderLayout(proj, layoutNameFor(proj, target), { border: opts.border });
@@ -118,11 +118,11 @@ program
       process.stdout.write(stdout);
       return;
     }
-    const { buildWorld, resolveWorldPlacements } = await import("@pokemap/core/src/world/resolve.js");
-    const { readSidecar } = await import("@pokemap/core/src/world/sidecar.js");
-    const { createRaster, blitScaled } = await import("@pokemap/core/src/render/raster.js");
+    const { buildWorld, resolveWorldPlacements } = await import("@pokemap/core/world/resolve");
+    const { readSidecar } = await import("@pokemap/core/world/sidecar");
+    const { createRaster, blitScaled } = await import("@pokemap/core/render/raster");
     const { resolvePlacementRect } = await import("./renderWorld.js");
-    const { renderLayout } = await import("@pokemap/core/src/render/layout.js");
+    const { renderLayout } = await import("@pokemap/core/render/layout");
     const { encodePng } = await import("./png.js");
     const proj = await resolveProject(root);
     const { x: bx, y: by, w: bw, h: bh } = opts.bbox;
@@ -208,7 +208,7 @@ program
   .action(async (opts: { metatileRange?: boolean; paletteRange?: boolean; json?: boolean }) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
     refuseIfGbc(family, "validate");
-    const { validateMetatileRange, validatePaletteRange } = await import("@pokemap/core/src/validate/metatileRange.js");
+    const { validateMetatileRange, validatePaletteRange } = await import("@pokemap/core/validate/metatileRange");
     const proj = await resolveProject(root);
 
     // Selecting no check runs every check. `opts.metatileRange === false` is
@@ -231,7 +231,7 @@ program
       process.stdout.write(`${findings.length} finding(s)\n`);
     }
     // F1d: the validators skip a layout or tileset whose path leaves the project; say so, never report a clean run.
-    const { brokenComponentsOf } = await import("@pokemap/core/src/brokenComponents.js");
+    const { brokenComponentsOf } = await import("@pokemap/core/brokenComponents");
     const skipped = brokenComponentsOf(proj);
     for (const b of skipped) process.stderr.write(`warning: not checked, ${b.message} ${b.fix}
 `);
@@ -251,7 +251,7 @@ program
       process.stdout.write(stdout);
       return;
     }
-    const { parseEncounters, speciesChances } = await import("@pokemap/core/src/load/encounters.js");
+    const { parseEncounters, speciesChances } = await import("@pokemap/core/load/encounters");
     const proj = await resolveProject(root);
     const enc = parseEncounters(readFileSync(proj.paths.wildEncountersJson, "utf8"));
     const mapId = proj.map(map).id;
@@ -286,7 +286,7 @@ program
       process.stdout.write(stdout);
       return;
     }
-    const { whereSpecies } = await import("@pokemap/core/src/analyse/coverage.js");
+    const { whereSpecies } = await import("@pokemap/core/analyse/coverage");
     const proj = await resolveProject(root);
     const hits = whereSpecies(proj, species.startsWith("SPECIES_") ? species : `SPECIES_${species.toUpperCase()}`);
     if (opts.json) return void process.stdout.write(JSON.stringify(hits, null, 2));
@@ -311,7 +311,7 @@ program
       process.stdout.write(stdout);
       return;
     }
-    const { coverage } = await import("@pokemap/core/src/analyse/coverage.js");
+    const { coverage } = await import("@pokemap/core/analyse/coverage");
     const proj = await resolveProject(root);
     const c = coverage(proj);
     if (opts.json) return void process.stdout.write(JSON.stringify(c, null, 2));

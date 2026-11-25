@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, writeFileSync } from "node:fs";
-import { openProject } from "@pokemap/core/src/project.js";
+import { openProject } from "@pokemap/core/project";
 import { SUBJECT_ROOT, itWithCorpus } from "../../core/test/helpers/corpus.js";
 import { openCliEditSession, runIndicatorSuggest, runIndicatorAdd, runIndicatorList, runPaint, runDiff } from "../src/writeCommands.js";
 

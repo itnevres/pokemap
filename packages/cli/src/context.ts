@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
-import type { Project } from "@pokemap/core/src/project.js";
-import { errorMessage } from "@pokemap/core/src/errorMessage.js";
+import type { Project } from "@pokemap/core/project";
+import { errorMessage } from "@pokemap/core/errorMessage";
 
 /**
  * Resolves the decomp root either from `--project <path>` or from
@@ -63,7 +63,7 @@ export function resolveRoot(explicit?: string): string {
 export async function resolveProject(explicit?: string): Promise<Project> {
   // Loaded here, not at the top, so a GBC command never pays for the GBA
   // project module's import graph (Plan 4 row 6b).
-  const { openProject } = await import("@pokemap/core/src/project.js");
+  const { openProject } = await import("@pokemap/core/project");
   return openProject(resolveRoot(explicit));
 }
 

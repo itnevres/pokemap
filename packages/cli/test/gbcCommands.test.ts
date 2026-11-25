@@ -4,22 +4,22 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { inflateSync } from "node:zlib";
-import { unfilterScanlines } from "@pokemap/core/src/load/png.js";
-import { openGbcProject } from "@pokemap/core/src/gbc/project.js";
-import { renderGbcMap } from "@pokemap/core/src/gbc/render/map.js";
-import { buildGbcWorld } from "@pokemap/core/src/gbc/world/connections.js";
-import { renderGbcWorld } from "@pokemap/core/src/gbc/render/world.js";
+import { unfilterScanlines } from "@pokemap/core/load/png";
+import { openGbcProject } from "@pokemap/core/gbc/project";
+import { renderGbcMap } from "@pokemap/core/gbc/render/map";
+import { buildGbcWorld } from "@pokemap/core/gbc/world/connections";
+import { renderGbcWorld } from "@pokemap/core/gbc/render/world";
 import { GBC_SUBJECT_ROOT, itWithGbcCorpus } from "../../core/test/gbc/helpers/corpus.js";
 import { runGbcRender, runGbcQuery, runGbcRenderWorld, runGbcEncounters, runGbcWhere, runGbcCoverage } from "../src/gbcCommands.js";
-import { gbcEncounterSources } from "@pokemap/core/src/gbc/analyse/atlas.js";
+import { gbcEncounterSources } from "@pokemap/core/gbc/analyse/atlas";
 import { beforeAll } from "vitest";
 import { existsSync } from "node:fs";
 import { contentManifest, testConfig } from "../../core/test/helpers/testRoots.js";
 import { hasGbcProject, copyGbcSubjectToTemp, removeTemp } from "../../core/test/gbc/helpers/corpus.js";
 import { runGbcPaint, runGbcDiff, runGbcEventMove, runGbcEventAdd, runGbcEventDelete } from "../src/gbcCommands.js";
-import { paintCells as paintGbcCells, floodFill as gbcFloodFill } from "@pokemap/core/src/gbc/edit/paint.js";
-import { moveGbcEvent, addGbcEvent } from "@pokemap/core/src/gbc/edit/events.js";
-import { parseMapEvents } from "@pokemap/core/src/gbc/load/events.js";
+import { paintCells as paintGbcCells, floodFill as gbcFloodFill } from "@pokemap/core/gbc/edit/paint";
+import { moveGbcEvent, addGbcEvent } from "@pokemap/core/gbc/edit/events";
+import { parseMapEvents } from "@pokemap/core/gbc/load/events";
 
 /**
  * Decodes exactly the shape `encodePng` (`../src/png.ts`) writes -- 8-bit
@@ -446,7 +446,7 @@ describe("runGbcWhere", () => {
   });
 
   itWithGbcCorpus("--json prints exactly gbcWhereSpecies's own output", async () => {
-    const { gbcWhereSpecies } = await import("@pokemap/core/src/gbc/analyse/atlas.js");
+    const { gbcWhereSpecies } = await import("@pokemap/core/gbc/analyse/atlas");
     const proj = openGbcProject(GBC_SUBJECT_ROOT);
     const expected = gbcWhereSpecies(proj, "CHIKORITA");
     const { stdout } = runGbcWhere(GBC_SUBJECT_ROOT, "CHIKORITA", { json: true });

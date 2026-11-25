@@ -1,5 +1,5 @@
-import type { Project } from "@pokemap/core/src/project.js";
-import type { Placement } from "@pokemap/core/src/world/connections.js";
+import type { Project } from "@pokemap/core/project";
+import type { Placement } from "@pokemap/core/world/connections";
 
 export interface PlacementRect {
   width: number;

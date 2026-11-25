@@ -1,16 +1,16 @@
-import { parseGbaCharmap } from "@pokemap/core/src/signs/charmap.js";
-import { wrapSign, SIGN_WIDTH } from "@pokemap/core/src/signs/wrap.js";
+import { parseGbaCharmap } from "@pokemap/core/signs/charmap";
+import { wrapSign, SIGN_WIDTH } from "@pokemap/core/signs/wrap";
 import { readFileSync } from "node:fs";
-import type { Project } from "@pokemap/core/src/project.js";
-import { parseBlocks } from "@pokemap/core/src/load/blocks.js";
-import { paintCells, type Stamp } from "@pokemap/core/src/edit/paint.js";
-import { addEvent } from "@pokemap/core/src/edit/events.js";
-import { rankIndicatorSpecies, suggestIndicatorPlacement } from "@pokemap/core/src/signs/suggest.js";
-import { buildGbaIndicator, guardGbaIndicatorWrite } from "@pokemap/core/src/indicator/gba.js";
-import { planSave, commitSave, type EditSession } from "@pokemap/core/src/write/save.js";
-import { formatDiffText } from "@pokemap/core/src/write/diff.js";
-import { assertLayoutUsable } from "@pokemap/core/src/brokenComponents.js";
-import { errorMessage } from "@pokemap/core/src/errorMessage.js";
+import type { Project } from "@pokemap/core/project";
+import { parseBlocks } from "@pokemap/core/load/blocks";
+import { paintCells, type Stamp } from "@pokemap/core/edit/paint";
+import { addEvent } from "@pokemap/core/edit/events";
+import { rankIndicatorSpecies, suggestIndicatorPlacement } from "@pokemap/core/signs/suggest";
+import { buildGbaIndicator, guardGbaIndicatorWrite } from "@pokemap/core/indicator/gba";
+import { planSave, commitSave, type EditSession } from "@pokemap/core/write/save";
+import { formatDiffText } from "@pokemap/core/write/diff";
+import { assertLayoutUsable } from "@pokemap/core/brokenComponents";
+import { errorMessage } from "@pokemap/core/errorMessage";
 
 /** Mirrors packages/server/src/editSessions.ts's own `open()` exactly (see
  *  this task's own Step 1) -- the CLI has no server process to hold a
