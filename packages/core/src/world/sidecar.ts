@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { projectPaths } from "../config/paths.js";
 import type { Placement } from "./connections.js";
+import { errorMessage } from "../errorMessage.js";
 
 export interface Sidecar {
   version: 1;
@@ -76,7 +77,7 @@ export function readSidecar(root: string): Sidecar {
   try {
     parsed = JSON.parse(readFileSync(path, "utf8"));
   } catch (e) {
-    throw new Error(`${path} is not valid JSON: ${e instanceof Error ? e.message : String(e)}`);
+    throw new Error(`${path} is not valid JSON: ${errorMessage(e)}`);
   }
   assertShape(path, parsed);
 

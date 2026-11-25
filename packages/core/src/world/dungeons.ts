@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { projectPaths } from "../config/paths.js";
+import { errorMessage } from "../errorMessage.js";
 
 export interface Dungeon {
   id: string;
@@ -49,7 +50,7 @@ export function readDungeons(root: string): DungeonsFile {
   try {
     parsed = JSON.parse(readFileSync(path, "utf8"));
   } catch (e) {
-    throw new Error(`${path} is not valid JSON: ${e instanceof Error ? e.message : String(e)}`);
+    throw new Error(`${path} is not valid JSON: ${errorMessage(e)}`);
   }
   assertShape(path, parsed);
 

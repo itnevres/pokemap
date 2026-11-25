@@ -7,6 +7,7 @@ import type { SpeciesChance } from "@pokemap/core/src/load/encounters.js";
 import { resolveProject, resolveRoot, layoutNameFor } from "./context.js";
 import { parseBorder, parseBbox, parseScale, parseTime } from "./args.js";
 import type { GbcCommandResult } from "./gbcCommands.js";
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 
 const program = new Command();
 program.name("pokemap").option("-p, --project <path>", "decomp root");
@@ -482,6 +483,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((e: unknown) => {
-  process.stderr.write(`pokemap: ${e instanceof Error ? e.message : String(e)}\n`);
+  process.stderr.write(`pokemap: ${errorMessage(e)}\n`);
   process.exit(1);
 });

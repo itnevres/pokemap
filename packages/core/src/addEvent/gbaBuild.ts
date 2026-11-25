@@ -11,6 +11,7 @@ import { gbaDefineValues } from "./gbaOptions.js";
 import { cDefines } from "./sources.js";
 import { AddEventRefusal, type AddEventForm, type EventKind, type EventOptions, type MapEventOptions,
   type NameCheck, type RefusalCode, type TextChoice } from "./types.js";
+import { errorMessage } from "../errorMessage.js";
 
 /** `scriptReplaces` holds the session's current entries; the result's list replaces them. */
 export type GbaAddCtx = { options: EventOptions; mapOptions: MapEventOptions; root: string; mapName: string;
@@ -91,7 +92,7 @@ export function buildGbaAddEvent(map: MapData, scriptsInc: string | null, form: 
     const wrapped = wrapSign(choice.text, ctx.charmap, SIGN_WIDTH);
     if ("refusal" in wrapped) fail("BAD_OPTION", wrapped.refusal, inc);
     try { return renderGbaBody((wrapped as { paragraphs: string[][] }).paragraphs).join("\n"); }
-    catch (error) { return fail("BAD_OPTION", error instanceof Error ? error.message : String(error), inc); }
+    catch (error) { return fail("BAD_OPTION", errorMessage(error), inc); }
   };
   /** Charmap width of each displayed line of a `.string` text body (split at \n, \l, \p and $). */
   const lineWidths = (body: string, strict = true): number[] =>
@@ -272,6 +273,6 @@ export function buildGbaAddEvent(map: MapData, scriptsInc: string | null, form: 
       if (!error.path || !error.message.startsWith(`${ctx.mapName}: ${error.path}`)) fail(error.code, error.message, inc);
       throw error;
     }
-    return fail("BAD_OPTION", error instanceof Error ? error.message : String(error));
+    return fail("BAD_OPTION", errorMessage(error));
   }
 }

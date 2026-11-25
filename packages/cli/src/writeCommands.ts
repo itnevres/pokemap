@@ -10,6 +10,7 @@ import { buildGbaIndicator, guardGbaIndicatorWrite } from "@pokemap/core/src/ind
 import { planSave, commitSave, type EditSession } from "@pokemap/core/src/write/save.js";
 import { formatDiffText } from "@pokemap/core/src/write/diff.js";
 import { assertLayoutUsable } from "@pokemap/core/src/brokenComponents.js";
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 
 /** Mirrors packages/server/src/editSessions.ts's own `open()` exactly (see
  *  this task's own Step 1) -- the CLI has no server process to hold a
@@ -86,7 +87,7 @@ export function runIndicatorAdd(proj: Project, args: IndicatorAddArgs): string {
     session.scriptAppends = [...(session.scriptAppends ?? []), { path: proj.paths.mapScriptsInc(args.map), text: built.scriptAppendText }];
     return dryRunOrCommit(proj, session, args.yes, built.scriptLabel);
   } catch (error) {
-    throw new Error(`${error instanceof Error ? error.message : String(error)} -- Check the named source and correct the Indicator species, coordinates and text before retrying.`);
+    throw new Error(`${errorMessage(error)} -- Check the named source and correct the Indicator species, coordinates and text before retrying.`);
   }
 }
 

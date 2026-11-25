@@ -8,6 +8,7 @@ import { sizeDefect } from "./size.js";
 import type { DataDefect, MapDefectsCheck } from "./types.js";
 
 import { resolvesAll, type SymbolIndex } from "./symbols.js";
+import { errorMessage } from "../errorMessage.js";
 
 export function gbaEventSymbolDefects(map: MapData, symbols: SymbolIndex): DataDefect[] {
   const file = `data/maps/${map.name}/map.json`;
@@ -51,7 +52,7 @@ export function checkGbaMapDefects(proj: Project, mapName: string, opts?: { symb
   const readMap = (name: string) => {
     const path = proj.paths.mapJson(name);
     try { return parseMap(readFileSync(path, "utf8")); }
-    catch (error) { throw new Error(`${path}: ${error instanceof Error ? error.message : String(error)}`); }
+    catch (error) { throw new Error(`${path}: ${errorMessage(error)}`); }
   };
   const map = readMap(mapName);
   const layout = parseLayouts(readFileSync(proj.paths.layoutsJson, "utf8")).layouts.find((l) => l.id === map.layout);
@@ -111,7 +112,7 @@ export function checkGbaMapDefects(proj: Project, mapName: string, opts?: { symb
       const other = readMap(name);
       byId.set(other.id, other);
     } catch (error) {
-      incomplete.push({ file: `data/maps/${name}/map.json`, reason: error instanceof Error ? error.message : String(error) });
+      incomplete.push({ file: `data/maps/${name}/map.json`, reason: errorMessage(error) });
     }
   }
   // With unreadable maps, an unresolved target may belong to one of them.

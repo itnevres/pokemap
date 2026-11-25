@@ -10,6 +10,7 @@ import type { DataDefect, MapDefectsCheck } from "./types.js";
 import { resolvesAll, type SymbolIndex } from "./symbols.js";
 import type { GbcMapEvents } from "../gbc/model/types.js";
 import { assertInsideRoot } from "../gbc/load/pathGuard.js";
+import { errorMessage } from "../errorMessage.js";
 
 export function gbcEventSymbolDefects(name: string, events: GbcMapEvents, text: string, symbols: SymbolIndex): DataDefect[] {
   const file = `maps/${name}.asm`;
@@ -108,7 +109,7 @@ export function checkGbcMapDefects(proj: GbcProject, mapName: string, opts?: { s
     if (count === undefined) {
       try { count = loadGbcMapEvents(proj.root, dest).events.warps.length; }
       catch (error) {
-        incomplete.push({ file: `maps/${dest.name}.asm`, reason: `C5 destination warp check unavailable: ${error instanceof Error ? error.message : String(error)}` });
+        incomplete.push({ file: `maps/${dest.name}.asm`, reason: `C5 destination warp check unavailable: ${errorMessage(error)}` });
         return;
       }
       warpCounts.set(dest.constName, count);
