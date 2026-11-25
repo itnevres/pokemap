@@ -177,7 +177,8 @@ prose. The split is load-bearing: a user scanning the tree for `0x3F` vs
 without reading either.
 
 ```css
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
+/* Self-hosted (packages/ui/public/fonts, OFL licences beside them): variable
+   woff2, latin subset, declared with @font-face in src/styles.css. */
 
 --font-ui: "IBM Plex Sans", system-ui, sans-serif;
 --font-data: "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;

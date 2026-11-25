@@ -1,4 +1,23 @@
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap");
+/* Plan H M3: self-hosted variable fonts (latin subset, OFL; licences beside
+   them in public/fonts), so launching makes no third-party request and works
+   offline. Weights 400-600 are the ones the UI uses. */
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url("/fonts/IBMPlexSans-latin-wght.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url("/fonts/JetBrainsMono-latin-wght.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
 
 :root {
   --bg-canvas: #0a0e16;
@@ -469,7 +488,7 @@ input {
    as anyone else), together with the title/cursor below, matching
    DESIGN.md's "colour is never the sole carrier of meaning" several ways
    over. Italic over a lighter font-weight because only 400/500/600 are
-   loaded (see this file's own @import) -- a "300" would just silently
+   loaded (see this file's own @font-face rules) -- a "300" would just silently
    fall back to 400 and vanish. No separate :hover/[aria-current] override
    is needed: this now shares the exact same colour ladder as an ordinary
    row (secondary at rest, primary on hover per .map-tree__map:hover and
