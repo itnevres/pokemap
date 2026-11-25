@@ -51,6 +51,13 @@ Open. Not started; needs a spec first.
 7. Whether the world canvas gains arrow-key panning to match.
 8. Whether the dialogs opened from the canvas (Add Event placement, Edit block) need the same cell cursor to be reachable without a mouse.
 
+## Answers
+
+1. no, per Recommendation
+2. shown disabled, per Recommendation
+3. Clipped, as stamps are today, per Recommendation
+4. yes, per Recommendation
+
 ## Subtasks
 
 Provisional (names and files; the spec may move them). All verify lines run from the repo root after `npm run typecheck`.
