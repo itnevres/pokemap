@@ -4,7 +4,11 @@ Close the security, correctness, structure, UI and tooling gaps listed below, an
 
 ## Status
 
-Open. Merged (PRs #37-#72): batches H0-H4 and the H5 rows L1, L2, M1, M2, K4, Q6-Q8, with Task K (K1a-K1c, K2, K3), Task G (G1-G3), Task B (B1-B4), F1c-F1e, H-b, I1, I2a, I2b and Task J (J1a-J4). Remaining: M3 (self-hosted fonts; the user OK'd the font download), P1-P3 (lint, CI, `exports` map and module layout; each needs an otherwise idle repository) and K5 (one instruction body; not in the merge list). Every other finding was checked against the code.
+Done. Merged (PRs #37-#81): batches H0-H4 and the H5 rows L1, L2, M1, M2, M3, K4, Q6-Q8, with Task K (K1a-K1c, K2, K3), Task G (G1-G3), Task B (B1-B4), F1c-F1e, H-b, I1, I2a, I2b, Task J (J1a-J4), P1 (ESLint, #76), P2 (CI, #77), P3a (`exports` map, #78) and P3b (imports rewritten: ui #79, server #80, cli #81; the map is now `.`, `./*` for `src/`, `./test/*.js`, `./package.json`). P3c is skipped: no whole core or UI folder is GBA-only (gbc code imports files from every core folder that mirrors `gbc/`), so the row's premise is false; the data is in `task-reports/pokemap-plan-h-review-backlog/p3c-finding.md`. Re-scoping it to per-file moves (about 15 core files, about 150 import edits) needs a user decision. K5 (one instruction body) is not in the merge list. Every other finding was checked against the code.
+
+**Follow-ups left by P1 and P2 (none blocks 14A):**
+- Lint rules P1 switched off until the code passes them: `react-hooks/exhaustive-deps` (43 sites, 37 in `ui/src`; first, and it brings back `reportUnusedDisableDirectives`), `@typescript-eslint/no-explicit-any`, `preserve-caught-error`, and in tests `no-unused-vars`, `no-non-null-asserted-optional-chain`, `no-control-regex`, `no-regex-spaces`, `no-useless-escape`, `no-unsafe-finally` (see `eslint.config.js`).
+- CI: 20 test files in `SUBJECT_ONLY_TESTS` (`.github/workflows/ci.yml`) need the private GBA subject and are skipped in CI; guard each with `itWithCorpus` and delete the list.
 
 ## Depends on
 
