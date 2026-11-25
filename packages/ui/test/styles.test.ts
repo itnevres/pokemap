@@ -22,12 +22,12 @@ describe("styles.css", () => {
     const text = css.toString();
     expect(text).not.toMatch(/@import/);
     expect(text).not.toMatch(/https?:\/\//);
-    const faces = [...text.matchAll(/@font-face\s*\{([^}]*)\}/g)].map((m) => m[1]);
-    expect(faces.map((f) => /font-family:\s*"([^"]+)"/.exec(f)?.[1]).sort()).toEqual(["IBM Plex Sans", "JetBrains Mono"]);
+    const faces = [...text.matchAll(/@font-face\s*\{([^}]*)\}/g)].map((m) => m[1] ?? "");
+    expect(faces.map((f) => /font-family:\s*"([^"]+)"/.exec(f)?.[1] ?? "").sort()).toEqual(["IBM Plex Sans", "JetBrains Mono"]);
     for (const f of faces) {
       expect(f).toMatch(/font-display:\s*swap/);
-      const file = /url\("\/fonts\/([^"]+\.woff2)"\)/.exec(f)?.[1];
-      expect(file).toBeTruthy();
+      const file = /url\("\/fonts\/([^"]+\.woff2)"\)/.exec(f)?.[1] ?? "";
+      expect(file).not.toBe("");
       expect(existsSync(new URL(`../public/fonts/${file}`, import.meta.url))).toBe(true);
     }
     expect(existsSync(new URL("../public/fonts/OFL-IBMPlex.txt", import.meta.url))).toBe(true);
