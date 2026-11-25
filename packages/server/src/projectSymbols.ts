@@ -1,6 +1,7 @@
 import { normalize } from "node:path";
 import { buildGbaSymbolIndex, buildGbcSymbolIndex, type SymbolIndex } from "@pokemap/core/src/defects/symbols.js";
 import type { MapDefectsCheck } from "@pokemap/core/src/defects/types.js";
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 
 /** A failed build is reused for this long, so a persistently broken project is not re-walked on every request. */
 const FAILURE_BACKOFF_MS = 5_000;
@@ -30,7 +31,7 @@ export function createSymbolIndexCache(root: string, family: "gba" | "gbc", now:
       // F13: the banner names the project relative to its root, never by absolute path. Builders join paths, which
       // normalizes them, so the normalized root (no trailing separator) goes first, then the root as the hub got it.
       catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = errorMessage(error);
         const stripped = [normalize(root).replace(/[\\/]+$/, ""), root].reduce((text, form) => text.split(form).join("."), message);
         reason = `C7-C9 symbol checks unavailable: ${stripped}`;
       }

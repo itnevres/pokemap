@@ -1,3 +1,4 @@
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 export interface WarmResult { rendered: number; skipped: number; failed: number; ms: number }
 
 /** Runs warmOne(name) for each name, one per macrotask: a setImmediate yield BEFORE each map, so a client request queued
@@ -32,7 +33,7 @@ export function warmEach(names: Iterable<string>, warmOne: (name: string) => "re
           else skipped++;
         } catch (e) {
           failed++;
-          console.warn(`pokemap warm: ${name}: ${e instanceof Error ? e.message : String(e)}`);
+          console.warn(`pokemap warm: ${name}: ${errorMessage(e)}`);
         }
         step();
       });

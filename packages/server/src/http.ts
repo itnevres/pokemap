@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 
 export const MAX_BODY_BYTES = 16 * 1024 * 1024;
 
@@ -95,7 +96,7 @@ export function jsonBody<T>(
     .catch((e: unknown) => {
       if (e instanceof BodyTooLarge) { send(413, { error: "request body too large" }); return; }
       console.error(e);
-      send(500, { error: e instanceof Error ? e.message : String(e) });
+      send(500, { error: errorMessage(e) });
     });
 }
 

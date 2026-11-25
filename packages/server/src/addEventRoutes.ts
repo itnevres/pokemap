@@ -27,6 +27,7 @@ import { brokenPathBody } from "./brokenComponents.js";
 import { effectiveGbaScripts } from "./signRefresh.js";
 import { snapshotOf, snapshotCommand, type createEditSessionStore } from "./editSessions.js";
 import { gbcSnapshotOf, type createGbcEditSessionStore } from "./gbcEditSessions.js";
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 
 type GbaStore = ReturnType<typeof createEditSessionStore>;
 type GbcStore = ReturnType<typeof createGbcEditSessionStore>;
@@ -96,7 +97,7 @@ function projectNameCheck(store: Store, family: "gba" | "gbc", mapName: string, 
 }
 
 export function eventFailure(family: "gba" | "gbc", map: string, error: unknown) {
-  return { error: `${map}: ${error instanceof AddEventRefusal ? error.path ?? sourcePath(family, map) : sourcePath(family, map)}: ${error instanceof Error ? error.message : String(error)}`,
+  return { error: `${map}: ${error instanceof AddEventRefusal ? error.path ?? sourcePath(family, map) : sourcePath(family, map)}: ${errorMessage(error)}`,
     code: error instanceof AddEventRefusal ? error.code : "BAD_OPTION" };
 }
 

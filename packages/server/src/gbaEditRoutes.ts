@@ -17,6 +17,7 @@ import { moveEvent, addEvent, deleteEvent, setObjectGraphics, findWarpsTargeting
 import { rankIndicatorSpecies, suggestIndicatorPlacement } from "@pokemap/core/src/signs/suggest.js";
 import { buildGbaIndicator, guardGbaIndicatorWrite, findGbaIndicator, updateGbaIndicator, gbaIndicatorGraphics } from "@pokemap/core/src/indicator/gba.js";
 import type { GbaEditRouteContext } from "./gbaRouteContext.js";
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 
 type Send = (code: number, body: unknown) => unknown;
 
@@ -188,7 +189,7 @@ export function gbaEditRoutes(ctx: GbaEditRouteContext): (req: IncomingMessage, 
             const broken = brokenPathBody(e); if (broken) return send(409, broken);
             if (e instanceof BlockEditRefusal) return send(409, { error: `${name}: ${e.message}`, code: e.code });
             console.error(e);
-            send(500, { error: e instanceof Error ? e.message : String(e) });
+            send(500, { error: errorMessage(e) });
           });
       }
 
@@ -304,7 +305,7 @@ export function gbaEditRoutes(ctx: GbaEditRouteContext): (req: IncomingMessage, 
           catch (error) { return send(400, { changes: [], ...signFailure(name, error), signNotices: [] }); }
           const { plan, prepared, prepareError, body } = fresh;
           if (plan.refusals.length > 0) return send(400, body);
-          if (prepareError !== undefined) return send(500, { error: prepareError instanceof Error ? prepareError.message : String(prepareError) });
+          if (prepareError !== undefined) return send(500, { error: errorMessage(prepareError) });
           if (body.fingerprint !== fingerprint) return send(409, { ...body, notice: {
             code: "PLAN_CHANGED", subject: name, message: "Changes were made since you opened Save",
             fix: "Review the updated changes and save again",
@@ -329,7 +330,7 @@ export function gbaEditRoutes(ctx: GbaEditRouteContext): (req: IncomingMessage, 
             }
           } catch (e) {
             console.error(e);
-            return send(500, { error: e instanceof Error ? e.message : String(e) });
+            return send(500, { error: errorMessage(e) });
           }
           // The render route's pngCache (keyed `name:border`, no expiry) predates this write, and the session-bypass
           // above ends the moment the session closes above. Clear all of it: layouts can be shared by several maps and
@@ -339,7 +340,7 @@ export function gbaEditRoutes(ctx: GbaEditRouteContext): (req: IncomingMessage, 
         }).catch(error => {
           if (error instanceof BodyTooLarge) return send(413, { error: "request body too large" });
           const broken = brokenPathBody(error); if (broken) return send(409, broken);
-          send(400, { error: error instanceof Error ? error.message : String(error) });
+          send(400, { error: errorMessage(error) });
         });
       }
 
@@ -388,7 +389,7 @@ export function gbaEditRoutes(ctx: GbaEditRouteContext): (req: IncomingMessage, 
             if (e instanceof BodyTooLarge) return send(413, { error: "request body too large" });
             const broken = brokenPathBody(e); if (broken) return send(409, broken);
             console.error(e);
-            send(500, { error: e instanceof Error ? e.message : String(e) });
+            send(500, { error: errorMessage(e) });
           });
       }
 
@@ -416,7 +417,7 @@ export function gbaEditRoutes(ctx: GbaEditRouteContext): (req: IncomingMessage, 
             if (e instanceof BodyTooLarge) return send(413, { error: "request body too large" });
             const broken = brokenPathBody(e); if (broken) return send(409, broken);
             console.error(e);
-            send(500, { error: e instanceof Error ? e.message : String(e) });
+            send(500, { error: errorMessage(e) });
           });
       }
 
@@ -455,7 +456,7 @@ export function gbaEditRoutes(ctx: GbaEditRouteContext): (req: IncomingMessage, 
             if (e instanceof BodyTooLarge) return send(413, { error: "request body too large" });
             const broken = brokenPathBody(e); if (broken) return send(409, broken);
             console.error(e);
-            send(500, { error: e instanceof Error ? e.message : String(e) });
+            send(500, { error: errorMessage(e) });
           });
       }
 

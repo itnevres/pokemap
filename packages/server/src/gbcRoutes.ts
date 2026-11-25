@@ -1,4 +1,5 @@
 import type { AddEventHooks } from "./addEventRoutes.js";
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 /**
  * The GBC (pokecrystal-family) route handler -- the server-side counterpart
  * of `cli/src/gbcCommands.ts`, the same way `index.ts`'s GBA body is the
@@ -648,7 +649,7 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
             }
             resolve(result);
           } catch (e) {
-            console.warn(`pokemap warm: world list: ${e instanceof Error ? e.message : String(e)}`);
+            console.warn(`pokemap warm: world list: ${errorMessage(e)}`);
             resolve([]);
           }
         });
