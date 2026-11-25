@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { transform } from "lightningcss";
 
 // A `*/` inside a comment (e.g. "world-canvas__spotlight-*/...") closes it
@@ -14,6 +14,24 @@ describe("styles.css", () => {
   // Plan H M1: reduced motion zeroes transitions and animations globally.
   it("zeroes transitions and animations under prefers-reduced-motion: reduce", () => {
     expect(css.toString()).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{[^}]*transition-duration:\s*0s[^}]*animation-duration:\s*0s/);
+  });
+
+  // Plan H M3: fonts are self-hosted. No third-party request at launch, and every
+  // @font-face file exists under public/fonts beside its licence.
+  it("self-hosts its fonts: no remote @import or url(), font-display: swap, files and licences present", () => {
+    const text = css.toString();
+    expect(text).not.toMatch(/@import/);
+    expect(text).not.toMatch(/https?:\/\//);
+    const faces = [...text.matchAll(/@font-face\s*\{([^}]*)\}/g)].map((m) => m[1]);
+    expect(faces.map((f) => /font-family:\s*"([^"]+)"/.exec(f)?.[1]).sort()).toEqual(["IBM Plex Sans", "JetBrains Mono"]);
+    for (const f of faces) {
+      expect(f).toMatch(/font-display:\s*swap/);
+      const file = /url\("\/fonts\/([^"]+\.woff2)"\)/.exec(f)?.[1];
+      expect(file).toBeTruthy();
+      expect(existsSync(new URL(`../public/fonts/${file}`, import.meta.url))).toBe(true);
+    }
+    expect(existsSync(new URL("../public/fonts/OFL-IBMPlex.txt", import.meta.url))).toBe(true);
+    expect(existsSync(new URL("../public/fonts/OFL-JetBrainsMono.txt", import.meta.url))).toBe(true);
   });
 
   it("parses with no error recovery", () => {
