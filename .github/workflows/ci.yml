@@ -23,8 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
-      # Bump deliberately when a test is added that skips here, or when the corpora change.
-      EXPECTED_SKIPPED: "0"
+      # Measured 2026-11-24 on the pinned public corpora (500 pending, 0 todo). Bump deliberately when a test is added that skips here, or when the corpora change.
+      EXPECTED_SKIPPED: "500"
       # Test files that read the private GBA subject at import time or assert its own data. Without
       # it they fail at collection (20 files, measured 2026-11-24), so they are excluded here and
       # run on the machine that has the subject. Follow-up: guard them with itWithCorpus so this
