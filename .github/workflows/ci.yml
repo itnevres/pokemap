@@ -78,10 +78,13 @@ jobs:
 
       - name: Test
         run: |
-          args=()
-          for f in $SUBJECT_ONLY_TESTS; do args+=(--exclude "$f"); done
-          echo "excluding ${#args[@]} words = $((${#args[@]} / 2)) subject-only test files"
-          npx vitest run --no-file-parallelism --reporter=default --reporter=json --outputFile.json=vitest-results.json "${args[@]}"
+          # vitest's --exclude does not reach the projects in vitest.config.ts, so pass every other
+          # test file as a filter instead.
+          find packages -path '*/node_modules' -prune -o -path '*/test/*' \( -name '*.test.ts' -o -name '*.test.tsx' \) -print | sort > all-tests.txt
+          printf '%s\n' $SUBJECT_ONLY_TESTS | sort > subject-only.txt
+          grep -vxFf subject-only.txt all-tests.txt > run-tests.txt
+          echo "running $(wc -l < run-tests.txt) of $(wc -l < all-tests.txt) test files; $(wc -l < subject-only.txt) need the private GBA subject"
+          npx vitest run --no-file-parallelism --reporter=default --reporter=json --outputFile.json=vitest-results.json $(cat run-tests.txt)
 
       - name: Skipped count
         if: always()

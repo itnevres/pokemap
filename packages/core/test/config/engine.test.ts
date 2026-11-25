@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { parseCfg, engineProfile, defaultProfile } from "../../src/config/engine.js";
 import { projectPaths } from "../../src/config/paths.js";
 import { SUBJECT_ROOT, itWithCorpus, referenceRoot } from "../helpers/corpus.js";
@@ -97,7 +97,8 @@ describe("engineProfile", () => {
   });
 
   const frlg = referenceRoot("pokefirered");
-  it.skipIf(!frlg)("parses pokefirered's real porymap.project.cfg", () => {
+  // The pinned public pokefirered checkout does not track porymap.project.cfg (CI), so skip without it.
+  it.skipIf(!frlg || !existsSync(projectPaths(frlg).porymapCfg))("parses pokefirered's real porymap.project.cfg", () => {
     const profile = engineProfile(parseCfg(readFileSync(projectPaths(frlg!).porymapCfg, "utf8")));
     expect(profile.baseGameVersion).toBe("pokefirered");
     expect(profile.metatileAttributesSize).toBe(4);
