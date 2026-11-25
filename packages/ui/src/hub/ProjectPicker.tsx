@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import type { ProjectInfo, EngineFamily } from "@pokemap/core/src/family.js";
-import type { BrowseResult } from "@pokemap/core/src/hub/wire.js";
+import type { ProjectInfo, EngineFamily } from "@pokemap/core/family";
+import type { BrowseResult } from "@pokemap/core/hub/wire";
 import { isHubState, isBrowseResult, openProject } from "./guards.js";
 import { SwitchConfirmDialog } from "./SwitchConfirmDialog.js";
 import { useGuardedFetch } from "../hooks/useGuardedFetch.js";
 import { fetchGuarded } from "../hooks/useGuardedFetch.js";
 import "../styles.css";
-import { errorMessage } from "@pokemap/core/src/errorMessage.js";
+import { errorMessage } from "@pokemap/core/errorMessage";
 
 export interface ProjectPickerProps {
   onOpened: (info: ProjectInfo) => void;

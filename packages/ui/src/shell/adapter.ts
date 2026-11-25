@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { DataDefect } from "@pokemap/core/src/defects/types.js";
+import type { DataDefect } from "@pokemap/core/defects/types";
 import type { ToolKind } from "../components/Toolbar.js";
 import type { MapGroupsData } from "../components/MapTree.js";
 import type { MapVisibilityInfo } from "../world/visibility.js";
@@ -93,11 +93,11 @@ export interface FamilyRuntime {
 
 export type FieldSpec = { key: string; label: string; kind: "select" | "text" | "number" | "multiline" | "source";
   options?: string[]; modes?: ("existing" | "copy" | "new")[]; showIf?: (v: Record<string, string>) => boolean };
-export interface AddEventContext { mapName: string; x: number; y: number; options: import("@pokemap/core/src/addEvent/types.js").EventOptions; map: import("@pokemap/core/src/addEvent/types.js").MapEventOptions }
+export interface AddEventContext { mapName: string; x: number; y: number; options: import("@pokemap/core/addEvent/types").EventOptions; map: import("@pokemap/core/addEvent/types").MapEventOptions }
 export interface AddEventFieldAdapter {
   family: Family;
-  addEventFields(kind: import("@pokemap/core/src/addEvent/types.js").EventKind, objectType: import("@pokemap/core/src/addEvent/types.js").ObjectType, ctx: AddEventContext): FieldSpec[];
-  addEventDefaults(kind: import("@pokemap/core/src/addEvent/types.js").EventKind, objectType: import("@pokemap/core/src/addEvent/types.js").ObjectType, ctx: AddEventContext): Record<string, string>;
+  addEventFields(kind: import("@pokemap/core/addEvent/types").EventKind, objectType: import("@pokemap/core/addEvent/types").ObjectType, ctx: AddEventContext): FieldSpec[];
+  addEventDefaults(kind: import("@pokemap/core/addEvent/types").EventKind, objectType: import("@pokemap/core/addEvent/types").ObjectType, ctx: AddEventContext): Record<string, string>;
 }
 
 export interface BlockEditorSpec {

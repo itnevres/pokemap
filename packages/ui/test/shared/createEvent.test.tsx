@@ -5,7 +5,7 @@ import { useGbcEditSession } from "../../src/gbc/hooks/useGbcEditSession.js";
 import { SaveDialog } from "../../src/components/SaveDialog.js";
 import { FamilyApp } from "../../src/shell/FamilyApp.js";
 import { GBA_CAPABILITIES, GBC_CAPABILITIES, type EngineAdapter } from "../../src/shell/adapter.js";
-import type { AddEventForm } from "@pokemap/core/src/addEvent/types.js";
+import type { AddEventForm } from "@pokemap/core/addEvent/types";
 
 const form: AddEventForm = { kind: "warp", x: 2, y: 3, fields: {} };
 const created = { kind: "warp", index: 0 };

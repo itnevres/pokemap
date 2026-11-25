@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import type { MapDefectsCheck } from "@pokemap/core/src/defects/types.js";
-import { errorMessage } from "@pokemap/core/src/errorMessage.js";
+import type { MapDefectsCheck } from "@pokemap/core/defects/types";
+import { errorMessage } from "@pokemap/core/errorMessage";
 
 interface MapDefectsResult extends MapDefectsCheck { error: string | null }
 const EMPTY: MapDefectsResult = { defects: [], incomplete: [], error: null };

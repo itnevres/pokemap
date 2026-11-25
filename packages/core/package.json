@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./src/*.js": "./src/*.ts",
+    "./*": "./src/*.ts",
     "./test/*.js": "./test/*.ts",
     "./package.json": "./package.json"
   }

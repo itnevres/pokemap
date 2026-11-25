@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CopyPreview, EventOptions, MapEventOptions, TextPreview } from "@pokemap/core/src/addEvent/types.js";
+import type { CopyPreview, EventOptions, MapEventOptions, TextPreview } from "@pokemap/core/addEvent/types";
 import type { Visit } from "./useVisit.js";
 
 // Instances are project-scoped by the shell's family:root:generation key. No cache survives a reload.

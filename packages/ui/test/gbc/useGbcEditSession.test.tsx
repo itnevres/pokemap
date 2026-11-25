@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { renderHook, act, waitFor, cleanup } from "@testing-library/react";
 import { useGbcEditSession } from "../../src/gbc/hooks/useGbcEditSession.js";
 import { noteTilesetVersion, resetTilesetVersion } from "../../src/shared/tilesetVersion.js";
-import type { GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
+import type { GbcMapEvents } from "@pokemap/core/gbc/model/types";
 
 // Keep mutation fixtures and call-order assertions scoped to their routes; hydration has no open session.
 function stubMutationFetch(fetcher: (url: string, init?: RequestInit) => unknown) {

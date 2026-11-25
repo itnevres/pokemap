@@ -1,4 +1,4 @@
-import type { GbcWarpEvent } from "@pokemap/core/src/gbc/model/types.js";
+import type { GbcWarpEvent } from "@pokemap/core/gbc/model/types";
 
 export interface GbcWarpsPayload {
   family: "gbc";

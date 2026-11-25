@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { ProjectInfo } from "@pokemap/core/src/family.js";
+import type { ProjectInfo } from "@pokemap/core/family";
 import { FamilyApp } from "./shell/FamilyApp.js";
 import { gbaAdapter } from "./gba/adapter.js";
 import { gbcAdapter } from "./gbc/adapter.js";

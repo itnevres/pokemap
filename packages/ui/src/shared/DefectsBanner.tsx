@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { DEFECT_KIND_LABEL, type IncompleteDefectCheck, type DataDefect } from "@pokemap/core/src/defects/types.js";
+import { DEFECT_KIND_LABEL, type IncompleteDefectCheck, type DataDefect } from "@pokemap/core/defects/types";
 
 export function DefectsBanner({ defects, error, incomplete = [] }: { defects: DataDefect[]; error?: string | null; incomplete?: IncompleteDefectCheck[] }) {
   const [expanded, setExpanded] = useState(false);

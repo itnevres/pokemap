@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { WireConflict } from "@pokemap/core/src/world/conflictAcceptance.js";
+import type { WireConflict } from "@pokemap/core/world/conflictAcceptance";
 import type { EncounterBorderProps } from "../../src/shared/EncounterBorder.js";
 import { useStage } from "../../src/canvas/useStage.js";
 import { WorldSurface } from "../../src/canvas/WorldSurface.js";

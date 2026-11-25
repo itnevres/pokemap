@@ -6,7 +6,7 @@ import { gbaAdapter } from "../../src/gba/adapter.js";
 import { gbcAdapter } from "../../src/gbc/adapter.js";
 import type { EngineAdapter, ShellSlots } from "../../src/shell/adapter.js";
 import type { SettledChain } from "../../src/shared/useStrokeChain.js";
-import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
+import type { GbcMapPayload } from "@pokemap/core/gbc/wire";
 import { restoreViewport, stubViewport } from "../viewport.js";
 
 const LAYOUT = {

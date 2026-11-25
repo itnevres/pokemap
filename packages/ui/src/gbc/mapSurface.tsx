@@ -1,10 +1,10 @@
 import { useMemo } from "react";
-import type { RGBA } from "@pokemap/core/src/render/raster.js";
-import { drawGbcGrid, drawGbcCollision, drawGbcEvents, gbcStepInfo, type GbcQuadrantInfo, type GbcQuadrantKey, type GbcStepInfo } from "@pokemap/core/src/gbc/render/overlays.js";
-import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
-import type { GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
-import type { GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
-import type { GbcEventKind } from "@pokemap/core/src/gbc/edit/events.js";
+import type { RGBA } from "@pokemap/core/render/raster";
+import { drawGbcGrid, drawGbcCollision, drawGbcEvents, gbcStepInfo, type GbcQuadrantInfo, type GbcQuadrantKey, type GbcStepInfo } from "@pokemap/core/gbc/render/overlays";
+import type { GbcMapPayload } from "@pokemap/core/gbc/wire";
+import type { GbcMapEvents } from "@pokemap/core/gbc/model/types";
+import type { GbcStamp } from "@pokemap/core/gbc/edit/paint";
+import type { GbcEventKind } from "@pokemap/core/gbc/edit/events";
 import type { GbcPaintBody, UseGbcEditSessionResult } from "./hooks/useGbcEditSession.js";
 import type { GbcActiveTool, GbcEventRef } from "./GbcMapCanvas.js";
 import type { GbcTimeOfDay } from "./time.js";

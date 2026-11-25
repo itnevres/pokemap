@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, fireEvent, act, waitFor } from "@testing-library/react";
 import { GbcMapCanvas, type GbcMapCanvasProps } from "../../src/gbc/GbcMapCanvas.js";
 import type { UseGbcEditSessionResult } from "../../src/gbc/hooks/useGbcEditSession.js";
-import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
-import type { GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
+import type { GbcMapPayload } from "@pokemap/core/gbc/wire";
+import type { GbcMapEvents } from "@pokemap/core/gbc/model/types";
 
 // Shared stroke chain (Plan 8 Task 1): lost mouseup (F3/M4) and a throwing error handler (M3) on the GBC canvas.
 // Fixture mirrors GbcMapCanvasEdit.test.tsx: 3x2 blocks, border 1; client (40,40) -> block (0,0), (72,72) -> (1,1).

@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import type { GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
+import type { GbcStamp } from "@pokemap/core/gbc/edit/paint";
 import type { GbcTimeOfDay } from "./time.js";
 import { useFollowHover } from "../shared/useFollowHover.js";
 import { useTilesetVersion } from "../shared/tilesetVersion.js";

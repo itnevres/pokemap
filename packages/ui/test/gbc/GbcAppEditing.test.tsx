@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { FamilyApp } from "../../src/shell/FamilyApp.js";
 import { gbcAdapter } from "../../src/gbc/adapter.js";
-import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
+import type { GbcMapPayload } from "@pokemap/core/gbc/wire";
 
 beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();

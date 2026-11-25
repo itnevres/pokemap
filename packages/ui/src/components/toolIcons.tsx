@@ -1,6 +1,6 @@
 import type { ReactElement } from "react";
 import type { ToolKind } from "./Toolbar.js";
-import type { EventKind } from "@pokemap/core/src/addEvent/types.js";
+import type { EventKind } from "@pokemap/core/addEvent/types";
 
 // Plan 9 (D5): one 16px line icon per tool, inline so there is no icon dependency. Decorative: the label names the tool.
 const svg = (children: ReactElement | ReactElement[]) => (

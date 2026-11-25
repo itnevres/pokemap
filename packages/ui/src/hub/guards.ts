@@ -1,9 +1,9 @@
-import type { ProjectInfo } from "@pokemap/core/src/family.js";
-import type { BrowseResult, HubState, OpenConflict } from "@pokemap/core/src/hub/wire.js";
+import type { ProjectInfo } from "@pokemap/core/family";
+import type { BrowseResult, HubState, OpenConflict } from "@pokemap/core/hub/wire";
 import { isProjectInfo } from "../gbc/guards.js";
 import { isRecord } from "../shared/format.js";
 import { postJson } from "../hooks/useGuardedFetch.js";
-import { errorMessage } from "@pokemap/core/src/errorMessage.js";
+import { errorMessage } from "@pokemap/core/errorMessage";
 
 /**
  * Pure runtime type guards + the one non-GET fetch this app makes

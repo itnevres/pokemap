@@ -1,4 +1,4 @@
-import type { WireConflict } from "@pokemap/core/src/world/conflictAcceptance.js";
+import type { WireConflict } from "@pokemap/core/world/conflictAcceptance";
 import { isRecord } from "../shared/format.js";
 
 export function isWireConflict(value: unknown): value is WireConflict {

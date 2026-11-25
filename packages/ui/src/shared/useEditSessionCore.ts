@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AddEventForm, EventKind } from "@pokemap/core/src/addEvent/types.js";
+import type { AddEventForm, EventKind } from "@pokemap/core/addEvent/types";
 import { useVisit } from "./useVisit.js";
 import { invalidateEventOptions } from "./useEventOptions.js";
 import { noteTilesetStamp, tilesetGeneration } from "./tilesetVersion.js";
 import { postJson } from "../hooks/useGuardedFetch.js";
-import { errorMessage } from "@pokemap/core/src/errorMessage.js";
+import { errorMessage } from "@pokemap/core/errorMessage";
 
 /** Refusals keep their server code; callers suppress failures belonging to a retired visit. */
 export class EditSessionError extends Error {

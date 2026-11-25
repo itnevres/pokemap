@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { render, screen, fireEvent } from "@testing-library/react";
-import type { GbcEncounterSource } from "@pokemap/core/src/gbc/analyse/atlas.js";
+import type { GbcEncounterSource } from "@pokemap/core/gbc/analyse/atlas";
 import {
   EncounterBorder,
   tooltipLines,

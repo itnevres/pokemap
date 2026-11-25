@@ -1,6 +1,6 @@
-import type { ProjectInfo } from "@pokemap/core/src/family.js";
-import type { GbcMapPayload, GbcWorldPayload, GbcEncountersPayload } from "@pokemap/core/src/gbc/wire.js";
-import type { GbcCoverage } from "@pokemap/core/src/gbc/analyse/atlas.js";
+import type { ProjectInfo } from "@pokemap/core/family";
+import type { GbcMapPayload, GbcWorldPayload, GbcEncountersPayload } from "@pokemap/core/gbc/wire";
+import type { GbcCoverage } from "@pokemap/core/gbc/analyse/atlas";
 import type { GbcWarpsPayload } from "./warps.js";
 import type { MapGroupsData } from "../components/MapTree.js";
 import { isWireConflict } from "../world/conflictAcceptance.js";

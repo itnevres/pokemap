@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
+import type { GbcMapPayload } from "@pokemap/core/gbc/wire";
 import { isGbcMapPayload } from "../guards.js";
 import { fetchGuarded, type UseGuardedFetchResult } from "../../hooks/useGuardedFetch.js";
 import { noteTilesetStamp, tilesetGeneration } from "../../shared/tilesetVersion.js";
 import { keepUnchanged } from "../../shared/keepUnchanged.js";
-import { errorMessage } from "@pokemap/core/src/errorMessage.js";
+import { errorMessage } from "@pokemap/core/errorMessage";
 
 export interface UseGbcMapResult extends UseGuardedFetchResult<GbcMapPayload> {
   /** Plan 7 Task 5: re-reads the payload in place (after a save committed). Unlike a URL change this never

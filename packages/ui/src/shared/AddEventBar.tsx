@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState, type Ref } from "react";
-import type { EventKind } from "@pokemap/core/src/addEvent/types.js";
+import type { EventKind } from "@pokemap/core/addEvent/types";
 import { ADD_EVENT_ICONS } from "../components/toolIcons.js";
 
 const LABELS: Record<EventKind, string> = {

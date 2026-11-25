@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { placeGroup } from "@pokemap/core/src/blockEdit/placement.js";
+import { placeGroup } from "@pokemap/core/blockEdit/placement";
 import type { BlockEditorSpec } from "../shell/adapter.js";
 import type { BlockEditSession } from "./useEditSessionCore.js";
 import { trapDialogFocus, useRestoreFocus } from "./dialogFocus.js";

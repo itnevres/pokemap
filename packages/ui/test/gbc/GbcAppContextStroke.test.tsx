@@ -2,7 +2,7 @@ import { it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { FamilyApp } from "../../src/shell/FamilyApp.js";
 import { gbcAdapter } from "../../src/gbc/adapter.js";
-import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
+import type { GbcMapPayload } from "@pokemap/core/gbc/wire";
 import { restoreViewport, stubViewport } from "../viewport.js";
 
 // M5: GBC context exit waits for pending paint before deciding whether to open SaveDialog.

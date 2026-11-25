@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { errorMessage } from "@pokemap/core/src/errorMessage.js";
+import { errorMessage } from "@pokemap/core/errorMessage";
 
 /** For callers that trust the server's shape, such as the GBA hooks. */
 export function unguarded<T>(_x: unknown): _x is T { return true; }

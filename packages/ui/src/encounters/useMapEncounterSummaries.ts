@@ -3,7 +3,7 @@ import { fetchGuarded } from "../hooks/useGuardedFetch.js";
 import { isGbcEncountersPayload } from "../gbc/guards.js";
 import { isGbaEncountersPayload } from "./guards.js";
 import { summariseGba, summariseGbc, type SpeciesSummary } from "./summary.js";
-import { errorMessage } from "@pokemap/core/src/errorMessage.js";
+import { errorMessage } from "@pokemap/core/errorMessage";
 
 /** `undefined` = the placeholder written before the fetch (in flight), `{ error }` = failed (not retried). */
 type Cached = SpeciesSummary[] | { error: string } | undefined;

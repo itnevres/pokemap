@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import type { AddEventForm, EventKind as CreatedEventKind } from "@pokemap/core/src/addEvent/types.js";
+import type { AddEventForm, EventKind as CreatedEventKind } from "@pokemap/core/addEvent/types";
 import { useEditSessionCore, type EditTicket, type EditUpdate, type BlockCheckReply, type BlockEditSession, type EventCreateSession } from "../shared/useEditSessionCore.js";
 import { useTilesetVersion } from "../shared/tilesetVersion.js";
-import type { Block } from "@pokemap/core/src/model/types.js";
-import type { Stamp } from "@pokemap/core/src/edit/paint.js";
-import type { MapData } from "@pokemap/core/src/load/maps.js";
-import type { EventKind, WarpRenumberWarning } from "@pokemap/core/src/edit/events.js";
+import type { Block } from "@pokemap/core/model/types";
+import type { Stamp } from "@pokemap/core/edit/paint";
+import type { MapData } from "@pokemap/core/load/maps";
+import type { EventKind, WarpRenumberWarning } from "@pokemap/core/edit/events";
 import { isRecord } from "../shared/format.js";
 
 export type PaintApplyBody =

@@ -2,8 +2,8 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, renderHook, waitFor, act, cleanup } from "@testing-library/react";
 import { useEditSession } from "../src/hooks/useEditSession.js";
 import { noteTilesetVersion, resetTilesetVersion } from "../src/shared/tilesetVersion.js";
-import type { Block } from "@pokemap/core/src/model/types.js";
-import type { MapData } from "@pokemap/core/src/load/maps.js";
+import type { Block } from "@pokemap/core/model/types";
+import type { MapData } from "@pokemap/core/load/maps";
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 

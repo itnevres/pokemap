@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { IndicatorBlock, IndicatorSpecies } from "@pokemap/core/src/indicator/gba.js";
+import type { IndicatorBlock, IndicatorSpecies } from "@pokemap/core/indicator/gba";
 import { trapDialogFocus, useRestoreFocus } from "../shared/dialogFocus.js";
 import { postJson } from "../hooks/useGuardedFetch.js";
 import "../styles.css";

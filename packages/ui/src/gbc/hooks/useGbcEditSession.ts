@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import type { AddEventForm, EventKind as CreatedEventKind } from "@pokemap/core/src/addEvent/types.js";
+import type { AddEventForm, EventKind as CreatedEventKind } from "@pokemap/core/addEvent/types";
 import { useEditSessionCore, type BlockCheckReply, type BlockEditSession, type EditTicket, type EventCreateSession } from "../../shared/useEditSessionCore.js";
 import { useTilesetVersion } from "../../shared/tilesetVersion.js";
-import type { Block, GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
-import type { GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
-import type { GbcEventKind, GbcWarpRenumberWarning } from "@pokemap/core/src/gbc/edit/events.js";
+import type { Block, GbcMapEvents } from "@pokemap/core/gbc/model/types";
+import type { GbcStamp } from "@pokemap/core/gbc/edit/paint";
+import type { GbcEventKind, GbcWarpRenumberWarning } from "@pokemap/core/gbc/edit/events";
 import { isRecord } from "../../shared/format.js";
 
 export type { GbcEventKind, GbcWarpRenumberWarning };

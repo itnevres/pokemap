@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { MapData } from "@pokemap/core/src/load/maps.js";
-import type { BrokenPath, Layout, Split } from "@pokemap/core/src/model/types.js";
-import type { DataDefect } from "@pokemap/core/src/defects/types.js";
+import type { MapData } from "@pokemap/core/load/maps";
+import type { BrokenPath, Layout, Split } from "@pokemap/core/model/types";
+import type { DataDefect } from "@pokemap/core/defects/types";
 import { noteTilesetStamp, tilesetGeneration } from "../shared/tilesetVersion.js";
 import { keepUnchanged } from "../shared/keepUnchanged.js";
-import { errorMessage } from "@pokemap/core/src/errorMessage.js";
+import { errorMessage } from "@pokemap/core/errorMessage";
 
 /** A 409 `broken-path` reply from `/api/map/:name`: the map cannot be opened until its
  *  out-of-project path is fixed (D25). Carries the defect so the shell can render it. */

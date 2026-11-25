@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
-import type { AddEventForm, CopyPreview, EventKind, EventOptions, MapEventOptions, NameChoice, ObjectType, TextChoice } from "@pokemap/core/src/addEvent/types.js";
+import type { AddEventForm, CopyPreview, EventKind, EventOptions, MapEventOptions, NameChoice, ObjectType, TextChoice } from "@pokemap/core/addEvent/types";
 import type { AddEventContext, AddEventFieldAdapter, FieldSpec } from "../shell/adapter.js";
 import { useEventOptions, type EventOptionsQuery } from "./useEventOptions.js";
 import { useVisit } from "./useVisit.js";

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { BlockEditorSpec } from "../../shell/adapter.js";
 import { EditSessionError, type BlockCheckReply, type BlockEditSession } from "../useEditSessionCore.js";
-import { errorMessage } from "@pokemap/core/src/errorMessage.js";
+import { errorMessage } from "@pokemap/core/errorMessage";
 
 export type BlockEditorStatus = "loading" | "ready" | "checking" | "confirming" | "applying" | "error";
 

@@ -1,9 +1,9 @@
-import type { GbcWorldPayload } from "@pokemap/core/src/gbc/wire.js";
+import type { GbcWorldPayload } from "@pokemap/core/gbc/wire";
 import { isGbcWorldPayload } from "../guards.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchGuarded, type UseGuardedFetchResult } from "../../hooks/useGuardedFetch.js";
 import type { WorldScope } from "../../canvas/worldSurfaceAdapter.js";
-import { errorMessage } from "@pokemap/core/src/errorMessage.js";
+import { errorMessage } from "@pokemap/core/errorMessage";
 
 export interface UseGbcWorldResult extends UseGuardedFetchResult<GbcWorldPayload> {
   /** The generation whose GET produced `data`; the first load is generation 0. */

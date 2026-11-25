@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import type { EventKind } from "@pokemap/core/src/edit/events.js";
+import type { EventKind } from "@pokemap/core/edit/events";
 import { useIndicatorBlock } from "./PokemonIndicatorDialog.js";
-import type { IndicatorBlock } from "@pokemap/core/src/indicator/gba.js";
+import type { IndicatorBlock } from "@pokemap/core/indicator/gba";
 import "../styles.css";
 
 /**

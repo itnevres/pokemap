@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WorldCanvas, type WorldCanvasProps } from "../src/components/WorldCanvas.js";
 import type { MapView } from "../src/components/mapView.js";
-import { conflictKey } from "@pokemap/core/src/world/conflictAcceptance.js";
+import { conflictKey } from "@pokemap/core/world/conflictAcceptance";
 import { noteTilesetVersion, resetTilesetVersion } from "../src/shared/tilesetVersion.js";
 
 const tileCalls = vi.hoisted(() => ({ imageUrls: [] as Array<unknown> }));

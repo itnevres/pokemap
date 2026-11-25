@@ -1,5 +1,5 @@
-import type { GbcEncounterMethod, GbcEncounterSource } from "@pokemap/core/src/gbc/analyse/atlas.js";
-import type { Method, Rod, SpeciesChance } from "@pokemap/core/src/load/encounters.js";
+import type { GbcEncounterMethod, GbcEncounterSource } from "@pokemap/core/gbc/analyse/atlas";
+import type { Method, Rod, SpeciesChance } from "@pokemap/core/load/encounters";
 import type { GbcTimeOfDay } from "../gbc/time.js";
 
 /**

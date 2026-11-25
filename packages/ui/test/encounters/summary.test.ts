@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { GbcEncounterSource } from "@pokemap/core/src/gbc/analyse/atlas.js";
+import type { GbcEncounterSource } from "@pokemap/core/gbc/analyse/atlas";
 import {
   displaySpeciesName,
   matchesTime,

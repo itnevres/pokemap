@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect } from "vitest";
-import { buildGbcWorld } from "@pokemap/core/src/gbc/world/connections.js";
-import { openGbcProject } from "@pokemap/core/src/gbc/project.js";
+import { buildGbcWorld } from "@pokemap/core/gbc/world/connections";
+import { openGbcProject } from "@pokemap/core/gbc/project";
 import { GBC_SUBJECT_ROOT, itWithGbcCorpus } from "../../../core/test/gbc/helpers/corpus.js";
 import { BORDER_BAND, SIDE_ORDER, bandRect, overlapArea, pickBorderSide } from "../../src/encounters/borderSide.js";
 

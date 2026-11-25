@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { MapVisibilityInfo } from "../world/visibility.js";
-import { errorMessage } from "@pokemap/core/src/errorMessage.js";
+import { errorMessage } from "@pokemap/core/errorMessage";
 
 export interface UseWorldVisibilityResult {
   /** Every map with a real placement, keyed by name. A name absent here

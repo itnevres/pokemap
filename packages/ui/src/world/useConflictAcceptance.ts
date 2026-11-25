@@ -1,9 +1,9 @@
 import { useRef, useState, type RefObject } from "react";
-import type { WireConflict } from "@pokemap/core/src/world/conflictAcceptance.js";
+import type { WireConflict } from "@pokemap/core/world/conflictAcceptance";
 import { postJson } from "../hooks/useGuardedFetch.js";
 import { isAcceptedConflictsResponse } from "./conflictAcceptance.js";
 import { useWorldContextMenu } from "../components/WorldContextMenu.js";
-import { errorMessage } from "@pokemap/core/src/errorMessage.js";
+import { errorMessage } from "@pokemap/core/errorMessage";
 
 /** Acceptance state only; `useConflictAcceptanceMenu` below wires it to the context menu that triggers `toggle`. */
 export function useConflictAcceptance(conflicts: readonly WireConflict[] | undefined) {

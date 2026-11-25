@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { Dungeon } from "../hooks/useDungeons.js";
-import { errorMessage } from "@pokemap/core/src/errorMessage.js";
+import { errorMessage } from "@pokemap/core/errorMessage";
 
 export interface DungeonSidebarProps {
   dungeons: Dungeon[] | null;

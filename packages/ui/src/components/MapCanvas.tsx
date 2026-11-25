@@ -1,5 +1,5 @@
-import type { EventKind } from "@pokemap/core/src/edit/events.js";
-import type { Stamp } from "@pokemap/core/src/edit/paint.js";
+import type { EventKind } from "@pokemap/core/edit/events";
+import type { Stamp } from "@pokemap/core/edit/paint";
 import type { MapLayoutData } from "../hooks/useMapLayout.js";
 import type { UseEditSessionResult } from "../hooks/useEditSession.js";
 import type { SettledChain } from "../shared/useStrokeChain.js";

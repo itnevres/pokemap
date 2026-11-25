@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Placement, Component as WorldComponentInfo, VerticalLink } from "@pokemap/core/src/world/connections.js";
-import type { WireConflict } from "@pokemap/core/src/world/conflictAcceptance.js";
-import type { WarpEvent } from "@pokemap/core/src/load/maps.js";
+import type { Placement, Component as WorldComponentInfo, VerticalLink } from "@pokemap/core/world/connections";
+import type { WireConflict } from "@pokemap/core/world/conflictAcceptance";
+import type { WarpEvent } from "@pokemap/core/load/maps";
 import type { PlacementLedger } from "../shared/placementLedger.js";
 import type { SurfaceWorld, WorldScope, WorldSurfaceAdapter, SurfaceWarp } from "../canvas/worldSurfaceAdapter.js";
 import { singletonSizes, rectOf } from "../canvas/worldView.js";
@@ -15,7 +15,7 @@ import { isDrawnByDefault } from "../world/visibility.js";
 import { isWireConflict } from "../world/conflictAcceptance.js";
 import { isRecord } from "../shared/format.js";
 import { useTilesetVersion } from "../shared/tilesetVersion.js";
-import { errorMessage } from "@pokemap/core/src/errorMessage.js";
+import { errorMessage } from "@pokemap/core/errorMessage";
 
 /** The pixel size a placement's PNG renders at natively (`renderLayout`,
  *  border 0): 16px per tile, same constant the CLI's `render-world --scale

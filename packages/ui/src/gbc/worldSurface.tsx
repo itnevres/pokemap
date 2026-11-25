@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Placement, Component, Conflict, Bounds } from "@pokemap/core/src/gbc/world/connections.js";
-import type { WireConflict } from "@pokemap/core/src/world/conflictAcceptance.js";
-import type { GbcWorldPlacement } from "@pokemap/core/src/gbc/wire.js";
-import type { GbcEncounterSource } from "@pokemap/core/src/gbc/analyse/atlas.js";
+import type { Placement, Component, Conflict, Bounds } from "@pokemap/core/gbc/world/connections";
+import type { WireConflict } from "@pokemap/core/world/conflictAcceptance";
+import type { GbcWorldPlacement } from "@pokemap/core/gbc/wire";
+import type { GbcEncounterSource } from "@pokemap/core/gbc/analyse/atlas";
 import type { LensId, LensPanelSummary } from "../components/LensPanel.js";
 import type { PlacementLedger, PlacementSnapshot } from "../shared/placementLedger.js";
 import type { SurfaceWorld, WorldScope, WorldSurfaceAdapter } from "../canvas/worldSurfaceAdapter.js";

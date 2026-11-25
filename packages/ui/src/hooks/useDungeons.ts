@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchGuarded, postJson, sendJson } from "./useGuardedFetch.js";
 import { isRecord } from "../shared/format.js";
-import { errorMessage } from "@pokemap/core/src/errorMessage.js";
+import { errorMessage } from "@pokemap/core/errorMessage";
 
 export interface Dungeon {
   id: string;
