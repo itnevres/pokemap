@@ -1,5 +1,5 @@
 import type { AddEventHooks } from "./addEventRoutes.js";
-import { errorMessage } from "@pokemap/core/src/errorMessage.js";
+import { errorMessage } from "@pokemap/core/errorMessage";
 /**
  * The GBC (pokecrystal-family) route handler -- the server-side counterpart
  * of `cli/src/gbcCommands.ts`, the same way `index.ts`'s GBA body is the
@@ -35,15 +35,15 @@ import { errorMessage } from "@pokemap/core/src/errorMessage.js";
  * `expandSeed` = `gbcWarpConnectedMapsFrom(seed, getWarps())`, and the
  * `{ dungeonAutoLayout: <new value> }` reply).
  */
-import { checkGbcMapDefects } from "@pokemap/core/src/defects/gbc.js";
-import type { SymbolIndex } from "@pokemap/core/src/defects/symbols.js";
+import { checkGbcMapDefects } from "@pokemap/core/defects/gbc";
+import type { SymbolIndex } from "@pokemap/core/defects/symbols";
 import { createSymbolIndexCache } from "./projectSymbols.js";
-import { openGbcProject, type GbcProject } from "@pokemap/core/src/gbc/project.js";
-import { loadGbcMapEvents } from "@pokemap/core/src/gbc/load/events.js";
-import { renderGbcMap, renderGbcMapMetatile } from "@pokemap/core/src/gbc/render/map.js";
-import { buildGbcWorld, type GbcWorld } from "@pokemap/core/src/gbc/world/connections.js";
-import { placeNearWarps, type WarpLink } from "@pokemap/core/src/world/nearWarp.js";
-import { gbcWarpLinks, gbcWarpConnectedMapsFrom } from "@pokemap/core/src/world/nearWarpAdapters.js";
+import { openGbcProject, type GbcProject } from "@pokemap/core/gbc/project";
+import { loadGbcMapEvents } from "@pokemap/core/gbc/load/events";
+import { renderGbcMap, renderGbcMapMetatile } from "@pokemap/core/gbc/render/map";
+import { buildGbcWorld, type GbcWorld } from "@pokemap/core/gbc/world/connections";
+import { placeNearWarps, type WarpLink } from "@pokemap/core/world/nearWarp";
+import { gbcWarpLinks, gbcWarpConnectedMapsFrom } from "@pokemap/core/world/nearWarpAdapters";
 import {
   gbcEncounterSources,
   gbcWhereSpecies,
@@ -51,21 +51,21 @@ import {
   loadGbcSpeciesConstants,
   normalizeGbcSpecies,
   type GbcCoverage,
-} from "@pokemap/core/src/gbc/analyse/atlas.js";
-import type { ProjectInfo } from "@pokemap/core/src/family.js";
-import type { GbcMap } from "@pokemap/core/src/gbc/model/types.js";
+} from "@pokemap/core/gbc/analyse/atlas";
+import type { ProjectInfo } from "@pokemap/core/family";
+import type { GbcMap } from "@pokemap/core/gbc/model/types";
 import type {
   GbcCollisionInfoEntry,
   GbcMapPayload,
   GbcWorldPayload,
   GbcEncountersPayload,
-} from "@pokemap/core/src/gbc/wire.js";
-import { applySidecar, readSidecar, type Sidecar } from "@pokemap/core/src/world/sidecar.js";
-import { wireConflicts } from "@pokemap/core/src/world/conflictAcceptance.js";
+} from "@pokemap/core/gbc/wire";
+import { applySidecar, readSidecar, type Sidecar } from "@pokemap/core/world/sidecar";
+import { wireConflicts } from "@pokemap/core/world/conflictAcceptance";
 import { encodePng } from "@pokemap/cli/src/png.js";
 import { parseBorder, parseTime, type TimeOfDay } from "@pokemap/cli/src/args.js";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { loadGbcFrontSprite, loadGbcPicFolders } from "@pokemap/core/src/gbc/load/sprites.js";
+import { loadGbcFrontSprite, loadGbcPicFolders } from "@pokemap/core/gbc/load/sprites";
 import type { ProjectHandler } from "./index.js";
 import { decodeSegment, refuseNonJsonBody, refuseOversize, sendJson } from "./http.js";
 import { warmEach, type WarmResult } from "./warmUp.js";

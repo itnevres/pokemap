@@ -1,11 +1,11 @@
-import { findGbcSign } from "@pokemap/core/src/gbc/signs.js";
-import { signHash } from "@pokemap/core/src/signs/marker.js";
+import { findGbcSign } from "@pokemap/core/gbc/signs";
+import { signHash } from "@pokemap/core/signs/marker";
 import { gbcSignLabels } from "./signRefresh.js";
-import type { GbcProject } from "@pokemap/core/src/gbc/project.js";
-import type { Block, GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
-import type { TilesetFileEdit } from "@pokemap/core/src/blockEdit/types.js";
-import { EditCommandStack } from "@pokemap/core/src/edit/commands.js";
-import { openGbcEditSession, type GbcEditSession } from "@pokemap/core/src/gbc/write/save.js";
+import type { GbcProject } from "@pokemap/core/gbc/project";
+import type { Block, GbcMapEvents } from "@pokemap/core/gbc/model/types";
+import type { TilesetFileEdit } from "@pokemap/core/blockEdit/types";
+import { EditCommandStack } from "@pokemap/core/edit/commands";
+import { openGbcEditSession, type GbcEditSession } from "@pokemap/core/gbc/write/save";
 import { createSessionStore, type SessionStore } from "./sessionStore.js";
 
 export interface GbcSessionEntry {

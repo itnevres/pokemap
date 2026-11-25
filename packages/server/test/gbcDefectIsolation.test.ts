@@ -2,8 +2,8 @@ import fs, { appendFileSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createServer, type PokemapServer } from "../src/index.js";
-import { openGbcProject } from "@pokemap/core/src/gbc/project.js";
-import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
+import { openGbcProject } from "@pokemap/core/gbc/project";
+import type { GbcMapPayload } from "@pokemap/core/gbc/wire";
 import { copyGbcSubjectToTemp, GBC_SUBJECT_ROOT, hasGbcProject, removeTemp } from "@pokemap/core/test/gbc/helpers/corpus.js";
 
 const events = (destWarp: number) => `Route29_MapScripts:\n\tdef_scene_scripts\n\tdef_callbacks\nRoute29_MapEvents:\n\tdb 0, 0\n\tdef_warp_events\n\twarp_event 1, 1, NEW_BARK_TOWN, ${destWarp}\n\twarp_event 2, 2, UNKNOWN_DEST, 1\n\tdef_coord_events\n\tdef_bg_events\n\tdef_object_events\n`;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { openProject } from "@pokemap/core/src/project.js";
+import { openProject } from "@pokemap/core/project";
 import { createEditSessionStore } from "../src/editSessions.js";
 import { SUBJECT_ROOT, hasProject } from "@pokemap/core/test/helpers/corpus.js";
 

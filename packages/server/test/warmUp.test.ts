@@ -21,8 +21,8 @@ const gbaMocks = vi.hoisted(() => ({
   renderLayoutMock: vi.fn(),
 }));
 
-vi.mock("@pokemap/core/src/render/layout.js", async (importOriginal) => {
-  const mod = await importOriginal<typeof import("@pokemap/core/src/render/layout.js")>();
+vi.mock("@pokemap/core/render/layout", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("@pokemap/core/render/layout")>();
   return {
     ...mod,
     renderLayout: (...args: Parameters<typeof mod.renderLayout>) => {
@@ -240,8 +240,8 @@ const gbcMocks = vi.hoisted(() => ({
   renderGbcMapMock: vi.fn(),
 }));
 
-vi.mock("@pokemap/core/src/gbc/render/map.js", async (importOriginal) => {
-  const mod = await importOriginal<typeof import("@pokemap/core/src/gbc/render/map.js")>();
+vi.mock("@pokemap/core/gbc/render/map", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("@pokemap/core/gbc/render/map")>();
   return {
     ...mod,
     renderGbcMap: (...args: Parameters<typeof mod.renderGbcMap>) => {

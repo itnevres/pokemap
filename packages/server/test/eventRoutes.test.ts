@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createServer, type PokemapServer } from "../src/index.js";
 import { SUBJECT_ROOT, hasProject } from "@pokemap/core/test/helpers/corpus.js";
 import { readFileSync, writeFileSync } from "node:fs";
-import { openProject } from "@pokemap/core/src/project.js";
+import { openProject } from "@pokemap/core/project";
 
 let s: PokemapServer;
 const post = async (path: string, body: unknown = {}) =>

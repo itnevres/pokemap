@@ -1,23 +1,23 @@
 import { BodyTooLarge, decodeSegment, readBody } from "./http.js";
 import { requireTilesetOwnership, refuseUnsavedBlockRefs, savedMetatileCount } from "./blockEditOwnership.js";
-import { checkTilesetBaselines } from "@pokemap/core/src/blockEdit/save.js";
-import { canonicalTilesetPath } from "@pokemap/core/src/blockEdit/canonicalTilesetPath.js";
-import { BlockEditRefusal } from "@pokemap/core/src/blockEdit/types.js";
+import { checkTilesetBaselines } from "@pokemap/core/blockEdit/save";
+import { canonicalTilesetPath } from "@pokemap/core/blockEdit/canonicalTilesetPath";
+import { BlockEditRefusal } from "@pokemap/core/blockEdit/types";
 import { eventFailure } from "./addEventRoutes.js";
-import { gbaSpeciesNames } from "@pokemap/core/src/signs/linked.js";
-import { findGbaSign, gbaSignScript, gbaSignText, nextGbaSignNumber, updateGbaSign } from "@pokemap/core/src/signs/gbaSign.js";
-import { formatMarker, signHash, type SignMode } from "@pokemap/core/src/signs/marker.js";
+import { gbaSpeciesNames } from "@pokemap/core/signs/linked";
+import { findGbaSign, gbaSignScript, gbaSignText, nextGbaSignNumber, updateGbaSign } from "@pokemap/core/signs/gbaSign";
+import { formatMarker, signHash, type SignMode } from "@pokemap/core/signs/marker";
 import { effectiveGbaScripts, gbaSignLabels, gbaSignParagraphs, replaceGbaScripts } from "./signRefresh.js";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { snapshotOf, snapshotCommand } from "./editSessions.js";
 import { brokenPathBody, refuseBrokenLayout } from "./brokenComponents.js";
-import { paintCells, floodFill, shiftGrid, type Stamp } from "@pokemap/core/src/edit/paint.js";
-import { applyScriptAppend, commitSave } from "@pokemap/core/src/write/save.js";
-import { moveEvent, addEvent, deleteEvent, setObjectGraphics, findWarpsTargetingByIndex, eventSlot, appendIndex, dropPendingInsert, dropOwnedScripts, type EventKind } from "@pokemap/core/src/edit/events.js";
-import { rankIndicatorSpecies, suggestIndicatorPlacement } from "@pokemap/core/src/signs/suggest.js";
-import { buildGbaIndicator, guardGbaIndicatorWrite, findGbaIndicator, updateGbaIndicator, gbaIndicatorGraphics } from "@pokemap/core/src/indicator/gba.js";
+import { paintCells, floodFill, shiftGrid, type Stamp } from "@pokemap/core/edit/paint";
+import { applyScriptAppend, commitSave } from "@pokemap/core/write/save";
+import { moveEvent, addEvent, deleteEvent, setObjectGraphics, findWarpsTargetingByIndex, eventSlot, appendIndex, dropPendingInsert, dropOwnedScripts, type EventKind } from "@pokemap/core/edit/events";
+import { rankIndicatorSpecies, suggestIndicatorPlacement } from "@pokemap/core/signs/suggest";
+import { buildGbaIndicator, guardGbaIndicatorWrite, findGbaIndicator, updateGbaIndicator, gbaIndicatorGraphics } from "@pokemap/core/indicator/gba";
 import type { GbaEditRouteContext } from "./gbaRouteContext.js";
-import { errorMessage } from "@pokemap/core/src/errorMessage.js";
+import { errorMessage } from "@pokemap/core/errorMessage";
 
 type Send = (code: number, body: unknown) => unknown;
 

@@ -1,7 +1,7 @@
-import type { Project } from "@pokemap/core/src/project.js";
-import type { BrokenPath, Layout } from "@pokemap/core/src/model/types.js";
-import { PathEscapeError } from "@pokemap/core/src/gbc/load/pathGuard.js";
-import { assertLayoutUsable, brokenPathOfLayout as coreBrokenPathOfLayout } from "@pokemap/core/src/brokenComponents.js";
+import type { Project } from "@pokemap/core/project";
+import type { BrokenPath, Layout } from "@pokemap/core/model/types";
+import { PathEscapeError } from "@pokemap/core/gbc/load/pathGuard";
+import { assertLayoutUsable, brokenPathOfLayout as coreBrokenPathOfLayout } from "@pokemap/core/brokenComponents";
 
 /**
  * Plan H F1c / F1d / D25: a layout, or a tileset it uses, whose path leaves the

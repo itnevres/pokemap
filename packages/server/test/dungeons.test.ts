@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { createServer, type PokemapServer } from "../src/index.js";
 import { SUBJECT_ROOT, hasProject } from "@pokemap/core/test/helpers/corpus.js";
-import { projectPaths } from "@pokemap/core/src/config/paths.js";
+import { projectPaths } from "@pokemap/core/config/paths";
 
 let s: PokemapServer;
 const dungeonsPath = projectPaths(SUBJECT_ROOT).dungeons;

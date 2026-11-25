@@ -5,8 +5,8 @@ import { existsSync, mkdirSync, readFileSync, rmSync, rmdirSync, writeFileSync }
 import { dirname, resolve } from "node:path";
 import { createProjectHandler, type ProjectHandler } from "../src/index.js";
 import { createEditSessionStore } from "../src/editSessions.js";
-import { openProject } from "@pokemap/core/src/project.js";
-import { PathEscapeError } from "@pokemap/core/src/gbc/load/pathGuard.js";
+import { openProject } from "@pokemap/core/project";
+import { PathEscapeError } from "@pokemap/core/gbc/load/pathGuard";
 import { SUBJECT_ROOT, hasProject } from "@pokemap/core/test/helpers/corpus.js";
 import { copyGbaTilesetProject, removeGbaTemp } from "@pokemap/core/test/helpers/gbaTilesetProject.js";
 

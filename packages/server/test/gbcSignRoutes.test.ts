@@ -3,12 +3,12 @@ import type { AddressInfo } from "node:net";
 import { readFileSync, writeFileSync } from "node:fs";
 import { beforeEach, afterEach, describe, expect, it } from "vitest";
 import { createGbcProjectHandler } from "../src/gbcRoutes.js";
-import { openGbcProject } from "@pokemap/core/src/gbc/project.js";
+import { openGbcProject } from "@pokemap/core/gbc/project";
 import { createGbcEditSessionStore } from "../src/gbcEditSessions.js";
 
-import { findGbcSign } from "@pokemap/core/src/gbc/signs.js";
-import { signHash } from "@pokemap/core/src/signs/marker.js";
-import { parseMapEvents } from "@pokemap/core/src/gbc/load/events.js";
+import { findGbcSign } from "@pokemap/core/gbc/signs";
+import { signHash } from "@pokemap/core/signs/marker";
+import { parseMapEvents } from "@pokemap/core/gbc/load/events";
 import { copyGbcSubjectToTemp, removeTemp } from "@pokemap/core/test/gbc/helpers/corpus.js";
 
 interface WireBody {

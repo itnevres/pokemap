@@ -1,4 +1,4 @@
-import { errorMessage } from "@pokemap/core/src/errorMessage.js";
+import { errorMessage } from "@pokemap/core/errorMessage";
 export interface WarmResult { rendered: number; skipped: number; failed: number; ms: number }
 
 /** Runs warmOne(name) for each name, one per macrotask: a setImmediate yield BEFORE each map, so a client request queued
