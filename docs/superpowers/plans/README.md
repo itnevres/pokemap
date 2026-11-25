@@ -29,7 +29,7 @@ Every plan in execution order. Open plans are in this folder; finished plans are
 | [13: Warp destination popups (#5/#6)](archive/plan-13-warp-popups.md) | Editable warp destination popup and the dungeon world scope, both families. | complete |
 | [14.1: Add Event](archive/plan-14-1-add-event.md) | Add Object, Warp, Coord and BG events from a placement popup, both families. | complete |
 | [14.2: Block editor](archive/plan-14-2-block-editor.md) | Polished-Map-style block editor: tiles, collision or behaviour, usage warning, Save as new block. | complete |
-| [H: Hardening and structure pass](plan-h-hardening.md) | Request boundary, path containment, save and session correctness, route modules, small UI fixes, tooling. All of it before 14A. Next: batch H0 (Task Q1). | open |
+| [H: Hardening and structure pass](plan-h-hardening.md) | Request boundary, path containment, save and session correctness, route modules, small UI fixes, tooling. All of it before 14A. Merged through H4 and L1, L2; left: M3 fonts, P1-P3 tooling, K5. | open |
 | [18: HexManiacAdvance triage (#7)](plan-18-hma-triage.md) | Rate the 21 HMA features in issue #7 and turn the keepers into issues (#50-#54). Docs only. | complete |
 | [14A: Shared stamps and saved patterns](plan-14a-stamps-and-patterns.md) | Capture a map area, save it as a named pattern tied to its tilesets, and place it, both families; keyboard access to the map canvas. | open |
 | [19: Create new trainers](plan-19-new-trainers.md) | Create a trainer and its party by copying an existing one, from the Add Object popup, both families. | open |
@@ -41,7 +41,7 @@ Every plan in execution order. Open plans are in this folder; finished plans are
 | [15b: Town map editor tools (#9)](plan-15b-town-map-tools.md) | Full town map customisation: sections, fly points, tile arrangement and pixels, with lossless writers. | open |
 | [17: Copy maps between games (#10)](plan-17-copy-maps.md) | Copy a map with everything it needs, tileset included, into another game of the same family. | open |
 | [17A: Walking preview](plan-17a-walking-preview.md) | A 2D collision-aware walking preview with each engine's movement rules. May run any time after 14C. | open |
-| [4: Launcher and MCP server](plan-04-launcher-and-mcp.md) | One double-click launcher, and MCP tools for agents. The Electron app and installer are deferred (D32). | open |
+| [4: Launcher and MCP server](plan-04-launcher-and-mcp.md) | One double-click launcher, MCP tools for agents, the guides and a CLI speed-up are merged. The Electron app and installer are deferred (D32). | open |
 | [5: Future work](plan-05-future-work.md) | Backlog: script link-out, day/night preview, `.pla` lights and smaller items. Nothing scheduled. | open |
 
 **Execution order (D24, D35):** 10 → 11 → 12 → 13 → 14 (14.1, 14.2) → H (every batch) → 14A (with the map-canvas keyboard model) → 19 → 14B → 14C → Plan 3 Tasks 2-3 → 15a → 16 → 15b → 17 → 17A. Plan 18 runs early, before Plan 19 is specced; Plan 17A may move up to any point after 14C; Plans 4 and 5 are independent. Plan 19 is the trainers plan named in D24.
