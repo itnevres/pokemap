@@ -26,3 +26,10 @@ could not be more exact). No review dispatched: Low tier, typecheck and tests co
   - `server/test/gbcAddEventRoutes.test.ts` (2 tests, 8 s limit): ran 11.6 s and 12.9 s in one re-run, passed in the next; with K3 reverted the file also passed. The tests sit at 6-9 s on this loaded machine, so the 8 s limit is marginal; not a K3 logic fault (probe above shows the cache works).
   - `core/test/config/engine.test.ts` "parses the subject repo's real porymap.project.cfg": the known env failure (RESUME / LESSONS).
 - Subjects: porcelain before and after identical (both clean).
+
+## Live check (K2 hex case), servers started from this worktree
+Served code verified as mine: `GET :5173/src/shared/format.ts` returned the new `format.ts`. Browser pane, then servers stopped.
+- GBC (pokecrystal-PerfPlus, Route39): palette search `0x1f` leaves one cell, label `metatile 0x1F`; search `0xc` leaves `metatile 0xC`; status strip hover reads `id 0x44`, `0x48`, `0x3` (strip ids unchanged in form).
+  The `BR 0xC8 (wall)` fallback (name null) did not occur on this map; `formatQuadrant` is covered by the updated `GbcMapCanvas.test.tsx` pin.
+- GBA (game, VioletCity): palette has 980 cells with labels `metatile 0xA`..`0xE`; hover strip reads `id 0x35B · collision 1 · elevation 0 · behavior 0x0`.
+Production code changed after the gate run at `323c13f`: none (only the two UI test files and this report).
