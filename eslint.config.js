@@ -13,6 +13,7 @@ export default tseslint.config(
     ignores: ["**/node_modules/**", "**/dist/**", "**/coverage/**", "docs/**", ".claude/**", ".codex/**", ".agents/**", "fixtures/**", "packages/ui/public/**"],
   },
   // Existing eslint-disable comments name exhaustive-deps, which is off until its follow-up.
+  // TODO: turn this back on together with that follow-up so it does not outlive it.
   { linterOptions: { reportUnusedDisableDirectives: "off" } },
   js.configs.recommended,
   tseslint.configs.recommended,
@@ -20,8 +21,6 @@ export default tseslint.config(
     files: ["**/*.{ts,tsx,js,mjs,cjs}"],
     languageOptions: { globals: { ...globals.node } },
     rules: {
-      // TypeScript does this check (typescript-eslint's own advice).
-      "no-undef": "off",
       "no-empty": ["error", { allowEmptyCatch: true }],
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_", ignoreRestSiblings: true, caughtErrorsIgnorePattern: "^_" }],
       "@typescript-eslint/no-empty-object-type": ["error", { allowInterfaces: "with-single-extends" }],
@@ -29,6 +28,11 @@ export default tseslint.config(
       "@typescript-eslint/no-explicit-any": "off",
       "preserve-caught-error": "off",
     },
+  },
+  {
+    // TypeScript does this check (typescript-eslint's own advice); plain JS keeps it.
+    files: ["**/*.{ts,tsx}"],
+    rules: { "no-undef": "off" },
   },
   {
     files: ["packages/ui/**/*.{ts,tsx}"],
