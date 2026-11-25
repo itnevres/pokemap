@@ -211,7 +211,7 @@ interface ArrayWalk { elements: Span[]; leadingGaps: string[]; }
 function walkArray(src: string, arrStart: number): ArrayWalk {
   const elements: Span[] = [];
   const leadingGaps: string[] = [];
-  const VALUE_START = /["{\[\-0-9tfn]/;
+  const VALUE_START = /["{[\-0-9tfn]/;
 
   let cursor = arrStart + 1;
   while (true) {

@@ -215,7 +215,6 @@ function EventForm(props: AddEventDialogProps & { api: OptionsApi; ctx: AddEvent
     if (kind === "warp" && destinationReady && !ctx.map.warps.some(w => String(w.n) === values.destWarp)) setValues(v => ({ ...v, destWarp: String(ctx.map.warps[0]?.n ?? "") }));
   }, [kind, destinationReady, ctx.map, values.destWarp]);
 
-  const textKeys = ["seen", "beaten", "after"] as const;
   const required = (field: FieldSpec): boolean => {
     const key = field.key, value = values[key] ?? "";
     if (field.kind !== "source") {
@@ -251,7 +250,7 @@ function EventForm(props: AddEventDialogProps & { api: OptionsApi; ctx: AddEvent
         : { mode: "new", label: values.scriptLabel!, text: values.scriptText! };
     }
     if (objectType === "trainer" && kind === "object") {
-      const text = (key: typeof textKeys[number]): TextChoice => values[`${key}Mode`] === "copy" ? { mode: "copy", from: values[`${key}From`]!, text: values[`${key}Text`]! } : { mode: "new", text: values[`${key}Text`]! };
+      const text = (key: "seen" | "beaten" | "after"): TextChoice => values[`${key}Mode`] === "copy" ? { mode: "copy", from: values[`${key}From`]!, text: values[`${key}Text`]! } : { mode: "new", text: values[`${key}Text`]! };
       form.texts = { seen: text("seen"), beaten: text("beaten"), after: text("after") };
     }
     try {

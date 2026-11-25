@@ -35,7 +35,7 @@ import type { GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
 import type { EditCommandStack } from "@pokemap/core/src/edit/commands.js";
 import { statSync } from "node:fs";
 import { resolve } from "node:path";
-import { BlockEditRefusal, type BlockEditPlan, type TilesetFileEdit } from "@pokemap/core/src/blockEdit/types.js";
+import { BlockEditRefusal, type BlockEditPlan } from "@pokemap/core/src/blockEdit/types.js";
 import type { createEditSessionStore } from "./editSessions.js";
 import type { createGbcEditSessionStore } from "./gbcEditSessions.js";
 
