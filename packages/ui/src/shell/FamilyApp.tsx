@@ -12,7 +12,7 @@ import { useDungeonFilter } from "./useDungeonFilter.js";
 import { useWarpPopup } from "./useWarpPopup.js";
 import { WarpPopup } from "../shared/WarpPopup.js";
 import { DefectsBanner } from "../shared/DefectsBanner.js";
-import type { DataDefect } from "@pokemap/core/src/defects/types.js";
+import type { DataDefect } from "@pokemap/core/defects/types";
 import type { EngineAdapter, Mode, ShellSlots } from "./adapter.js";
 
 /** A map blocked by a broken path: show the defect (file/message/fix) via DefectsBanner

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { GbcEventInspector, duplicateArgs } from "../../src/gbc/GbcEventInspector.js";
-import type { GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
+import type { GbcMapEvents } from "@pokemap/core/gbc/model/types";
 
 // Measured from the GBC corpus maps/NewBarkTown.asm (read only), line 302.
 const TEACHER = { x: 6, y: 8, sprite: "SPRITE_TEACHER", moveData: "SPRITEMOVEDATA_SPINRANDOM_SLOW", radiusX: 1, radiusY: 0, hour1: "-1", hour2: "-1", palette: "0", objectType: "OBJECTTYPE_SCRIPT", sightRange: 0, script: "NewBarkTownTeacherScript", eventFlag: "-1", lineIndex: 0 };

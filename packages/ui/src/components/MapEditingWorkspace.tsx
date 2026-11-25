@@ -19,7 +19,7 @@ import * as addEventAdapter from "../gba/addEventFields.js";
 import { useEventOptions } from "../shared/useEventOptions.js";
 import { useVisit } from "../shared/useVisit.js";
 import { hasPendingSessionMutations, type EventCreateSession, type BlockEditSession } from "../shared/useEditSessionCore.js";
-import type { EventKind } from "@pokemap/core/src/addEvent/types.js";
+import type { EventKind } from "@pokemap/core/addEvent/types";
 
 /** The props the workspace builds for the canvas it hosts -- exactly what
  *  `App` passed to `MapCanvas` before the extraction (the controlled

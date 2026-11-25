@@ -1,5 +1,5 @@
 import type { ComponentProps, ReactNode } from "react";
-import type { WireConflict } from "@pokemap/core/src/world/conflictAcceptance.js";
+import type { WireConflict } from "@pokemap/core/world/conflictAcceptance";
 import type { PlacementLedger } from "../shared/placementLedger.js";
 import type { SpeciesSummary } from "../encounters/summary.js";
 import type { EncounterBorderProps } from "../shared/EncounterBorder.js";

@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, fireEvent, screen, waitFor, act } from "@testing-library/react";
-import { conflictKey } from "@pokemap/core/src/world/conflictAcceptance.js";
+import { conflictKey } from "@pokemap/core/world/conflictAcceptance";
 import {
   GbcWorldCanvas,
   zoomWorldAboutPivot,
@@ -245,7 +245,7 @@ describe("GBC dungeon warps (Plan 6c D3)", () => {
   });
 });
 import { computeFit } from "../../src/components/WorldCanvas.js";
-import type { GbcWorldPayload } from "@pokemap/core/src/gbc/wire.js";
+import type { GbcWorldPayload } from "@pokemap/core/gbc/wire";
 import { BORDER_BAND } from "../../src/encounters/borderSide.js";
 
 // ---------------------------------------------------------------------------

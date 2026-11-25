@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { DefectsBanner } from "../src/shared/DefectsBanner.js";
-import type { DataDefect } from "@pokemap/core/src/defects/types.js";
+import type { DataDefect } from "@pokemap/core/defects/types";
 
 const defect = (i: number): DataDefect => ({
   file: `maps/Test${i}.asm`, message: `Broken event ${i}`, kind: "gameplay", fix: `Move the event in maps/Test${i}.asm.`,

@@ -1,9 +1,9 @@
 import { useRef } from "react";
-import { drawGrid, drawCollision, drawElevation, drawEvents, type EventMark } from "@pokemap/core/src/render/overlays.js";
-import type { LayoutRaster } from "@pokemap/core/src/render/layout.js";
-import type { MapData } from "@pokemap/core/src/load/maps.js";
-import type { EventKind } from "@pokemap/core/src/edit/events.js";
-import { readBlock, type Stamp } from "@pokemap/core/src/edit/paint.js";
+import { drawGrid, drawCollision, drawElevation, drawEvents, type EventMark } from "@pokemap/core/render/overlays";
+import type { LayoutRaster } from "@pokemap/core/render/layout";
+import type { MapData } from "@pokemap/core/load/maps";
+import type { EventKind } from "@pokemap/core/edit/events";
+import { readBlock, type Stamp } from "@pokemap/core/edit/paint";
 import type { PaintApplyBody } from "../hooks/useEditSession.js";
 import type { MapCanvasProps, EventRef } from "../components/MapCanvas.js";
 import type { MapSurfaceAdapter } from "../canvas/mapSurfaceAdapter.js";

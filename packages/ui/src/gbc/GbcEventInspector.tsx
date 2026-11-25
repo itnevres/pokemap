@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import type { GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
-import type { GbcEventKind, GbcWarpRenumberWarning } from "@pokemap/core/src/gbc/edit/events.js";
+import type { GbcMapEvents } from "@pokemap/core/gbc/model/types";
+import type { GbcEventKind, GbcWarpRenumberWarning } from "@pokemap/core/gbc/edit/events";
 import type { GbcEventRef } from "./GbcMapCanvas.js";
 import { useIndicatorBlock } from "../components/PokemonIndicatorDialog.js";
-import type { IndicatorBlock } from "@pokemap/core/src/indicator/gba.js";
+import type { IndicatorBlock } from "@pokemap/core/indicator/gba";
 import "../styles.css";
 
 type AnyEvent = GbcMapEvents["warps"][number] | GbcMapEvents["coords"][number] | GbcMapEvents["bgs"][number] | GbcMapEvents["objects"][number];

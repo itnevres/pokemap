@@ -2,8 +2,8 @@ import { StrictMode } from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, fireEvent, screen, waitFor } from "@testing-library/react";
 import { GbcMapCanvas, clientToStep, parseColorToken, formatQuadrant, zoomAboutPivot, type GbcMapCanvasProps, type GbcView } from "../../src/gbc/GbcMapCanvas.js";
-import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
-import type { GbcQuadrantInfo } from "@pokemap/core/src/gbc/render/overlays.js";
+import type { GbcMapPayload } from "@pokemap/core/gbc/wire";
+import type { GbcQuadrantInfo } from "@pokemap/core/gbc/render/overlays";
 
 // ---------------------------------------------------------------------------
 // Fixture: 2 blocks wide, 1 block tall, 1-block border ring (border=1 is

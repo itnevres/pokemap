@@ -7,7 +7,7 @@ import {
   isGbcEncountersPayload,
   isGbcCoveragePayload,
 } from "../../src/gbc/guards.js";
-import type { GbcMapPayload, GbcWorldPayload } from "@pokemap/core/src/gbc/wire.js";
+import type { GbcMapPayload, GbcWorldPayload } from "@pokemap/core/gbc/wire";
 
 describe("isProjectInfo", () => {
   it("accepts a real gba ProjectInfo", () => {

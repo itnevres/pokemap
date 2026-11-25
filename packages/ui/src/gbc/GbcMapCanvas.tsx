@@ -1,6 +1,6 @@
-import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
-import type { GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
-import type { GbcEventKind } from "@pokemap/core/src/gbc/edit/events.js";
+import type { GbcMapPayload } from "@pokemap/core/gbc/wire";
+import type { GbcStamp } from "@pokemap/core/gbc/edit/paint";
+import type { GbcEventKind } from "@pokemap/core/gbc/edit/events";
 import type { UseGbcEditSessionResult } from "./hooks/useGbcEditSession.js";
 import type { SettledChain } from "../shared/useStrokeChain.js";
 import type { GbcTimeOfDay } from "./time.js";

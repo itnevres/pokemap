@@ -1,6 +1,6 @@
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
-import type { Split } from "@pokemap/core/src/model/types.js";
-import type { Stamp, StampCell } from "@pokemap/core/src/edit/paint.js";
+import type { Split } from "@pokemap/core/model/types";
+import type { Stamp, StampCell } from "@pokemap/core/edit/paint";
 import { useFollowHover } from "../shared/useFollowHover.js";
 import { useTilesetVersion } from "../shared/tilesetVersion.js";
 import { chunkRows, pickFold } from "../shared/paletteFold.js";

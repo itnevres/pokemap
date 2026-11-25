@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor, act, within } from "@testing-librar
 import { StrictMode } from "react";
 import { FamilyApp } from "../../src/shell/FamilyApp.js";
 import { gbcAdapter } from "../../src/gbc/adapter.js";
-import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
+import type { GbcMapPayload } from "@pokemap/core/gbc/wire";
 import { fitWithBand } from "../../src/encounters/fit.js";
 import { restoreViewport, stubViewport } from "../viewport.js";
 

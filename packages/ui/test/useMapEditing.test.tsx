@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useMapEditing } from "../src/hooks/useMapEditing.js";
 import type { UseEditSessionResult } from "../src/hooks/useEditSession.js";
-import type { MapData } from "@pokemap/core/src/load/maps.js";
+import type { MapData } from "@pokemap/core/load/maps";
 
 const MAP: MapData = {
   id: "MAP_FOO", name: "Foo", layout: "LAYOUT_FOO", music: "MUS_DUMMY",

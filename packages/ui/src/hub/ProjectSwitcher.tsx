@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { ProjectInfo } from "@pokemap/core/src/family.js";
+import type { ProjectInfo } from "@pokemap/core/family";
 import { ProjectPicker } from "./ProjectPicker.js";
 import "../styles.css";
 

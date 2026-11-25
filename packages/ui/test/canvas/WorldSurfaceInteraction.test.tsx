@@ -1,7 +1,7 @@
 import { Suspense, startTransition, useCallback, useRef, useState } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi, type Mock } from "vitest";
-import type { WireConflict } from "@pokemap/core/src/world/conflictAcceptance.js";
+import type { WireConflict } from "@pokemap/core/world/conflictAcceptance";
 import { WorldSurface, type WorldSurfaceProps } from "../../src/canvas/WorldSurface.js";
 import type { PlacementLedger } from "../../src/shared/placementLedger.js";
 import type { SurfacePlacement, SurfaceWarp, SurfaceWorld, WorldSurfaceAdapter } from "../../src/canvas/worldSurfaceAdapter.js";

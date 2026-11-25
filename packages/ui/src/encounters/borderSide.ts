@@ -8,7 +8,7 @@
  * side with the least overlap (ties by SIDE_ORDER). With no layout (map view)
  * a side is blocked when the map has a connection on it.
  */
-import type { ConnectionDirection } from "@pokemap/core/src/load/maps.js";
+import type { ConnectionDirection } from "@pokemap/core/load/maps";
 
 export type BorderSide = "left" | "top" | "right" | "bottom";
 export interface Rect { x: number; y: number; width: number; height: number }

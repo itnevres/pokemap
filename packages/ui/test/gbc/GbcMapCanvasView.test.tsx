@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, fireEvent, screen, waitFor } from "@testing-library/react";
 import { StrictMode } from "react";
 import { GbcMapCanvas, zoomAboutPivot, GBC_COMPOSITE_ORIGIN, type GbcMapCanvasProps, type GbcView } from "../../src/gbc/GbcMapCanvas.js";
-import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
+import type { GbcMapPayload } from "@pokemap/core/gbc/wire";
 
 // Plan 7 Task 5b: GbcMapCanvas's controlled `view`/`onViewChange` and `chromeless` (the twins of MapCanvas's E1/E4
 // props). Fixture and canvas stubs as GbcMapCanvas.test.tsx: a 2x1 map, 1-block ring -> composite 128x96, origin 32.

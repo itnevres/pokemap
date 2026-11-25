@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, fireEvent, screen, waitFor, act } from "@testing-library/react";
-import type { GbcWorldPayload } from "@pokemap/core/src/gbc/wire.js";
+import type { GbcWorldPayload } from "@pokemap/core/gbc/wire";
 import { GbcWorldCanvas, type GbcWorldCanvasProps } from "../../src/gbc/GbcWorldCanvas.js";
 import type { MapView } from "../../src/components/mapView.js";
 

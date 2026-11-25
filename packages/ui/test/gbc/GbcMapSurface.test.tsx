@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, act, cleanup } from "@testing-library/react";
 import { GbcMapCanvas } from "../../src/gbc/GbcMapCanvas.js";
 import type { UseGbcEditSessionResult } from "../../src/gbc/hooks/useGbcEditSession.js";
-import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
-import type { GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
+import type { GbcMapPayload } from "@pokemap/core/gbc/wire";
+import type { GbcMapEvents } from "@pokemap/core/gbc/model/types";
 import { useStrokeChainRegistry } from "../../src/shared/useStrokeChain.js";
 import { noteTilesetVersion, resetTilesetVersion } from "../../src/shared/tilesetVersion.js";
 

@@ -3,12 +3,12 @@ import type { EventRef } from "../components/MapCanvas.js";
 import type { ToolKind } from "../components/Toolbar.js";
 import type { CollisionElevation } from "../components/CollisionPalette.js";
 import type { SelectedEvent } from "../components/EventInspector.js";
-import type { MapData } from "@pokemap/core/src/load/maps.js";
-import type { EventKind } from "@pokemap/core/src/edit/events.js";
-import type { Stamp } from "@pokemap/core/src/edit/paint.js";
+import type { MapData } from "@pokemap/core/load/maps";
+import type { EventKind } from "@pokemap/core/edit/events";
+import type { Stamp } from "@pokemap/core/edit/paint";
 import type { UseEditSessionResult } from "./useEditSession.js";
 import type { MapLayoutData } from "./useMapLayout.js";
-import type { IndicatorBlock } from "@pokemap/core/src/indicator/gba.js";
+import type { IndicatorBlock } from "@pokemap/core/indicator/gba";
 import { useVisit } from "../shared/useVisit.js";
 
 /** Task 14: resolves a bare {kind,index} ref (MapCanvas's own selection

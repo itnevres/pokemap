@@ -1,5 +1,5 @@
 import { unguarded, useGuardedFetch } from "./useGuardedFetch.js";
-import type { Coverage } from "@pokemap/core/src/analyse/coverage.js";
+import type { Coverage } from "@pokemap/core/analyse/coverage";
 
 /**
  * The server's own `/api/coverage` response: `coverage(project)`'s own

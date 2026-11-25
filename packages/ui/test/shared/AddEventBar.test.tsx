@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import type { EventKind } from "@pokemap/core/src/addEvent/types.js";
+import type { EventKind } from "@pokemap/core/addEvent/types";
 import { AddEventBar } from "../../src/shared/AddEventBar.js";
 
 const labels = [

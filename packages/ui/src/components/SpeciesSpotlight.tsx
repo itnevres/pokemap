@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import type { SpeciesHit } from "@pokemap/core/src/analyse/coverage.js";
-import { errorMessage } from "@pokemap/core/src/errorMessage.js";
+import type { SpeciesHit } from "@pokemap/core/analyse/coverage";
+import { errorMessage } from "@pokemap/core/errorMessage";
 
 export interface SpeciesSpotlightProps<H extends { mapName?: string } = SpeciesHit> {
   /**

@@ -1,4 +1,4 @@
-import type { GbcCoverage } from "@pokemap/core/src/gbc/analyse/atlas.js";
+import type { GbcCoverage } from "@pokemap/core/gbc/analyse/atlas";
 import { isGbcCoveragePayload } from "../guards.js";
 import { useGuardedFetch, type UseGuardedFetchResult } from "../../hooks/useGuardedFetch.js";
 

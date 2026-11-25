@@ -1,4 +1,4 @@
-import type { EventKind } from "@pokemap/core/src/edit/events.js";
+import type { EventKind } from "@pokemap/core/edit/events";
 
 /** Cap on object events per map: pokeemerald's OBJECT_EVENT_TEMPLATES_COUNT. */
 export const MAX_OBJECT_EVENTS = 64;

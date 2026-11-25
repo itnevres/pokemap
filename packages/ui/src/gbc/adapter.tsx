@@ -7,7 +7,7 @@ import { DefectsBanner } from "../shared/DefectsBanner.js";
 import { useGbcGroups } from "./hooks/useGbcGroups.js";
 import { useGbcMap } from "./hooks/useGbcMap.js";
 import { PokemonIndicatorDialog } from "../components/PokemonIndicatorDialog.js";
-import type { IndicatorBlock } from "@pokemap/core/src/indicator/gba.js";
+import type { IndicatorBlock } from "@pokemap/core/indicator/gba";
 import { useGbcEditSession, isSessionBody } from "./hooks/useGbcEditSession.js";
 import { useGbcWorld } from "./hooks/useGbcWorld.js";
 import { useDungeons } from "../hooks/useDungeons.js";
@@ -15,7 +15,7 @@ import type { GbcTimeOfDay } from "./time.js";
 import { GBC_HIDDEN_MAP_TYPES } from "../world/visibility.js";
 import { useTilesetVersion } from "../shared/tilesetVersion.js";
 import { GBC_CAPABILITIES, type BlockEditorSpec, type EngineAdapter, type FamilyRuntime, type RuntimeArgs, type ShellSlots } from "../shell/adapter.js";
-import { errorMessage } from "@pokemap/core/src/errorMessage.js";
+import { errorMessage } from "@pokemap/core/errorMessage";
 
 const TIME_ORDER: readonly GbcTimeOfDay[] = ["morn", "day", "nite"];
 const TIME_LABEL: Record<GbcTimeOfDay, string> = { morn: "Morn", day: "Day", nite: "Nite" };

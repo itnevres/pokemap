@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { EventOptions, MapEventOptions } from "@pokemap/core/src/addEvent/types.js";
+import type { EventOptions, MapEventOptions } from "@pokemap/core/addEvent/types";
 import { addEventFields, addEventDefaults } from "../../src/gbc/addEventFields.js";
 
 const options: EventOptions = {

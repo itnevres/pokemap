@@ -5,7 +5,7 @@ import {
   type Point,
   type View,
 } from "./view.js";
-import type { Bounds } from "@pokemap/core/src/world/connections.js";
+import type { Bounds } from "@pokemap/core/world/connections";
 
 /** Shared wheel zoom factor (multiplicative per notch). */
 export const WHEEL_FACTOR = 1.2;

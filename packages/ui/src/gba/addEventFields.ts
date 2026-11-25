@@ -1,4 +1,4 @@
-import type { EventKind, ObjectType } from "@pokemap/core/src/addEvent/types.js";
+import type { EventKind, ObjectType } from "@pokemap/core/addEvent/types";
 import type { AddEventContext, FieldSpec } from "../shell/adapter.js";
 
 export const family = "gba" as const;

@@ -14,7 +14,7 @@ import { screenToSource, type Point } from "./view.js";
 import { useStage, useStageAutoFit } from "./useStage.js";
 import { useRasterComposite } from "./useRasterComposite.js";
 import type { MapHover, MapSurfaceAdapter, MapTool } from "./mapSurfaceAdapter.js";
-import type { EventKind } from "@pokemap/core/src/addEvent/types.js";
+import type { EventKind } from "@pokemap/core/addEvent/types";
 
 export interface EventPlacementProps {
   placing?: EventKind | null;

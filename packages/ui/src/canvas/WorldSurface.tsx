@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import type { WireConflict } from "@pokemap/core/src/world/conflictAcceptance.js";
+import type { WireConflict } from "@pokemap/core/world/conflictAcceptance";
 import { drawDiamond, themedLevelColorMap } from "./worldColours.js";
 import { SpeciesSpotlight } from "../components/SpeciesSpotlight.js";
 import type { MapView } from "../components/mapView.js";
@@ -45,7 +45,7 @@ import {
 import type { View } from "./view.js";
 import type { EncounterEntry, SurfacePlacement, SurfaceWarp, SurfaceWorld, WorldSurfaceAdapter,
   WorldStatus, WorldOverlay } from "./worldSurfaceAdapter.js";
-import { errorMessage } from "@pokemap/core/src/errorMessage.js";
+import { errorMessage } from "@pokemap/core/errorMessage";
 
 /** `fitted` lives in the one view value so a fit sets zoom, pan and `fitted` in one update. */
 interface WorldView extends View {

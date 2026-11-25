@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, fireEvent, act, waitFor } from "@testing-library/react";
 import { GbcMapCanvas, type GbcMapCanvasProps } from "../../src/gbc/GbcMapCanvas.js";
 import type { UseGbcEditSessionResult } from "../../src/gbc/hooks/useGbcEditSession.js";
-import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
-import type { GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
+import type { GbcMapPayload } from "@pokemap/core/gbc/wire";
+import type { GbcMapEvents } from "@pokemap/core/gbc/model/types";
 
 // 3x2 blocks, border ring 1 => origin (32,32), 32 px blocks, 16 px steps.
 // Client (72,72) at zoom 1, pan 0, rect.left/top 0 => block (1,1), step (2,2).

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, act } from "@testing-library/react";
 import { useEditSession } from "../src/hooks/useEditSession.js";
-import type { Block } from "@pokemap/core/src/model/types.js";
+import type { Block } from "@pokemap/core/model/types";
 
 // Keep mutation fixtures and call-order assertions scoped to their routes; hydration has no open session.
 function stubMutationFetch(fetcher: (url: string, init?: RequestInit) => unknown) {

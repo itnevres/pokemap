@@ -3,7 +3,7 @@ import { render, fireEvent, screen, waitFor, act } from "@testing-library/react"
 import { WorldCanvas } from "../src/components/WorldCanvas.js";
 import { computeFit, levelColorMap } from "../src/components/WorldCanvas.js";
 import { UnplacedRail } from "../src/world/UnplacedRail.js";
-import { conflictKey } from "@pokemap/core/src/world/conflictAcceptance.js";
+import { conflictKey } from "@pokemap/core/world/conflictAcceptance";
 
 /**
  * jsdom/testing-library's `fireEvent.drop(el, {clientX, clientY, ...})` does

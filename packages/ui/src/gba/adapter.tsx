@@ -15,7 +15,7 @@ import { useMapEditing } from "../hooks/useMapEditing.js";
 import { useTilesetVersion } from "../shared/tilesetVersion.js";
 import { HIDDEN_MAP_TYPES } from "../world/visibility.js";
 import { GBA_CAPABILITIES, type BlockEditorSpec, type EngineAdapter, type FamilyRuntime, type RuntimeArgs, type ShellSlots } from "../shell/adapter.js";
-import { errorMessage } from "@pokemap/core/src/errorMessage.js";
+import { errorMessage } from "@pokemap/core/errorMessage";
 
 /** The GBA-only half of the shell (was App.tsx): data hooks, edit session, map editing state, switch policy, canvases. */
 export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): FamilyRuntime {

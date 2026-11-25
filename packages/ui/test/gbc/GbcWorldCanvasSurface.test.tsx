@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { GbcWorldPayload } from "@pokemap/core/src/gbc/wire.js";
+import type { GbcWorldPayload } from "@pokemap/core/gbc/wire";
 import { GbcWorldCanvas, type GbcWorldCanvasProps } from "../../src/gbc/GbcWorldCanvas.js";
 import { noteTilesetVersion, resetTilesetVersion } from "../../src/shared/tilesetVersion.js";
 
