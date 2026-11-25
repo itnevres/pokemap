@@ -23,8 +23,8 @@ describe("cli index.ts start-up imports", () => {
     const allowed = new Set([
       "commander",
       "node:fs",
-      "@pokemap/core/src/family.js",
-      "@pokemap/core/src/errorMessage.js", // import-free helper
+      "@pokemap/core/family",
+      "@pokemap/core/errorMessage", // import-free helper
       "./context.js",
       "./args.js",
     ]);
@@ -33,14 +33,14 @@ describe("cli index.ts start-up imports", () => {
   });
 
   it("loads the heavy modules lazily", () => {
-    for (const spec of ["./gbcCommands.js", "./writeCommands.js", "./png.js", "@pokemap/core/src/render/layout.js"]) {
+    for (const spec of ["./gbcCommands.js", "./writeCommands.js", "./png.js", "@pokemap/core/render/layout"]) {
       expect(SRC).toContain(`import("${spec}")`);
     }
   });
 
   it("context.ts loads the GBA project module lazily, so a GBC command never pays for it", () => {
     const ctx = readFileSync(join(process.cwd(), "packages/cli/src/context.ts"), "utf8");
-    expect(staticImports(ctx)).toEqual(["node:fs", "@pokemap/core/src/errorMessage.js"]);
-    expect(ctx).toContain('import("@pokemap/core/src/project.js")');
+    expect(staticImports(ctx)).toEqual(["node:fs", "@pokemap/core/errorMessage"]);
+    expect(ctx).toContain('import("@pokemap/core/project")');
   });
 });

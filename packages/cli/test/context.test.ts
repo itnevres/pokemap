@@ -2,8 +2,8 @@ import { describe, it, expect, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import type { Project } from "@pokemap/core/src/project.js";
-import type { MapData } from "@pokemap/core/src/load/maps.js";
+import type { Project } from "@pokemap/core/project";
+import type { MapData } from "@pokemap/core/load/maps";
 import { layoutNameFor, resolveRoot } from "../src/context.js";
 
 /**

@@ -4,8 +4,8 @@ vi.mock("node:fs", async (importOriginal) => {
   return { ...m, default: m, readFileSync: vi.fn(m.readFileSync), existsSync: vi.fn(m.existsSync), statSync: vi.fn(m.statSync) };
 });
 import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
-import { openProject, type Project } from "@pokemap/core/src/project.js";
-import { PathEscapeError } from "@pokemap/core/src/gbc/load/pathGuard.js";
+import { openProject, type Project } from "@pokemap/core/project";
+import { PathEscapeError } from "@pokemap/core/gbc/load/pathGuard";
 import { openCliEditSession } from "../src/writeCommands.js";
 import { makeGbaFixture } from "../../core/test/blockEdit/gbaFixture.js";
 import { breakLayout, outsideCalls } from "../../core/test/helpers/brokenGba.js";
