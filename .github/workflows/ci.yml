@@ -16,12 +16,12 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 jobs:
   ci:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 30
     env:
       # Measured 2026-11-24 on the pinned public corpora (500 pending, 0 todo). Bump deliberately when a test is added that skips here, or when the corpora change.
       EXPECTED_SKIPPED: "500"
@@ -52,6 +52,8 @@ jobs:
         packages/server/test/editSessions.test.ts
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -74,12 +76,19 @@ jobs:
         env:
           CLAUDE_CODE_REMOTE: "true"
           GIT_TERMINAL_PROMPT: "0"
-        run: bash .claude/hooks/session-start.sh < /dev/null
+        run: |
+          bash .claude/hooks/session-start.sh < /dev/null
+          # The hook only warns when a fetch fails; fail here so a missing corpus is not read as "update the pin".
+          for d in refs/pokeemerald refs/pokefirered refs/pokeemerald-expansion refs/modern-emerald refs/pokeclassic pokecrystal-PerfPlus pokecrystal; do
+            test -d "$HOME/pokemap-corpus/$d/.git" || { echo "corpus $d was not fetched" >&2; exit 1; }
+          done
 
       - name: Test
         run: |
           # vitest's --exclude does not reach the projects in vitest.config.ts, so pass every other
           # test file as a filter instead.
+          printf '%s\n' $SUBJECT_ONLY_TESTS | while read -r f; do test -f "$f" || { echo "SUBJECT_ONLY_TESTS lists $f, which does not exist; update the list in .github/workflows/ci.yml" >&2; exit 1; }; done
+          echo 'If a test file fails at collection with a missing pokemon-three-region path, it needs the private GBA subject: guard it with itWithCorpus or add it to SUBJECT_ONLY_TESTS.'
           find packages -path '*/node_modules' -prune -o -path '*/test/*' \( -name '*.test.ts' -o -name '*.test.tsx' \) -print | sort > all-tests.txt
           printf '%s\n' $SUBJECT_ONLY_TESTS | sort > subject-only.txt
           grep -vxFf subject-only.txt all-tests.txt > run-tests.txt
@@ -90,6 +99,7 @@ jobs:
         if: always()
         run: |
           node -e '
+            if (!require("fs").existsSync("vitest-results.json")) { console.error("vitest wrote no results file; see the earlier failed step"); process.exit(1); }
             const r = JSON.parse(require("fs").readFileSync("vitest-results.json", "utf8"));
             const skipped = r.numPendingTests + r.numTodoTests;
             console.log(`tests: ${r.numTotalTests} total, ${r.numPassedTests} passed, ${r.numFailedTests} failed, ${skipped} skipped (pending ${r.numPendingTests}, todo ${r.numTodoTests})`);
