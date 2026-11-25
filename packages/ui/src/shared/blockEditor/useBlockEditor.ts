@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { BlockEditorSpec } from "../../shell/adapter.js";
 import { EditSessionError, type BlockCheckReply, type BlockEditSession } from "../useEditSessionCore.js";
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 
 export type BlockEditorStatus = "loading" | "ready" | "checking" | "confirming" | "applying" | "error";
 
@@ -23,7 +24,7 @@ interface BlockInfo extends Record<string, unknown> {
 type Mode = "ok" | "saveAsNew";
 const STALE = "The block changed since this editor opened; reopen it";
 const errorMessage = (error: unknown) => error instanceof EditSessionError && error.code === "STALE"
-  ? STALE : error instanceof Error ? error.message : String(error);
+  ? STALE : errorMessage(error);
 
 export function useBlockEditor(args: EditorArgs): {
   status: BlockEditorStatus; info: any | null; draft: Draft | null; previewSrc: string | null;
@@ -77,7 +78,7 @@ export function useBlockEditor(args: EditorArgs): {
         updateDraft(initial);
         changeStatus("ready");
       } catch (error) {
-        if (!cancelled) { setMessage(error instanceof Error ? error.message : String(error)); changeStatus("error"); }
+        if (!cancelled) { setMessage(errorMessage(error)); changeStatus("error"); }
       }
     })();
     return () => { cancelled = true; generation.current++; checkCounter.current++; previewCounter.current++; checkedRequest.current = null; };

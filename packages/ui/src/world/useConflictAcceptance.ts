@@ -3,6 +3,7 @@ import type { WireConflict } from "@pokemap/core/src/world/conflictAcceptance.js
 import { postJson } from "../hooks/useGuardedFetch.js";
 import { isAcceptedConflictsResponse } from "./conflictAcceptance.js";
 import { useWorldContextMenu } from "../components/WorldContextMenu.js";
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 
 /** Acceptance state only; `useConflictAcceptanceMenu` below wires it to the context menu that triggers `toggle`. */
 export function useConflictAcceptance(conflicts: readonly WireConflict[] | undefined) {
@@ -17,7 +18,7 @@ export function useConflictAcceptance(conflicts: readonly WireConflict[] | undef
       setAcceptedKeys(response.acceptedConflicts);
       return true;
     }, (cause: unknown) => {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(errorMessage(cause));
       return false;
     });
   };

@@ -6,6 +6,7 @@ import { SwitchConfirmDialog } from "./SwitchConfirmDialog.js";
 import { useGuardedFetch } from "../hooks/useGuardedFetch.js";
 import { fetchGuarded } from "../hooks/useGuardedFetch.js";
 import "../styles.css";
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 
 export interface ProjectPickerProps {
   onOpened: (info: ProjectInfo) => void;
@@ -136,7 +137,7 @@ export function ProjectPicker({ onOpened, onClose }: ProjectPickerProps) {
         // Drop the previous listing: old entries under a fresh error alert
         // would look like the failed folder's contents.
         setBrowseResult(null);
-        setBrowseError(e instanceof Error ? e.message : String(e));
+        setBrowseError(errorMessage(e));
       });
   }, [dir, browseNonce]);
 

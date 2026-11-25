@@ -3,6 +3,7 @@ import { fetchGuarded } from "../hooks/useGuardedFetch.js";
 import { isGbcEncountersPayload } from "../gbc/guards.js";
 import { isGbaEncountersPayload } from "./guards.js";
 import { summariseGba, summariseGbc, type SpeciesSummary } from "./summary.js";
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 
 /** `undefined` = the placeholder written before the fetch (in flight), `{ error }` = failed (not retried). */
 type Cached = SpeciesSummary[] | { error: string } | undefined;
@@ -39,7 +40,7 @@ export function useMapEncounterSummaries(
         : fetchGuarded(url, isGbcEncountersPayload, url).then((d) => summariseGbc(d.sources));
     request
       .then((s) => cache.set(key, s))
-      .catch((e: unknown) => cache.set(key, { error: e instanceof Error ? e.message : String(e) }))
+      .catch((e: unknown) => cache.set(key, { error: errorMessage(e) }))
       .then(() => setVersion((v) => v + 1));
   }, [mapName, family, enabled, cache, key]);
 

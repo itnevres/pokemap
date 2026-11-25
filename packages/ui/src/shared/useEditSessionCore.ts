@@ -4,6 +4,7 @@ import { useVisit } from "./useVisit.js";
 import { invalidateEventOptions } from "./useEventOptions.js";
 import { noteTilesetStamp, tilesetGeneration } from "./tilesetVersion.js";
 import { postJson } from "../hooks/useGuardedFetch.js";
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 
 /** Refusals keep their server code; callers suppress failures belonging to a retired visit. */
 export class EditSessionError extends Error {
@@ -154,7 +155,7 @@ export function useEditSessionCore<State>(base: string, mapName: string | null, 
         return { data: data as R, ticket };
       } catch (error) {
         if (error instanceof EditSessionError) throw error;
-        throw new EditSessionError(error instanceof Error ? error.message : String(error), undefined, !owner.isCurrent());
+        throw new EditSessionError(errorMessage(error), undefined, !owner.isCurrent());
       }
     };
     const pending = run();

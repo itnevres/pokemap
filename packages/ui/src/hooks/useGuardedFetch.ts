@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 
 /** For callers that trust the server's shape, such as the GBA hooks. */
 export function unguarded<T>(_x: unknown): _x is T { return true; }
@@ -132,7 +133,7 @@ export function useGuardedFetch<T>(url: string | null, guard: (x: unknown) => x 
         if (!cancelled) setData(d);
       })
       .catch((e: unknown) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+        if (!cancelled) setError(errorMessage(e));
       });
     return () => {
       cancelled = true;

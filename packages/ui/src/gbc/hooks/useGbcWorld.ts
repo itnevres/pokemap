@@ -3,6 +3,7 @@ import { isGbcWorldPayload } from "../guards.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchGuarded, type UseGuardedFetchResult } from "../../hooks/useGuardedFetch.js";
 import type { WorldScope } from "../../canvas/worldSurfaceAdapter.js";
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 
 export interface UseGbcWorldResult extends UseGuardedFetchResult<GbcWorldPayload> {
   /** The generation whose GET produced `data`; the first load is generation 0. */
@@ -47,7 +48,7 @@ export function useGbcWorld(
     onIssueRef.current?.(gen);
     fetchGuarded(scope === "dungeon" ? "/api/world?scope=dungeon" : "/api/world", isGbcWorldPayload)
       .then((d) => { if (!cancelled) { setData(d); setLoadedGen(gen); setError(null); } })
-      .catch((e: unknown) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)); });
+      .catch((e: unknown) => { if (!cancelled) setError(errorMessage(e)); });
     return () => { cancelled = true; };
   }, [enabled, gen, scope]);
   return { data, error, reload, loadedGen, dismissError };

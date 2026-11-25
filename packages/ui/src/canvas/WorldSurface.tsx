@@ -45,6 +45,7 @@ import {
 import type { View } from "./view.js";
 import type { EncounterEntry, SurfacePlacement, SurfaceWarp, SurfaceWorld, WorldSurfaceAdapter,
   WorldStatus, WorldOverlay } from "./worldSurfaceAdapter.js";
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 
 /** `fitted` lives in the one view value so a fit sets zoom, pan and `fitted` in one update. */
 interface WorldView extends View {
@@ -407,7 +408,7 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
   const [saveError, setSaveError] = useState<{ map: string; message: string } | null>(null);
   const [layoutError, setLayoutError] = useState<string | null>(null);
   const perMapErrors = adapter.saveErrorPolicy === "per-map";
-  const messageOf = (cause: unknown) => cause instanceof Error ? cause.message : String(cause);
+  const messageOf = (cause: unknown) => errorMessage(cause);
   // Catch each outcome before joining: a first rejection must not reload over the other members' pending positions.
   // Each POST resolves only its gesture version. A later gesture owns the position even if this POST lands last.
   const commit = (moves: WorldDragMove[]) => {

@@ -4,6 +4,7 @@ import type { BrokenPath, Layout, Split } from "@pokemap/core/src/model/types.js
 import type { DataDefect } from "@pokemap/core/src/defects/types.js";
 import { noteTilesetStamp, tilesetGeneration } from "../shared/tilesetVersion.js";
 import { keepUnchanged } from "../shared/keepUnchanged.js";
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 
 /** A 409 `broken-path` reply from `/api/map/:name`: the map cannot be opened until its
  *  out-of-project path is fixed (D25). Carries the defect so the shell can render it. */
@@ -138,7 +139,7 @@ export function useMapLayout(name: string | null): UseMapLayoutResult {
       })
       .catch((e: unknown) => {
         if (!cancelled && epoch.current === mine) {
-          setError(e instanceof Error ? e.message : String(e));
+          setError(errorMessage(e));
           setBrokenPath(e instanceof BrokenPathError ? e.defect : null);
           loadingRef.current = false;
           setLoading(false);
