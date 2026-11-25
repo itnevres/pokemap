@@ -4,7 +4,7 @@ Start PokeMap with one double-click, and give AI agents native tool access via M
 
 ## Status
 
-Open. Rows 1a, 1b (launcher) and 5 (documentation) are done; 3a-3c and 6a are merged. In scope now: the launcher (1a, 1b; D32) and the MCP tools (3a-3c, approved by the user). Deferred, not cancelled: the Electron app and its installer (1c-1f, 2a, 2b; D32). Documentation (5) and the performance pass (6a, 6b) run now, with the launcher. Each task is independent of the others; this is not one plan to run top to bottom. Work from the Subtasks table: each row is one dispatch, and its brief also carries the traps for its task. Where a trap or a ruling disagrees with a Task requirement, the trap or ruling wins.
+Open. Merged: rows 1a, 1b (launcher; #57), 3a-3c (MCP tools; #42, #43, #46), 5 (documentation; #57), 6a (benchmarks; #39) and 6b (CLI startup; #60). In scope now: the launcher (1a, 1b; D32) and the MCP tools (3a-3c, approved by the user). Deferred, not cancelled: the Electron app and its installer (1c-1f, 2a, 2b; D32). Documentation (5) and the performance pass (6a, 6b) run now, with the launcher. Each task is independent of the others; this is not one plan to run top to bottom. Work from the Subtasks table: each row is one dispatch, and its brief also carries the traps for its task. Where a trap or a ruling disagrees with a Task requirement, the trap or ruling wins.
 
 ## Depends on
 

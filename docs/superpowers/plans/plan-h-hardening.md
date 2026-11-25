@@ -4,7 +4,7 @@ Close the security, correctness, structure, UI and tooling gaps listed below, an
 
 ## Status
 
-Open. Not started. Every batch may start: batch H0 (Task Q1) runs first, then H1. Task G is a suspicion with a repro step; every other finding was checked against the code.
+Open. Merged (PRs #37-#72): batches H0-H4 and the H5 rows L1, L2, M1, M2, K4, Q6-Q8, with Task K (K1a-K1c, K2, K3), Task G (G1-G3), Task B (B1-B4), F1c-F1e, H-b, I1, I2a, I2b and Task J (J1a-J4). Remaining: M3 (self-hosted fonts; the user OK'd the font download), P1-P3 (lint, CI, `exports` map and module layout; each needs an otherwise idle repository) and K5 (one instruction body; not in the merge list). Every other finding was checked against the code.
 
 ## Depends on
 
