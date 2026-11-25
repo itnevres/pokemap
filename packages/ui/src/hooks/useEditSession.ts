@@ -6,6 +6,7 @@ import type { Block } from "@pokemap/core/src/model/types.js";
 import type { Stamp } from "@pokemap/core/src/edit/paint.js";
 import type { MapData } from "@pokemap/core/src/load/maps.js";
 import type { EventKind, WarpRenumberWarning } from "@pokemap/core/src/edit/events.js";
+import { isRecord } from "../shared/format.js";
 
 export type PaintApplyBody =
   | { tool: "pencil"; targets: { x: number; y: number }[]; stamp: Stamp; origin: { x: number; y: number } }
@@ -348,7 +349,6 @@ export function useEditSession(mapName: string | null, initialBlocks?: Block[], 
 export function isIndicatorMapUpdate(body: unknown): body is { map: MapData; isDirty: boolean } {
   if (!body || typeof body !== "object") return false;
   const b = body as { map?: MapData; isDirty?: unknown };
-  const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
   const isEvent = (value: unknown): value is Record<string, unknown> => isRecord(value)
     && Number.isFinite(value.x) && Number.isFinite(value.y) && Number.isFinite(value.elevation);
   const eventList = (value: unknown, strings: string[]) => Array.isArray(value)

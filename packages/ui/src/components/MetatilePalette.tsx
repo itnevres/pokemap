@@ -7,6 +7,7 @@ import { chunkRows, pickFold } from "../shared/paletteFold.js";
 import { useUniformRows, type ThumbSignature } from "../shared/useUniformRows.js";
 import { PaletteFrame, PaletteSelection } from "../shared/PaletteFrame.js";
 import { FoldedGrid } from "../shared/FoldedGrid.js";
+import { hex } from "../shared/format.js";
 
 export interface MetatilePaletteProps {
   layoutName: string;
@@ -46,8 +47,6 @@ export interface MetatilePaletteProps {
    *  `onContextMenu` handler at all, so the browser's own menu is untouched. */
   onEditBlock?: (id: number) => void;
 }
-
-const hex = (n: number) => `0x${n.toString(16).toUpperCase()}`;
 
 /**
  * Renders primary then secondary metatiles for the open layout's split,

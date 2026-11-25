@@ -13,6 +13,7 @@ import { eventAt, firstEventAt, type EventLists } from "../canvas/events.js";
 import { EventsLegendItems } from "../shared/LegendBar.js";
 import { useTilesetVersion } from "../shared/tilesetVersion.js";
 import { BORDER_BAND, borderSideFromConnections } from "../encounters/borderSide.js";
+import { hex } from "../shared/format.js";
 
 const BORDER_RINGS = 1;
 /** Native px per world unit (one block) -- the encounter border's own scale, and what its band is measured in. */
@@ -24,8 +25,6 @@ export const GBC_COMPOSITE_ORIGIN = BORDER_RINGS * BLOCK_PX;
 /** Ordered object, warp, coord, bg lists (the scan order of `firstEventAt`). */
 const eventLists = (events: GbcMapEvents): EventLists<GbcEventKind> =>
   [["object", events.objects], ["warp", events.warps], ["coord", events.coords], ["bg", events.bgs]];
-
-const hex = (n: number) => `0x${n.toString(16)}`;
 
 /** Strips a `COLL_` prefix for display (`COLL_WALL` -> `WALL`) -- every
  *  `GbcCollisionInfoEntry.name` this payload can carry has it

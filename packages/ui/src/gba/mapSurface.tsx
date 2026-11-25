@@ -11,6 +11,7 @@ import { eventAt, firstEventAt, type EventLists } from "../canvas/events.js";
 import { EventsLegendItems } from "../shared/LegendBar.js";
 import { useTilesetVersion } from "../shared/tilesetVersion.js";
 import { BORDER_BAND, borderSideFromConnections, gbaDirToCompass, type CompassDir } from "../encounters/borderSide.js";
+import { hex } from "../shared/format.js";
 
 /** Ordered object, warp, coord, bg lists (the scan order of `firstEventAt`). */
 const eventLists = (map: MapData): EventLists<EventKind> =>
@@ -29,8 +30,6 @@ const METATILE_PX = 16;
 export function compositeOrigin(layout: { borderWidth: number; borderHeight: number }): { x: number; y: number } {
   return { x: BORDER_RINGS * layout.borderWidth * METATILE_PX, y: BORDER_RINGS * layout.borderHeight * METATILE_PX };
 }
-
-const hex = (n: number) => `0x${n.toString(16)}`;
 
 interface Hover {
   bx: number;

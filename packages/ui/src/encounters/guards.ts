@@ -1,5 +1,5 @@
 import type { GbaEncounterRow } from "./summary.js";
-import { isRecord } from "../gbc/guards.js";
+import { isRecord } from "../shared/format.js";
 
 const METHODS = new Set(["land_mons", "water_mons", "rock_smash_mons", "fishing_mons"]);
 

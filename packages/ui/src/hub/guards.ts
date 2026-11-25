@@ -1,6 +1,7 @@
 import type { ProjectInfo } from "@pokemap/core/src/family.js";
 import type { BrowseResult, HubState, OpenConflict } from "@pokemap/core/src/hub/wire.js";
-import { isRecord, isProjectInfo } from "../gbc/guards.js";
+import { isProjectInfo } from "../gbc/guards.js";
+import { isRecord } from "../shared/format.js";
 import { postJson } from "../hooks/useGuardedFetch.js";
 import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 

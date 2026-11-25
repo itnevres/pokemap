@@ -408,7 +408,6 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
   const [saveError, setSaveError] = useState<{ map: string; message: string } | null>(null);
   const [layoutError, setLayoutError] = useState<string | null>(null);
   const perMapErrors = adapter.saveErrorPolicy === "per-map";
-  const messageOf = (cause: unknown) => errorMessage(cause);
   // Catch each outcome before joining: a first rejection must not reload over the other members' pending positions.
   // Each POST resolves only its gesture version. A later gesture owns the position even if this POST lands last.
   const commit = (moves: WorldDragMove[]) => {
@@ -424,7 +423,7 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
       } catch (cause) {
         ledger.resolve(map, version, false);
         // Save failures leave a working canvas in place. The next GET reconciles the failed optimistic position.
-        setSaveError({ map, message: messageOf(cause) });
+        setSaveError({ map, message: errorMessage(cause) });
         return null;
       }
     })).then((saved) => {
@@ -477,8 +476,8 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
       setDungeonsPending(null);
       // An ignored older success may have changed the server: reload even after a failed latest toggle.
       reload();
-      if (perMapErrors) setLayoutError(messageOf(cause));
-      else setSaveError({ map: "", message: messageOf(cause) });
+      if (perMapErrors) setLayoutError(errorMessage(cause));
+      else setSaveError({ map: "", message: errorMessage(cause) });
     }
   };
 
@@ -551,7 +550,7 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
         if (warpRequests.current.get(name) !== request) return;
         warpRequests.current.delete(name);
         warpCache.current.delete(name);
-        const message = messageOf(cause);
+        const message = errorMessage(cause);
         // Re-insert so the map's latest failure is last: the alert names the newest failure still failing.
         setFailedWarps((previous) => {
           const next = new Map(previous);

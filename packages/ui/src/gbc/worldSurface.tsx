@@ -13,7 +13,8 @@ import { summariseGbc } from "../encounters/summary.js";
 import { fetchGuarded, postJson } from "../hooks/useGuardedFetch.js";
 import { useGbcWorld } from "./hooks/useGbcWorld.js";
 import { useGbcCoverage } from "./hooks/useGbcCoverage.js";
-import { isGbcEncountersPayload, isGbcWarpsPayload, isRecord } from "./guards.js";
+import { isGbcEncountersPayload, isGbcWarpsPayload } from "./guards.js";
+import { isRecord } from "../shared/format.js";
 import type { GbcTimeOfDay } from "./time.js";
 import { useTilesetVersion } from "../shared/tilesetVersion.js";
 

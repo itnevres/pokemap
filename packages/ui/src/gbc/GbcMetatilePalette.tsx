@@ -7,6 +7,7 @@ import { chunkRows, pickFold } from "../shared/paletteFold.js";
 import { useUniformRows, type ThumbSignature } from "../shared/useUniformRows.js";
 import { PaletteFrame, PaletteSelection } from "../shared/PaletteFrame.js";
 import { FoldedGrid } from "../shared/FoldedGrid.js";
+import { hex } from "../shared/format.js";
 
 export interface GbcMetatilePaletteProps {
   mapName: string;
@@ -30,8 +31,6 @@ export interface GbcMetatilePaletteProps {
    *  `onContextMenu` handler at all, so the browser's own menu is untouched. */
   onEditBlock?: (id: number) => void;
 }
-
-const hex = (n: number) => `0x${n.toString(16)}`;
 
 /**
  * A read-only grid of every metatile in the open map's tileset (Plan 6b Task
@@ -75,7 +74,7 @@ export const GbcMetatilePalette = memo(function GbcMetatilePalette({ mapName, ti
   const searching = q !== "";
   const visible = useMemo(() => {
     const all = Array.from({ length: metatileCount }, (_, i) => i);
-    return searching ? all.filter((id) => hex(id).includes(q)) : all;
+    return searching ? all.filter((id) => hex(id).toLowerCase().includes(q)) : all;
   }, [metatileCount, searching, q]);
   const rows = useMemo(() => chunkRows(visible, GBC_ROW), [visible]);
   const src = (id: number) => `/api/metatile/${encodeURIComponent(mapName)}/${id}.png?time=${time}${tilesetVersion > 0 ? `&tv=${tilesetVersion}` : ""}`;
