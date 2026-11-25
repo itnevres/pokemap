@@ -1,0 +1,95 @@
+name: CI
+
+# Plan H P2: lint, typecheck, UI build and the test suite against the PUBLIC corpora.
+# The GBA subject (itnevres/pokemon-three-region) is private and is not available here, so the
+# tests that need it skip; the skipped count is printed and pinned (EXPECTED_SKIPPED below) so a
+# newly skipped corpus test cannot read as a pass (LESSONS, plan-h finding 34).
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      # Bump deliberately when a test is added that skips here, or when the corpora change.
+      EXPECTED_SKIPPED: "0"
+      # Test files that read the private GBA subject at import time or assert its own data. Without
+      # it they fail at collection (20 files, measured 2026-11-24), so they are excluded here and
+      # run on the machine that has the subject. Follow-up: guard them with itWithCorpus so this
+      # list can go. A reference engine standing in for the subject fails them too (subject data).
+      SUBJECT_ONLY_TESTS: |
+        packages/cli/test/query.test.ts
+        packages/cli/test/renderWorld.test.ts
+        packages/core/test/addEvent/gbaBuild.test.ts
+        packages/core/test/addEvent/gbaCopy.test.ts
+        packages/core/test/analyse/coverage.test.ts
+        packages/core/test/load/encounters.test.ts
+        packages/core/test/load/tilesetData.test.ts
+        packages/core/test/render/layout.test.ts
+        packages/core/test/render/metatile.test.ts
+        packages/core/test/render/overlays.test.ts
+        packages/core/test/render/species.test.ts
+        packages/core/test/render/visual.test.ts
+        packages/core/test/signs/charmap.test.ts
+        packages/core/test/signs/suggest.test.ts
+        packages/core/test/validate/metatileRange.test.ts
+        packages/core/test/world/connections.test.ts
+        packages/core/test/world/resolve.test.ts
+        packages/core/test/world/warpGraph.test.ts
+        packages/mcp/test/writes.test.ts
+        packages/server/test/editSessions.test.ts
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24 # ESLint 10 needs >=20.19 / 22.13 / 24
+          cache: npm
+
+      - run: npm ci --no-audit --no-fund
+
+      - run: npm run lint
+
+      - run: npm run typecheck
+
+      - run: npm run build -w packages/ui
+
+      # The session-start hook is the single list of pinned corpus commits. With
+      # CLAUDE_CODE_REMOTE=true it fetches them into $HOME/pokemap-corpus and writes a local
+      # pokemap.config.json (git skip-worktree). The private GBA subject clone fails without
+      # credentials; that is expected and handled by skipping.
+      - name: Fetch public corpora
+        env:
+          CLAUDE_CODE_REMOTE: "true"
+          GIT_TERMINAL_PROMPT: "0"
+        run: bash .claude/hooks/session-start.sh < /dev/null
+
+      - name: Test
+        run: |
+          args=()
+          for f in $SUBJECT_ONLY_TESTS; do args+=(--exclude "$f"); done
+          echo "excluding ${#args[@]} words = $((${#args[@]} / 2)) subject-only test files"
+          npx vitest run --no-file-parallelism --reporter=default --reporter=json --outputFile.json=vitest-results.json "${args[@]}"
+
+      - name: Skipped count
+        if: always()
+        run: |
+          node -e '
+            const r = JSON.parse(require("fs").readFileSync("vitest-results.json", "utf8"));
+            const skipped = r.numPendingTests + r.numTodoTests;
+            console.log(`tests: ${r.numTotalTests} total, ${r.numPassedTests} passed, ${r.numFailedTests} failed, ${skipped} skipped (pending ${r.numPendingTests}, todo ${r.numTodoTests})`);
+            const want = Number(process.env.EXPECTED_SKIPPED);
+            if (skipped !== want) { console.error(`skipped count ${skipped} != pinned EXPECTED_SKIPPED ${want}; update it in .github/workflows/ci.yml if this is intended`); process.exit(1); }
+          '
