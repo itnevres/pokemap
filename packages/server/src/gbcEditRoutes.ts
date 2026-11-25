@@ -2,19 +2,19 @@ import { randomUUID } from "node:crypto";
 import { createGbcBlockEditRoutes } from "./blockEditRoutes.js";
 import { syncTilesetOverlay, type OverlayState } from "./tilesetOverlay.js";
 import { requireTilesetOwnership, refuseUnsavedBlockRefs, savedMetatileCount } from "./blockEditOwnership.js";
-import { checkTilesetBaselines } from "@pokemap/core/src/blockEdit/save.js";
-import { canonicalTilesetPath } from "@pokemap/core/src/blockEdit/canonicalTilesetPath.js";
-import { BlockEditRefusal } from "@pokemap/core/src/blockEdit/types.js";
+import { checkTilesetBaselines } from "@pokemap/core/blockEdit/save";
+import { canonicalTilesetPath } from "@pokemap/core/blockEdit/canonicalTilesetPath";
+import { BlockEditRefusal } from "@pokemap/core/blockEdit/types";
 import type { createSymbolIndexCache } from "./projectSymbols.js";
 import { createGbcAddEventRoutes, eventFailure, type AddEventHooks } from "./addEventRoutes.js";
-import { findGbcIndicator, insertGbcIndicator, updateGbcIndicator } from "@pokemap/core/src/indicator/gbc.js";
-import { loadGbcOwnSprites, gbcIndicatorSprite, rankGbcIndicatorSpecies, suggestGbcIndicatorPlacement } from "@pokemap/core/src/indicator/gbcData.js";
-import { gbcSpeciesNames } from "@pokemap/core/src/signs/linked.js";
-import { findGbcSign, insertGbcSign, nextGbcSignNumber, updateGbcSign } from "@pokemap/core/src/gbc/signs.js";
-import { parseMapEvents } from "@pokemap/core/src/gbc/load/events.js";
-import { signHash, type SignMode } from "@pokemap/core/src/signs/marker.js";
+import { findGbcIndicator, insertGbcIndicator, updateGbcIndicator } from "@pokemap/core/indicator/gbc";
+import { loadGbcOwnSprites, gbcIndicatorSprite, rankGbcIndicatorSpecies, suggestGbcIndicatorPlacement } from "@pokemap/core/indicator/gbcData";
+import { gbcSpeciesNames } from "@pokemap/core/signs/linked";
+import { findGbcSign, insertGbcSign, nextGbcSignNumber, updateGbcSign } from "@pokemap/core/gbc/signs";
+import { parseMapEvents } from "@pokemap/core/gbc/load/events";
+import { signHash, type SignMode } from "@pokemap/core/signs/marker";
 import { gbcSignLabels, gbcSignParagraphs, refreshGbcLinkedSigns } from "./signRefresh.js";
-import { errorMessage } from "@pokemap/core/src/errorMessage.js";
+import { errorMessage } from "@pokemap/core/errorMessage";
 /**
  * `/api/edit/:map/*` for GBC (pokecrystal-family) projects -- the GBC
  * counterpart of the edit routes in `index.ts`, with the same paths and the
@@ -41,17 +41,17 @@ import { errorMessage } from "@pokemap/core/src/errorMessage.js";
  * serves it.
  */
 import type { IncomingMessage } from "node:http";
-import type { GbcProject } from "@pokemap/core/src/gbc/project.js";
-import type { Block, GbcWarpEvent } from "@pokemap/core/src/gbc/model/types.js";
-import { loadGbcMapEvents } from "@pokemap/core/src/gbc/load/events.js";
+import type { GbcProject } from "@pokemap/core/gbc/project";
+import type { Block, GbcWarpEvent } from "@pokemap/core/gbc/model/types";
+import { loadGbcMapEvents } from "@pokemap/core/gbc/load/events";
 import {
   addGbcEvent, deleteGbcEvent, dropOwnedGbcAdd, findGbcWarpsRetargetedByDelete, findOwnedGbcAdd, moveGbcEvent,
   type GbcEventEdit, type GbcEventKind,
-} from "@pokemap/core/src/gbc/edit/events.js";
-import { paintCells, floodFill, shiftGrid, type GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
-import { changedBlockIndices, commitGbcSave, planGbcSave, prepareGbcSave } from "@pokemap/core/src/gbc/write/save.js";
-import { planFingerprint, type AtomicEntry } from "@pokemap/core/src/write/atomic.js";
-import { formatDiffJson } from "@pokemap/core/src/write/diff.js";
+} from "@pokemap/core/gbc/edit/events";
+import { paintCells, floodFill, shiftGrid, type GbcStamp } from "@pokemap/core/gbc/edit/paint";
+import { changedBlockIndices, commitGbcSave, planGbcSave, prepareGbcSave } from "@pokemap/core/gbc/write/save";
+import { planFingerprint, type AtomicEntry } from "@pokemap/core/write/atomic";
+import { formatDiffJson } from "@pokemap/core/write/diff";
 import { createGbcEditSessionStore, gbcSnapshotOf, type GbcSessionEntry } from "./gbcEditSessions.js";
 import { snapshotCommand } from "./editSessions.js";
 import { BodyTooLarge, decodeSegment, readBody } from "./http.js";

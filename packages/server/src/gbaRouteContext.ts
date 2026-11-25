@@ -1,16 +1,16 @@
-import type { Project } from "@pokemap/core/src/project.js";
-import type { Encounters } from "@pokemap/core/src/load/encounters.js";
-import type { coverage } from "@pokemap/core/src/analyse/coverage.js";
-import type { buildWorld } from "@pokemap/core/src/world/resolve.js";
+import type { Project } from "@pokemap/core/project";
+import type { Encounters } from "@pokemap/core/load/encounters";
+import type { coverage } from "@pokemap/core/analyse/coverage";
+import type { buildWorld } from "@pokemap/core/world/resolve";
 import type { createSymbolIndexCache } from "./projectSymbols.js";
 import type { createGbaAddEventRoutes } from "./addEventRoutes.js";
 import type { createEditSessionStore } from "./editSessions.js";
 import type { syncTilesetOverlay } from "./tilesetOverlay.js";
-import type { EditSession, planSave } from "@pokemap/core/src/write/save.js";
-import type { AtomicEntry } from "@pokemap/core/src/write/atomic.js";
-import type { formatDiffJson } from "@pokemap/core/src/write/diff.js";
+import type { EditSession, planSave } from "@pokemap/core/write/save";
+import type { AtomicEntry } from "@pokemap/core/write/atomic";
+import type { formatDiffJson } from "@pokemap/core/write/diff";
 import type { refreshGbaLinkedSigns } from "./signRefresh.js";
-import type { EventKind } from "@pokemap/core/src/edit/events.js";
+import type { EventKind } from "@pokemap/core/edit/events";
 
 /**
  * Plan H I1: the closure values the GBA read routes (gbaReadRoutes.ts) read from

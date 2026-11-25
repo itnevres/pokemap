@@ -1,10 +1,10 @@
-import * as saves from "@pokemap/core/src/gbc/write/save.js";
+import * as saves from "@pokemap/core/gbc/write/save";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { readFileSync, writeFileSync } from "node:fs";
 import { createGbcProjectHandler } from "../src/gbcRoutes.js";
-import { openGbcProject } from "@pokemap/core/src/gbc/project.js";
+import { openGbcProject } from "@pokemap/core/gbc/project";
 import { copyGbcSubjectToTemp, removeTemp, hasGbcProject, GBC_SUBJECT_ROOT } from "@pokemap/core/test/gbc/helpers/corpus.js";
 import * as sessions from "../src/gbcEditSessions.js";
 

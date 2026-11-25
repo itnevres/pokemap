@@ -5,8 +5,8 @@ import { createServer as createHttpServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { createProjectHandler, type ProjectHandler } from "../src/index.js";
 import { copyGbaTilesetProject, removeGbaTemp } from "@pokemap/core/test/helpers/gbaTilesetProject.js";
-import { openProject } from "@pokemap/core/src/project.js";
-import { canonicalTilesetPath } from "@pokemap/core/src/blockEdit/canonicalTilesetPath.js";
+import { openProject } from "@pokemap/core/project";
+import { canonicalTilesetPath } from "@pokemap/core/blockEdit/canonicalTilesetPath";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 

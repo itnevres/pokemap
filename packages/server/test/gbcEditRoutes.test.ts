@@ -5,24 +5,24 @@ import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from "vites
 import * as editRoutes from "../src/gbcEditRoutes.js";
 import { createGbcProjectHandler } from "../src/gbcRoutes.js";
 import type { ProjectHandler } from "../src/index.js";
-import { openGbcProject } from "@pokemap/core/src/gbc/project.js";
-import { loadGbcMapEvents } from "@pokemap/core/src/gbc/load/events.js";
+import { openGbcProject } from "@pokemap/core/gbc/project";
+import { loadGbcMapEvents } from "@pokemap/core/gbc/load/events";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { canonicalTilesetPath } from "@pokemap/core/src/blockEdit/canonicalTilesetPath.js";
+import { canonicalTilesetPath } from "@pokemap/core/blockEdit/canonicalTilesetPath";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { encodePng } from "@pokemap/cli/src/png.js";
-import { renderGbcMap } from "@pokemap/core/src/gbc/render/map.js";
-import { moveGbcEvent } from "@pokemap/core/src/gbc/edit/events.js";
-import { buildGbcWorld } from "@pokemap/core/src/gbc/world/connections.js";
-import { gbcWarpLinks } from "@pokemap/core/src/world/nearWarpAdapters.js";
-import { readSidecar } from "@pokemap/core/src/world/sidecar.js";
+import { renderGbcMap } from "@pokemap/core/gbc/render/map";
+import { moveGbcEvent } from "@pokemap/core/gbc/edit/events";
+import { buildGbcWorld } from "@pokemap/core/gbc/world/connections";
+import { gbcWarpLinks } from "@pokemap/core/world/nearWarpAdapters";
+import { readSidecar } from "@pokemap/core/world/sidecar";
 import { buildGbcWorldPayload } from "../src/gbcRoutes.js";
 import { createHub } from "../src/hub.js";
 import { postChunked } from "./helpers/oversizeBody.js";
-import { gbcCoverage } from "@pokemap/core/src/gbc/analyse/atlas.js";
-import { paintCells, floodFill, shiftGrid } from "@pokemap/core/src/gbc/edit/paint.js";
-import type { Block } from "@pokemap/core/src/gbc/model/types.js";
+import { gbcCoverage } from "@pokemap/core/gbc/analyse/atlas";
+import { paintCells, floodFill, shiftGrid } from "@pokemap/core/gbc/edit/paint";
+import type { Block } from "@pokemap/core/gbc/model/types";
 import { GBC_SUBJECT_ROOT, copyGbcSubjectToTemp, hasGbcProject, removeTemp } from "@pokemap/core/test/gbc/helpers/corpus.js";
 
 // atomic.ts captures named fs imports at module initialization, so inject before it loads.

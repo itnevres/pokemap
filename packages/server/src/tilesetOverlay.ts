@@ -1,4 +1,4 @@
-import type { FileOverlay } from "@pokemap/core/src/blockEdit/types.js";
+import type { FileOverlay } from "@pokemap/core/blockEdit/types";
 import type { OwnershipEntry } from "./blockEditOwnership.js";
 
 export interface OverlayState {

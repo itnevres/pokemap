@@ -2,21 +2,21 @@ import { describe, it, expect } from "vitest";
 import { readFileSync, writeFileSync } from "node:fs";
 import { createServer, type PokemapServer } from "../src/index.js";
 import { SUBJECT_ROOT, hasProject } from "@pokemap/core/test/helpers/corpus.js";
-import { openProject } from "@pokemap/core/src/project.js";
+import { openProject } from "@pokemap/core/project";
 
 import { beforeEach, afterEach, vi } from "vitest";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { findGbaSign } from "@pokemap/core/src/signs/gbaSign.js";
-import { signHash } from "@pokemap/core/src/signs/marker.js";
+import { findGbaSign } from "@pokemap/core/signs/gbaSign";
+import { signHash } from "@pokemap/core/signs/marker";
 import { createEditSessionStore, snapshotOf } from "../src/editSessions.js";
 import * as sessions from "../src/editSessions.js";
-import { buildGbaIndicator } from "@pokemap/core/src/indicator/gba.js";
-import { suggestIndicatorPlacement } from "@pokemap/core/src/signs/suggest.js";
+import { buildGbaIndicator } from "@pokemap/core/indicator/gba";
+import { suggestIndicatorPlacement } from "@pokemap/core/signs/suggest";
 import { effectiveGbaScripts } from "../src/signRefresh.js";
-import { insertArrayElement } from "@pokemap/core/src/write/jsonEdit.js";
-import { applyScriptAppend } from "@pokemap/core/src/write/save.js";
+import { insertArrayElement } from "@pokemap/core/write/jsonEdit";
+import { applyScriptAppend } from "@pokemap/core/write/save";
 
 
 describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA Indicator and background sign routes (temporary subject copy)", () => {

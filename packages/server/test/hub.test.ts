@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { createHub, parentOf, safeNorm, type Hub } from "../src/hub.js";
 import { postChunked } from "./helpers/oversizeBody.js";
-import { norm } from "@pokemap/core/src/config/paths.js";
+import { norm } from "@pokemap/core/config/paths";
 import { SUBJECT_ROOT, hasProject } from "@pokemap/core/test/helpers/corpus.js";
 import { GBC_SUBJECT_ROOT, hasGbcProject } from "@pokemap/core/test/gbc/helpers/corpus.js";
 

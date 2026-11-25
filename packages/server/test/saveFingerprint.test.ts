@@ -1,12 +1,12 @@
-import * as saves from "@pokemap/core/src/write/save.js";
-import * as symbolIndex from "@pokemap/core/src/defects/symbols.js";
+import * as saves from "@pokemap/core/write/save";
+import * as symbolIndex from "@pokemap/core/defects/symbols";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { createServer, type PokemapServer } from "../src/index.js";
 import { SUBJECT_ROOT, hasProject } from "@pokemap/core/test/helpers/corpus.js";
-import { openProject } from "@pokemap/core/src/project.js";
+import { openProject } from "@pokemap/core/project";
 import * as sessions from "../src/editSessions.js";
 
 describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA preview-bound saves (temporary subject copy)", () => {

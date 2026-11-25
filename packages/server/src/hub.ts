@@ -3,12 +3,12 @@ import { existsSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { createServer as createHttp, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { detectEngineFamily, probeEngineFamily } from "@pokemap/core/src/family.js";
-import { norm } from "@pokemap/core/src/config/paths.js";
-import type { BrowseEntry, BrowseResult, HubState, OpenConflict } from "@pokemap/core/src/hub/wire.js";
+import { detectEngineFamily, probeEngineFamily } from "@pokemap/core/family";
+import { norm } from "@pokemap/core/config/paths";
+import type { BrowseEntry, BrowseResult, HubState, OpenConflict } from "@pokemap/core/hub/wire";
 import { createProjectHandler, type ProjectHandler } from "./index.js";
 import { readRecent, pushRecent, recentHome } from "./recent.js";
-import { errorMessage } from "@pokemap/core/src/errorMessage.js";
+import { errorMessage } from "@pokemap/core/errorMessage";
 
 /**
  * One long-lived `node:http` listener that can point at a different

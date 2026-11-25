@@ -4,10 +4,10 @@ import {
   conflictKey,
   isAcceptConflictBody,
   updatedAcceptedConflicts,
-} from "@pokemap/core/src/world/conflictAcceptance.js";
-import type { Conflict } from "@pokemap/core/src/world/connections.js";
-import { readDungeons, writeDungeons } from "@pokemap/core/src/world/dungeons.js";
-import { readSidecar, writeSidecar } from "@pokemap/core/src/world/sidecar.js";
+} from "@pokemap/core/world/conflictAcceptance";
+import type { Conflict } from "@pokemap/core/world/connections";
+import { readDungeons, writeDungeons } from "@pokemap/core/world/dungeons";
+import { readSidecar, writeSidecar } from "@pokemap/core/world/sidecar";
 import { decodeSegment, jsonBody } from "./http.js";
 
 /**

@@ -29,20 +29,20 @@
  *   grid and pushes **one** undo command (a `snapshotCommand` covering the
  *   tileset bytes and the grid cell).
  */
-import type { EditSession } from "@pokemap/core/src/write/save.js";
-import type { GbcEditSession } from "@pokemap/core/src/gbc/write/save.js";
-import type { GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
-import type { EditCommandStack } from "@pokemap/core/src/edit/commands.js";
+import type { EditSession } from "@pokemap/core/write/save";
+import type { GbcEditSession } from "@pokemap/core/gbc/write/save";
+import type { GbcMapEvents } from "@pokemap/core/gbc/model/types";
+import type { EditCommandStack } from "@pokemap/core/edit/commands";
 import { statSync } from "node:fs";
 import { resolve } from "node:path";
-import { BlockEditRefusal, type BlockEditPlan } from "@pokemap/core/src/blockEdit/types.js";
+import { BlockEditRefusal, type BlockEditPlan } from "@pokemap/core/blockEdit/types";
 import type { createEditSessionStore } from "./editSessions.js";
 import type { createGbcEditSessionStore } from "./gbcEditSessions.js";
 
-import { mergeTilesetEdits } from "@pokemap/core/src/blockEdit/save.js";
+import { mergeTilesetEdits } from "@pokemap/core/blockEdit/save";
 import { snapshotCommand } from "./editSessions.js";
 
-export type { BlockEditPlan } from "@pokemap/core/src/blockEdit/types.js";
+export type { BlockEditPlan } from "@pokemap/core/blockEdit/types";
 
 /**
  * Number of 16-byte metatile records in the saved `metatilesPath` (project-relative).

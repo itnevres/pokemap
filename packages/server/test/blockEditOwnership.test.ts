@@ -19,10 +19,10 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { beforeAll, afterAll, beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-import { openProject, type Project } from "@pokemap/core/src/project.js";
-import { openGbcProject, type GbcProject } from "@pokemap/core/src/gbc/project.js";
-import { canonicalTilesetPath } from "@pokemap/core/src/blockEdit/canonicalTilesetPath.js";
-import { BlockEditRefusal, type TilesetFileEdit } from "@pokemap/core/src/blockEdit/types.js";
+import { openProject, type Project } from "@pokemap/core/project";
+import { openGbcProject, type GbcProject } from "@pokemap/core/gbc/project";
+import { canonicalTilesetPath } from "@pokemap/core/blockEdit/canonicalTilesetPath";
+import { BlockEditRefusal, type TilesetFileEdit } from "@pokemap/core/blockEdit/types";
 import { ownedTilesetPaths, requireTilesetOwnership, refuseUnsavedBlockRefs, savedMetatileCount, stageTilesetPlan, type BlockEditPlan } from "../src/blockEditOwnership.js";
 import { createProjectHandler } from "../src/index.js";
 import { createGbcProjectHandler } from "../src/gbcRoutes.js";

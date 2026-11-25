@@ -1,17 +1,17 @@
-import { openProject, type Project } from "@pokemap/core/src/project.js";
-import { applyScriptAppend, type EditSession } from "@pokemap/core/src/write/save.js";
-import { findGbaSign, updateGbaSign } from "@pokemap/core/src/signs/gbaSign.js";
-import { parseGbaCharmap } from "@pokemap/core/src/signs/charmap.js";
-import { gbaMapDisplayName } from "@pokemap/core/src/signs/linked.js";
+import { openProject, type Project } from "@pokemap/core/project";
+import { applyScriptAppend, type EditSession } from "@pokemap/core/write/save";
+import { findGbaSign, updateGbaSign } from "@pokemap/core/signs/gbaSign";
+import { parseGbaCharmap } from "@pokemap/core/signs/charmap";
+import { gbaMapDisplayName } from "@pokemap/core/signs/linked";
 import type { SessionEntry } from "./editSessions.js";
 import { existsSync, readFileSync } from "node:fs";
-import { openGbcProject, type GbcProject } from "@pokemap/core/src/gbc/project.js";
-import { parseMapEvents } from "@pokemap/core/src/gbc/load/events.js";
-import { findGbcSign, updateGbcSign } from "@pokemap/core/src/gbc/signs.js";
-import { parseGbcCharmap } from "@pokemap/core/src/signs/charmap.js";
-import { gbcMapDisplayName, linkedSpecies, linkedText } from "@pokemap/core/src/signs/linked.js";
-import { signHash, type SignMode } from "@pokemap/core/src/signs/marker.js";
-import { wrapSign, SIGN_WIDTH } from "@pokemap/core/src/signs/wrap.js";
+import { openGbcProject, type GbcProject } from "@pokemap/core/gbc/project";
+import { parseMapEvents } from "@pokemap/core/gbc/load/events";
+import { findGbcSign, updateGbcSign } from "@pokemap/core/gbc/signs";
+import { parseGbcCharmap } from "@pokemap/core/signs/charmap";
+import { gbcMapDisplayName, linkedSpecies, linkedText } from "@pokemap/core/signs/linked";
+import { signHash, type SignMode } from "@pokemap/core/signs/marker";
+import { wrapSign, SIGN_WIDTH } from "@pokemap/core/signs/wrap";
 import type { GbcSessionEntry } from "./gbcEditSessions.js";
 
 export interface SignNotice { scriptLabel: string; message: string }

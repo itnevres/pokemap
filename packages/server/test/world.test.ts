@@ -7,8 +7,8 @@ import { createServer, type PokemapServer } from "../src/index.js";
 import { MAX_BODY_BYTES } from "../src/http.js";
 import { postChunked } from "./helpers/oversizeBody.js";
 import { SUBJECT_ROOT, hasProject } from "@pokemap/core/test/helpers/corpus.js";
-import { projectPaths } from "@pokemap/core/src/config/paths.js";
-import { writeSidecar } from "@pokemap/core/src/world/sidecar.js";
+import { projectPaths } from "@pokemap/core/config/paths";
+import { writeSidecar } from "@pokemap/core/world/sidecar";
 
 let s: PokemapServer;
 let fixtureRoot: string;

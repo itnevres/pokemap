@@ -1,7 +1,7 @@
 import { normalize } from "node:path";
-import { buildGbaSymbolIndex, buildGbcSymbolIndex, type SymbolIndex } from "@pokemap/core/src/defects/symbols.js";
-import type { MapDefectsCheck } from "@pokemap/core/src/defects/types.js";
-import { errorMessage } from "@pokemap/core/src/errorMessage.js";
+import { buildGbaSymbolIndex, buildGbcSymbolIndex, type SymbolIndex } from "@pokemap/core/defects/symbols";
+import type { MapDefectsCheck } from "@pokemap/core/defects/types";
+import { errorMessage } from "@pokemap/core/errorMessage";
 
 /** A failed build is reused for this long, so a persistently broken project is not re-walked on every request. */
 const FAILURE_BACKOFF_MS = 5_000;

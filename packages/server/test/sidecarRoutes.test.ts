@@ -6,9 +6,9 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { sidecarRoutes, type SidecarRouteDeps } from "../src/sidecarRoutes.js";
 import { MAX_BODY_BYTES, sendJson } from "../src/http.js";
-import { projectPaths } from "@pokemap/core/src/config/paths.js";
-import type { Conflict } from "@pokemap/core/src/world/connections.js";
-import { readSidecar } from "@pokemap/core/src/world/sidecar.js";
+import { projectPaths } from "@pokemap/core/config/paths";
+import type { Conflict } from "@pokemap/core/world/connections";
+import { readSidecar } from "@pokemap/core/world/sidecar";
 
 // Plan H task H-b: sidecarRoutes must be mountable with NOTHING but a temp
 // root and stub deps. This file deliberately imports no `createServer`,

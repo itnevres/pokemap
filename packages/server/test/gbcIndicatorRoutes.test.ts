@@ -5,9 +5,9 @@ import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { createGbcProjectHandler } from "../src/gbcRoutes.js";
 import * as sessions from "../src/gbcEditSessions.js";
 import { copyGbcSubjectToTemp, removeTemp, hasGbcProject, GBC_SUBJECT_ROOT } from "@pokemap/core/test/gbc/helpers/corpus.js";
-import { openGbcProject } from "@pokemap/core/src/gbc/project.js";
-import { suggestGbcIndicatorPlacement } from "@pokemap/core/src/indicator/gbcData.js";
-import { insertGbcIndicator } from "@pokemap/core/src/indicator/gbc.js";
+import { openGbcProject } from "@pokemap/core/gbc/project";
+import { suggestGbcIndicatorPlacement } from "@pokemap/core/indicator/gbcData";
+import { insertGbcIndicator } from "@pokemap/core/indicator/gbc";
 
 describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC Indicator routes", () => {
   let root: string, server: Server, base: string, original: string;

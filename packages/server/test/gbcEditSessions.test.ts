@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { openGbcProject } from "@pokemap/core/src/gbc/project.js";
+import { openGbcProject } from "@pokemap/core/gbc/project";
 import { GBC_SUBJECT_ROOT, hasGbcProject } from "@pokemap/core/test/gbc/helpers/corpus.js";
 import { createGbcEditSessionStore } from "../src/gbcEditSessions.js";
 

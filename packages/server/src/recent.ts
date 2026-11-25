@@ -1,9 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { norm } from "@pokemap/core/src/config/paths.js";
-import type { EngineFamily } from "@pokemap/core/src/family.js";
-import type { RecentEntry } from "@pokemap/core/src/hub/wire.js";
+import { norm } from "@pokemap/core/config/paths";
+import type { EngineFamily } from "@pokemap/core/family";
+import type { RecentEntry } from "@pokemap/core/hub/wire";
 
 interface RecentFile {
   version: 1;

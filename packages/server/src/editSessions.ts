@@ -1,12 +1,12 @@
 import { existsSync, readFileSync } from "node:fs";
-import { findGbaSign } from "@pokemap/core/src/signs/gbaSign.js";
-import { signHash } from "@pokemap/core/src/signs/marker.js";
+import { findGbaSign } from "@pokemap/core/signs/gbaSign";
+import { signHash } from "@pokemap/core/signs/marker";
 import { gbaSignLabels } from "./signRefresh.js";
-import type { Project } from "@pokemap/core/src/project.js";
-import type { EditSession } from "@pokemap/core/src/write/save.js";
-import type { TilesetFileEdit } from "@pokemap/core/src/blockEdit/types.js";
-import { EditCommandStack, type EditCommand } from "@pokemap/core/src/edit/commands.js";
-import { parseBlocks } from "@pokemap/core/src/load/blocks.js";
+import type { Project } from "@pokemap/core/project";
+import type { EditSession } from "@pokemap/core/write/save";
+import type { TilesetFileEdit } from "@pokemap/core/blockEdit/types";
+import { EditCommandStack, type EditCommand } from "@pokemap/core/edit/commands";
+import { parseBlocks } from "@pokemap/core/load/blocks";
 import { createSessionStore, type SessionStore } from "./sessionStore.js";
 import { refuseBrokenLayout } from "./brokenComponents.js";
 
