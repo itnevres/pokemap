@@ -20,6 +20,7 @@ import { gbaBlockUsage, gbaConsumingLayouts, gbaMapsByGridFile, gbaMapsByLayout 
 import { assertLayoutUsable } from "../brokenComponents.js";
 import { PathEscapeError } from "../gbc/load/pathGuard.js";
 import { BlockEditRefusal, type BlockEditPlan, type FileOverlay, type GridIds, type StagedGrids } from "./types.js";
+import { errorMessage } from "../errorMessage.js";
 
 export interface GbaBlockDraft { entries: TileEntry[]; behavior: number; layerType: number }
 export interface GbaBlockEditRequest {
@@ -64,7 +65,7 @@ function effectiveBytes(proj: Project, staged: FileOverlay, path: string): Buffe
   try {
     return readFileSync(join(proj.paths.root, key));
   } catch (error) {
-    return bad(`${key}: ${error instanceof Error ? error.message : String(error)}`);
+    return bad(`${key}: ${errorMessage(error)}`);
   }
 }
 
@@ -75,7 +76,7 @@ function cells(proj: Project, path: string, cache: Map<string, readonly number[]
   try {
     buf = readFileSync(join(proj.paths.root, path));
   } catch (error) {
-    return bad(`${path}: ${error instanceof Error ? error.message : String(error)}`);
+    return bad(`${path}: ${errorMessage(error)}`);
   }
   const ids = parseBlocks(buf, proj.profile).map((block) => block.metatileId);
   cache.set(path, ids);
@@ -234,7 +235,7 @@ export function planGbaBlockEdit(proj: Project, req: GbaBlockEditRequest, staged
     if (error instanceof BlockEditRefusal) throw error;
     throw new BlockEditRefusal(
       "BAD_VALUE",
-      `${req.map}: ${error instanceof Error ? error.message : String(error)}`,
+      `${req.map}: ${errorMessage(error)}`,
       { cause: error },
     );
   }

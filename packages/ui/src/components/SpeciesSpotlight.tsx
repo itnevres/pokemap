@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { SpeciesHit } from "@pokemap/core/src/analyse/coverage.js";
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 
 export interface SpeciesSpotlightProps<H extends { mapName?: string } = SpeciesHit> {
   /**
@@ -231,7 +232,7 @@ export function SpeciesSpotlight<H extends { mapName?: string } = SpeciesHit>({ 
           // A failed lookup is not "found nowhere" -- leave the world
           // exactly as it was rather than dimming everything over a
           // network error the user cannot fix by looking harder.
-          setFetchError(e instanceof Error ? e.message : String(e));
+          setFetchError(errorMessage(e));
         });
     }, request.immediate ? 0 : DEBOUNCE_MS);
 

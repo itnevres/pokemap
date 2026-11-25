@@ -11,6 +11,7 @@ import { tokenize, type Charmap } from "../signs/charmap.js";
 import { copyGbcScriptBody } from "./gbcCopy.js";
 import { AddEventRefusal, type AddEventForm, type EventKind, type EventOptions, type FileReplace,
   type MapEventOptions, type NameCheck, type RefusalCode, type TextChoice } from "./types.js";
+import { errorMessage } from "../errorMessage.js";
 
 export type GbcAddCtx = { options: EventOptions; mapOptions: MapEventOptions; mapConsts: Set<string>;
   eventFlagsDisk: string; constEdits: FileReplace[]; check: NameCheck; charmap: Charmap;
@@ -72,7 +73,7 @@ export function buildGbcAddEvent(text: string, mapName: string, form: AddEventFo
     const wrapped = wrapSign(choice.text, ctx.charmap, SIGN_WIDTH);
     if ("refusal" in wrapped) fail("BAD_OPTION", wrapped.refusal);
     try { return renderGbcBody((wrapped as { paragraphs: string[][] }).paragraphs).join("\n"); }
-    catch (error) { return fail("BAD_OPTION", error instanceof Error ? error.message : String(error)); }
+    catch (error) { return fail("BAD_OPTION", errorMessage(error)); }
   };
   /** Charmap width of each quoted displayed line in a GBC text body. */
   const lineWidths = (body: string, strict = true): number[] =>
@@ -241,6 +242,6 @@ export function buildGbcAddEvent(text: string, mapName: string, form: AddEventFo
       if (error.path !== path && error.path !== "constants/event_flags.asm") fail(error.code, error.message);
       throw error;
     }
-    return fail("BAD_OPTION", error instanceof Error ? error.message : String(error));
+    return fail("BAD_OPTION", errorMessage(error));
   }
 }

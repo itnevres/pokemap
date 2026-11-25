@@ -4,6 +4,7 @@ import { addGbcEvent } from "../gbc/edit/events.js";
 import { scanCalls } from "../gbc/load/asm.js";
 import { renderGbcBody } from "../gbc/signs.js";
 import { locateEventCall, replaceLines, spliceArg } from "../gbc/write/asmSplice.js";
+import { errorMessage } from "../errorMessage.js";
 
 // Strip comments without mistaking a semicolon in dialogue for a comment.
 function code(line: string): string {
@@ -49,7 +50,7 @@ export function insertGbcIndicator(
       "OBJECTTYPE_SCRIPT", "0", scriptLabel, "-1",
     ]).text;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorMessage(error);
     const outOfStep = message.includes("object_const_def");
     const capped = message.includes("the maximum");
     const missingSection = /(?:no|missing) "def_/.test(message);

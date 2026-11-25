@@ -31,6 +31,7 @@ import { formatDiffJson } from "@pokemap/core/src/write/diff.js";
 import { type EventKind } from "@pokemap/core/src/edit/events.js";
 
 import { warmEach, type WarmResult } from "./warmUp.js";
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 
 /**
  * A discriminated union on `family` (Plan 6b task spec) -- the gbc branch's
@@ -195,12 +196,12 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
   const signFailure = (name: string, error: unknown) => ({ refusals: [{
     code: error instanceof Error && error.message === "hand-edited" ? "hand-edited" : "sign",
     fix: "Check the named source or sign text; refresh or unlink hand-edited signs explicitly.",
-    subject: project.paths.mapScriptsInc(name), message: error instanceof Error ? error.message : String(error),
+    subject: project.paths.mapScriptsInc(name), message: errorMessage(error),
   }] });
   const indicatorCharmapPath = `${project.paths.root}/charmap.txt`;
   const indicatorCharmapFix = "Restore a valid subject charmap and correct unsupported Indicator text before retrying.";
   const indicatorFailure = (name: string, error: unknown) => {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorMessage(error);
     const charmap = message.startsWith(`${indicatorCharmapPath}:`);
     return { refusals: [{ code: "indicator", subject: charmap ? indicatorCharmapPath : project.paths.mapScriptsInc(name), message,
       fix: charmap ? indicatorCharmapFix : "Check the named source, restore the generated Indicator shape, or correct the species and text before retrying.",
@@ -208,7 +209,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
   };
   function indicatorParagraphs(entry: ReturnType<typeof editEntryFor>, text: string): string[][] {
     try { return gbaSignParagraphs(project, entry, "free", text); }
-    catch (error) { throw new Error(`${indicatorCharmapPath}: ${error instanceof Error ? error.message : String(error)}. ${indicatorCharmapFix}`); }
+    catch (error) { throw new Error(`${indicatorCharmapPath}: ${errorMessage(error)}. ${indicatorCharmapFix}`); }
   }
   function signPlan(name: string) {
     const refreshed = refreshGbaLinkedSigns(project, editEntryFor(name));
@@ -414,7 +415,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
           }
           resolve(result);
         } catch (e) {
-          console.warn(`pokemap warm: world list: ${e instanceof Error ? e.message : String(e)}`);
+          console.warn(`pokemap warm: world list: ${errorMessage(e)}`);
           resolve([]);
         }
       });

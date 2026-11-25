@@ -5,7 +5,7 @@ import { useTilesetVersion } from "../../shared/tilesetVersion.js";
 import type { Block, GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
 import type { GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
 import type { GbcEventKind, GbcWarpRenumberWarning } from "@pokemap/core/src/gbc/edit/events.js";
-import { isRecord } from "../guards.js";
+import { isRecord } from "../../shared/format.js";
 
 export type { GbcEventKind, GbcWarpRenumberWarning };
 

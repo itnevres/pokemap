@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { MapVisibilityInfo } from "../world/visibility.js";
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 
 export interface UseWorldVisibilityResult {
   /** Every map with a real placement, keyed by name. A name absent here
@@ -46,7 +47,7 @@ export function useWorldVisibility(enabled: boolean): UseWorldVisibilityResult {
         setError(null);
       })
       .catch((e: unknown) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+        if (!cancelled) setError(errorMessage(e));
       });
     return () => {
       cancelled = true;

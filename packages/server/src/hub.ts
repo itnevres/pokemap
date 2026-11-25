@@ -8,6 +8,7 @@ import { norm } from "@pokemap/core/src/config/paths.js";
 import type { BrowseEntry, BrowseResult, HubState, OpenConflict } from "@pokemap/core/src/hub/wire.js";
 import { createProjectHandler, type ProjectHandler } from "./index.js";
 import { readRecent, pushRecent, recentHome } from "./recent.js";
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 
 /**
  * One long-lived `node:http` listener that can point at a different
@@ -318,7 +319,7 @@ export async function createHub(opts: { port?: number; home?: string; open?: str
             try {
               next = createProjectHandler(path);
             } catch (e) {
-              return send(500, { error: e instanceof Error ? e.message : String(e) });
+              return send(500, { error: errorMessage(e) });
             }
 
             // Swap BEFORE disposing the old handler (spec step 6): a request
@@ -346,7 +347,7 @@ export async function createHub(opts: { port?: number; home?: string; open?: str
           .catch((e: unknown) => {
             if (e instanceof BodyTooLarge) return send(413, { error: "request body too large" });
             console.error(e);
-            send(500, { error: e instanceof Error ? e.message : String(e) });
+            send(500, { error: errorMessage(e) });
           });
       }
 

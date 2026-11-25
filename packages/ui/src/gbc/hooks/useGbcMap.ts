@@ -4,6 +4,7 @@ import { isGbcMapPayload } from "../guards.js";
 import { fetchGuarded, type UseGuardedFetchResult } from "../../hooks/useGuardedFetch.js";
 import { noteTilesetStamp, tilesetGeneration } from "../../shared/tilesetVersion.js";
 import { keepUnchanged } from "../../shared/keepUnchanged.js";
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 
 export interface UseGbcMapResult extends UseGuardedFetchResult<GbcMapPayload> {
   /** Plan 7 Task 5: re-reads the payload in place (after a save committed). Unlike a URL change this never
@@ -40,7 +41,7 @@ export function useGbcMap(name: string | null): UseGbcMapResult {
         setBase({ data, error: null });
       }
     }).catch((error: unknown) => {
-      if (!cancelled) setBase({ data: null, error: error instanceof Error ? error.message : String(error) });
+      if (!cancelled) setBase({ data: null, error: errorMessage(error) });
     });
     return () => { cancelled = true; };
   }, [url, label]);

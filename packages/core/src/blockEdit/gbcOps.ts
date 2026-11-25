@@ -12,12 +12,12 @@ import { patchGbcCollision, patchGbcMetatiles, patchGbcPaletteMap } from "./gbcP
 import { copySheetTile, loadGbcReservedTiles } from "./gbcSheet.js";
 import { BlockEditRefusal } from "./types.js";
 import { gbcBlockUsage, gbcTileUsage, gbcTilesetsForFile } from "./usage.js";
+import { errorMessage } from "../errorMessage.js";
 
 const paletteNames = new Set(["GRAY", "RED", "GREEN", "WATER", "YELLOW", "BROWN", "ROOF", "TEXT"]);
 const compare = (a: string, b: string): number => a < b ? -1 : a > b ? 1 : 0;
 const bad = (message: string): never => { throw new BlockEditRefusal("BAD_VALUE", message); };
 /** A caught value's message; a non-Error throw (string, object) still reads as text. */
-const errorText = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 function effectiveGrid(proj: GbcProject, map: GbcMap, grids: StagedGrids): GridIds {
   const winner = proj.maps.filter(m => m.blkPath === map.blkPath && grids.has(m.name))
@@ -88,7 +88,7 @@ export function planGbcBlockEdit(proj: GbcProject, req: GbcBlockEditRequest, sta
   } catch (error) {
     if (error instanceof BlockEditRefusal) throw error;
     // R1b: no native or plain Error escapes the planner.
-    throw new BlockEditRefusal("BAD_VALUE", `${req.map}: ${errorText(error)}`, { cause: error });
+    throw new BlockEditRefusal("BAD_VALUE", `${req.map}: ${errorMessage(error)}`, { cause: error });
   }
 }
 function planGbcBlockEditInner(proj: GbcProject, req: GbcBlockEditRequest, staged: FileOverlay, grids: StagedGrids): BlockEditPlan {
@@ -107,7 +107,7 @@ function planGbcBlockEditInner(proj: GbcProject, req: GbcBlockEditRequest, stage
         bytes = staged.get(key) ?? readFileSync(join(proj.root, path));
       } catch (error) {
         // R1a: a missing or unreadable effective file is a value refusal.
-        return bad(`${key}: ${errorText(error)}`);
+        return bad(`${key}: ${errorMessage(error)}`);
       }
       before.set(key, bytes);
     }
@@ -116,7 +116,7 @@ function planGbcBlockEditInner(proj: GbcProject, req: GbcBlockEditRequest, stage
   const parse = <T>(path: string, fn: () => T): T => {
     try { return fn(); } catch (error) {
       if (error instanceof BlockEditRefusal) throw error;
-      return bad(`${path}: ${errorText(error)}`);
+      return bad(`${path}: ${errorMessage(error)}`);
     }
   };
   const blocks = parse(metaPath, () => parseMetatiles(read(metaPath), metaPath));

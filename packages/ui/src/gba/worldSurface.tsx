@@ -12,8 +12,10 @@ import { summariseGba } from "../encounters/summary.js";
 import { fetchGuarded, postJson } from "../hooks/useGuardedFetch.js";
 import { useCoverage } from "../hooks/useCoverage.js";
 import { isDrawnByDefault } from "../world/visibility.js";
-import { isRecord, isWireConflict } from "../world/conflictAcceptance.js";
+import { isWireConflict } from "../world/conflictAcceptance.js";
+import { isRecord } from "../shared/format.js";
 import { useTilesetVersion } from "../shared/tilesetVersion.js";
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 
 /** The pixel size a placement's PNG renders at natively (`renderLayout`,
  *  border 0): 16px per tile, same constant the CLI's `render-world --scale
@@ -100,7 +102,7 @@ export function useGbaWorld(ledger: PlacementLedger, scope: WorldScope) {
         setLoadedGen(refetchGen);
       })
       .catch((cause: unknown) => {
-        if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
+        if (!cancelled) setError(errorMessage(cause));
       });
     return () => {
       cancelled = true;

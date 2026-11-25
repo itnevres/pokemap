@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { Dungeon } from "../hooks/useDungeons.js";
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 
 export interface DungeonSidebarProps {
   dungeons: Dungeon[] | null;
@@ -82,7 +83,7 @@ export function DungeonSidebar({
       setActionError(null);
       onOpen(created.id);
     } catch (e: unknown) {
-      setActionError(e instanceof Error ? e.message : String(e));
+      setActionError(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -94,14 +95,14 @@ export function DungeonSidebar({
     if (!open || next === undefined || next === "" || next === open.name) return;
     onRename(open.id, next)
       .then(() => setActionError(null))
-      .catch((e: unknown) => setActionError(e instanceof Error ? e.message : String(e)));
+      .catch((e: unknown) => setActionError(errorMessage(e)));
   };
 
   const removeMap = (map: string) => {
     if (!open) return;
     onSetMaps(open.id, open.maps.filter((m) => m !== map))
       .then(() => setActionError(null))
-      .catch((e: unknown) => setActionError(e instanceof Error ? e.message : String(e)));
+      .catch((e: unknown) => setActionError(errorMessage(e)));
   };
 
   const addMap = () => {
@@ -116,7 +117,7 @@ export function DungeonSidebar({
     if (!open || !trimmed || open.maps.includes(trimmed) || !allMapNames.includes(trimmed)) return;
     onSetMaps(open.id, [...open.maps, trimmed])
       .then(() => setActionError(null))
-      .catch((e: unknown) => setActionError(e instanceof Error ? e.message : String(e)));
+      .catch((e: unknown) => setActionError(errorMessage(e)));
     setAddMapName("");
   };
 
@@ -124,7 +125,7 @@ export function DungeonSidebar({
     if (!open) return;
     onDelete(open.id)
       .then(() => setActionError(null))
-      .catch((e: unknown) => setActionError(e instanceof Error ? e.message : String(e)));
+      .catch((e: unknown) => setActionError(errorMessage(e)));
   };
 
   return (

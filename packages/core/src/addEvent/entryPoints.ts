@@ -2,6 +2,7 @@ import { statSync } from "node:fs";
 import { join } from "node:path";
 import { codeLines, scanCalls, stripComment } from "../gbc/load/asm.js";
 import { read, textFiles } from "./sources.js";
+import { errorMessage } from "../errorMessage.js";
 
 function bodies(text: string, family: "gba" | "gbc"): Map<string, string> {
   const out = new Map<string, string>();
@@ -34,7 +35,7 @@ function gbcReferences(text: string): string[] {
 }
 function inFile<T>(path: string, parse: () => T): T {
   try { return parse(); }
-  catch (error) { throw new Error(`${path}: ${error instanceof Error ? error.message : String(error)}`, { cause: error }); }
+  catch (error) { throw new Error(`${path}: ${errorMessage(error)}`, { cause: error }); }
 }
 type FileResult<T> = T | Error;
 function fileResult<T>(parse: () => T): FileResult<T> {

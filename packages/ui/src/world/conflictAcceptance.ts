@@ -1,8 +1,5 @@
 import type { WireConflict } from "@pokemap/core/src/world/conflictAcceptance.js";
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
+import { isRecord } from "../shared/format.js";
 
 export function isWireConflict(value: unknown): value is WireConflict {
   if (!isRecord(value) || !isRecord(value.viaA) || !isRecord(value.viaB)) return false;

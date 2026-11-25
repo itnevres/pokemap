@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import { createHub } from "./hub.js";
 import { probeEngineFamily } from "@pokemap/core/src/family.js";
 import { readRecent, recentHome } from "./recent.js";
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
@@ -139,6 +140,6 @@ async function main(): Promise<void> {
 try {
   await main();
 } catch (e) {
-  process.stderr.write(`pokemap hub: ${e instanceof Error ? e.message : String(e)}\n`);
+  process.stderr.write(`pokemap hub: ${errorMessage(e)}\n`);
   process.exitCode = 1;
 }

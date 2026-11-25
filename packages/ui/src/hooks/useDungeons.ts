@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchGuarded, postJson, sendJson } from "./useGuardedFetch.js";
-import { isRecord } from "../gbc/guards.js";
+import { isRecord } from "../shared/format.js";
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 
 export interface Dungeon {
   id: string;
@@ -46,7 +47,7 @@ export function useDungeons(enabled: boolean): UseDungeonsResult {
     fetchGuarded("/api/dungeons", isDungeons).then((result) => {
       if (!cancelled) setData(result);
     }).catch((reason: unknown) => {
-      if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
+      if (!cancelled) setError(errorMessage(reason));
     });
     return () => { cancelled = true; };
   }, [enabled, generation]);

@@ -15,6 +15,7 @@ import type { GbcTimeOfDay } from "./time.js";
 import { GBC_HIDDEN_MAP_TYPES } from "../world/visibility.js";
 import { useTilesetVersion } from "../shared/tilesetVersion.js";
 import { GBC_CAPABILITIES, type BlockEditorSpec, type EngineAdapter, type FamilyRuntime, type RuntimeArgs, type ShellSlots } from "../shell/adapter.js";
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 
 const TIME_ORDER: readonly GbcTimeOfDay[] = ["morn", "day", "nite"];
 const TIME_LABEL: Record<GbcTimeOfDay, string> = { morn: "Morn", day: "Day", nite: "Nite" };
@@ -197,7 +198,7 @@ export function useGbcRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
       setOpen: setSaveOpen,
       // After ctx.onCommitted(): re-read the payload so the canvas and palette show what is on disk (GbcApp.tsx:345-349).
       onCommitted: () => {
-        map.reload().catch((e: unknown) => setSwitchError(`Saved, but could not reload the map: ${e instanceof Error ? e.message : String(e)}`));
+        map.reload().catch((e: unknown) => setSwitchError(`Saved, but could not reload the map: ${errorMessage(e)}`));
       },
     },
   };

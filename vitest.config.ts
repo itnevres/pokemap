@@ -9,7 +9,7 @@ export default defineConfig({
     globalSetup: ["packages/core/test/helpers/testRootsSetup.ts", "packages/core/test/helpers/subjectSnapshotSetup.ts"],
     globals: false,
     testTimeout: 60_000,
-    setupFiles: ["packages/ui/test/setup.ts"],
+    setupFiles: ["packages/core/test/helpers/immutableRootSetup.ts", "packages/ui/test/setup.ts"],
     projects: [
       {
         extends: true,

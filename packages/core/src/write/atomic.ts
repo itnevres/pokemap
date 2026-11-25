@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync, renameSync, unlinkSync } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
 import { isAbsolute, relative, resolve, sep } from "node:path";
+import { errorMessage } from "../errorMessage.js";
 
 export interface AtomicEntry {
   path: string;
@@ -18,7 +19,6 @@ export interface AtomicIo {
 
 const defaultIo: AtomicIo = { existsSync, readFileSync, writeFileSync, renameSync, unlinkSync };
 const errorCode = (error: unknown) => (error as NodeJS.ErrnoException | null)?.code;
-const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 /**
  * Stages and checks all bytes before swapping; on failure, restores swapped targets and cleans temps best effort.

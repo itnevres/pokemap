@@ -1,7 +1,9 @@
 import type { ProjectInfo } from "@pokemap/core/src/family.js";
 import type { BrowseResult, HubState, OpenConflict } from "@pokemap/core/src/hub/wire.js";
-import { isRecord, isProjectInfo } from "../gbc/guards.js";
+import { isProjectInfo } from "../gbc/guards.js";
+import { isRecord } from "../shared/format.js";
 import { postJson } from "../hooks/useGuardedFetch.js";
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 
 /**
  * Pure runtime type guards + the one non-GET fetch this app makes
@@ -87,6 +89,6 @@ export async function openProject(path: string, force?: boolean): Promise<OpenPr
     const message = isRecord(parsed) && typeof parsed.error === "string" ? parsed.error : `Open failed (status ${r.status})`;
     return { kind: "error", error: message };
   } catch (e) {
-    return { kind: "error", error: e instanceof Error ? e.message : String(e) };
+    return { kind: "error", error: errorMessage(e) };
   }
 }

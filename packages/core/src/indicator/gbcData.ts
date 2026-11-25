@@ -8,9 +8,10 @@ import { parseCollisionConstants } from "../gbc/load/tileset.js";
 import { gbcEncounterSources } from "../gbc/analyse/atlas.js";
 import { gbcSpeciesNames } from "../signs/linked.js";
 import type { IndicatorSpecies } from "./gba.js";
+import { errorMessage } from "../errorMessage.js";
 
 function fileRefusal(root: string, file: string, error: unknown): Error {
-  const detail = error instanceof Error ? error.message : String(error);
+  const detail = errorMessage(error);
   return new Error(`${norm(root)}/${file}: ${detail}. Restore ${file} from the decomp, or check the project root.`);
 }
 

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { BlockEditorSpec } from "../../shell/adapter.js";
 import { EditSessionError, type BlockCheckReply, type BlockEditSession } from "../useEditSessionCore.js";
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 
 export type BlockEditorStatus = "loading" | "ready" | "checking" | "confirming" | "applying" | "error";
 
@@ -22,8 +23,8 @@ interface BlockInfo extends Record<string, unknown> {
 }
 type Mode = "ok" | "saveAsNew";
 const STALE = "The block changed since this editor opened; reopen it";
-const errorMessage = (error: unknown) => error instanceof EditSessionError && error.code === "STALE"
-  ? STALE : error instanceof Error ? error.message : String(error);
+const editorErrorMessage = (error: unknown) => error instanceof EditSessionError && error.code === "STALE"
+  ? STALE : errorMessage(error);
 
 export function useBlockEditor(args: EditorArgs): {
   status: BlockEditorStatus; info: any | null; draft: Draft | null; previewSrc: string | null;
@@ -77,7 +78,7 @@ export function useBlockEditor(args: EditorArgs): {
         updateDraft(initial);
         changeStatus("ready");
       } catch (error) {
-        if (!cancelled) { setMessage(error instanceof Error ? error.message : String(error)); changeStatus("error"); }
+        if (!cancelled) { setMessage(editorErrorMessage(error)); changeStatus("error"); }
       }
     })();
     return () => { cancelled = true; generation.current++; checkCounter.current++; previewCounter.current++; checkedRequest.current = null; };
@@ -119,7 +120,7 @@ export function useBlockEditor(args: EditorArgs): {
       } else changeStatus("ready");
     } catch (error) {
       if (owner !== generation.current) return;
-      setMessage(errorMessage(error));
+      setMessage(editorErrorMessage(error));
       changeStatus("ready");
     }
   }
@@ -148,7 +149,7 @@ export function useBlockEditor(args: EditorArgs): {
     } catch (error) {
       if (call !== checkCounter.current) return;
       checkedRequest.current = null;
-      setMessage(errorMessage(error));
+      setMessage(editorErrorMessage(error));
       changeStatus("ready");
     }
   }

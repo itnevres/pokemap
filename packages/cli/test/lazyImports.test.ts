@@ -24,6 +24,7 @@ describe("cli index.ts start-up imports", () => {
       "commander",
       "node:fs",
       "@pokemap/core/src/family.js",
+      "@pokemap/core/src/errorMessage.js", // import-free helper
       "./context.js",
       "./args.js",
     ]);
@@ -39,7 +40,7 @@ describe("cli index.ts start-up imports", () => {
 
   it("context.ts loads the GBA project module lazily, so a GBC command never pays for it", () => {
     const ctx = readFileSync(join(process.cwd(), "packages/cli/src/context.ts"), "utf8");
-    expect(staticImports(ctx)).toEqual(["node:fs"]);
+    expect(staticImports(ctx)).toEqual(["node:fs", "@pokemap/core/src/errorMessage.js"]);
     expect(ctx).toContain('import("@pokemap/core/src/project.js")');
   });
 });

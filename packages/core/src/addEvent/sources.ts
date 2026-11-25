@@ -1,17 +1,18 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, extname, resolve, relative, isAbsolute } from "node:path";
 
-// Only the globalSetup snapshot is immutable. Never cache reads of live projects.
-let snapshotRoot: string | undefined;
+// Only the test snapshot is immutable. Never cache reads of live projects. Tests register it once through
+// setImmutableRoot (vitest setupFiles); production never calls it, so nothing here is cached.
+let immutableRoot: string | undefined;
 const fileLists = new Map<string, string[]>();
 const texts = new Map<string, string>();
+export function setImmutableRoot(root: string | undefined): void {
+  immutableRoot = root ? resolve(root) : undefined;
+  fileLists.clear(); texts.clear();
+}
 function immutablePath(path: string): boolean {
-  const current = process.env.POKEMAP_SUBJECT_SNAPSHOT;
-  if (current !== snapshotRoot) {
-    snapshotRoot = current; fileLists.clear(); texts.clear();
-  }
-  if (!current) return false;
-  const rel = relative(resolve(current), resolve(path));
+  if (!immutableRoot) return false;
+  const rel = relative(immutableRoot, resolve(path));
   return rel !== ".." && !rel.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) && !isAbsolute(rel);
 }
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { MapDefectsCheck } from "@pokemap/core/src/defects/types.js";
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 
 interface MapDefectsResult extends MapDefectsCheck { error: string | null }
 const EMPTY: MapDefectsResult = { defects: [], incomplete: [], error: null };
@@ -25,7 +26,7 @@ export function useMapDefects(mapName: string | null, saveToken: number): MapDef
       .catch((e: unknown) => {
         if (!cancelled) {
           console.error("Could not check map defects", e);
-          setResult({ mapName, saveToken, defects: [], incomplete: [], error: e instanceof Error ? e.message : String(e) });
+          setResult({ mapName, saveToken, defects: [], incomplete: [], error: errorMessage(e) });
         }
       });
     return () => { cancelled = true; };

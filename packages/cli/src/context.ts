@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import type { Project } from "@pokemap/core/src/project.js";
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 
 /**
  * Resolves the decomp root either from `--project <path>` or from
@@ -43,7 +44,7 @@ export function resolveRoot(explicit?: string): string {
     cfg = JSON.parse(raw);
   } catch (e) {
     throw new Error(
-      `${configPath} is not valid JSON: ${e instanceof Error ? e.message : String(e)}`,
+      `${configPath} is not valid JSON: ${errorMessage(e)}`,
     );
   }
   const projectPath = (cfg as { projectPath?: unknown } | null)?.projectPath;

@@ -25,6 +25,7 @@ import { ownedTilesetPaths, requireTilesetOwnership, stageTilesetPlan, type Bloc
 import { parseTimeParam } from "./gbcRoutes.js";
 import { BodyTooLarge, decodeSegment, readBody } from "./http.js";
 import { brokenPathBody, refuseBrokenLayout } from "./brokenComponents.js";
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 
 type Send = (code: number, body: unknown) => void;
 type Routes = { handle(req: IncomingMessage, url: URL, send: Send): boolean };
@@ -150,7 +151,7 @@ function routes(deps: CommonDeps, read: (name: string, url: URL, version: number
       if (broken) { send(409, broken); return; }
       const refusal = error instanceof BlockEditRefusal;
       send(refusal ? (planner || error instanceof GetConflict || error.code !== "BAD_VALUE" ? 409 : 400) : 500,
-        { error: error instanceof Error ? error.message : String(error), code: refusal ? error.code : "INTERNAL_ERROR" });
+        { error: errorMessage(error), code: refusal ? error.code : "INTERNAL_ERROR" });
     };
     try {
       const version = deps.syncOverlay();

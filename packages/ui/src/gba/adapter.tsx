@@ -15,6 +15,7 @@ import { useMapEditing } from "../hooks/useMapEditing.js";
 import { useTilesetVersion } from "../shared/tilesetVersion.js";
 import { HIDDEN_MAP_TYPES } from "../world/visibility.js";
 import { GBA_CAPABILITIES, type BlockEditorSpec, type EngineAdapter, type FamilyRuntime, type RuntimeArgs, type ShellSlots } from "../shell/adapter.js";
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 
 /** The GBA-only half of the shell (was App.tsx): data hooks, edit session, map editing state, switch policy, canvases. */
 export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): FamilyRuntime {
@@ -196,7 +197,7 @@ export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
       onCommitted: () => {
         setSaveToken((token) => token + 1);
         const committed = selected;
-        layout.reload().catch((e: unknown) => { if (selectedNow.current === committed) setSwitchError(`Saved, but could not reload the map: ${e instanceof Error ? e.message : String(e)}`); });
+        layout.reload().catch((e: unknown) => { if (selectedNow.current === committed) setSwitchError(`Saved, but could not reload the map: ${errorMessage(e)}`); });
       },
     },
   };

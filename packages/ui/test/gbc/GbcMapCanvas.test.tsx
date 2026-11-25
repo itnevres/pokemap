@@ -226,7 +226,7 @@ describe("formatQuadrant (pure)", () => {
   });
 
   it("falls back to the hex value when name is null (mutation check X12)", () => {
-    expect(formatQuadrant("BR", q({ value: 200, name: null, category: "wall" }))).toBe("BR 0xc8 (wall)");
+    expect(formatQuadrant("BR", q({ value: 200, name: null, category: "wall" }))).toBe("BR 0xC8 (wall)");
   });
 });
 

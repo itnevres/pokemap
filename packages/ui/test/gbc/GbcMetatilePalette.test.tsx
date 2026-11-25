@@ -152,19 +152,19 @@ describe("GbcMetatilePalette", () => {
     // 6 rows of 4; row 1 (ids 4-7) is blank -> cut 2, |2 - 3| = 1 <= 6 / 4 -> right column starts at 0x8.
     const sig: ThumbSignature = (img) => (/\/[4-7]\.png/.test(img.getAttribute("src")!) ? "blank" : img.getAttribute("src"));
     const { container, rerender } = render(<GbcMetatilePalette mapName="M" time="day" tilesetName="T" metatileCount={24} thumbSignature={sig} />);
-    expect(labels(container.querySelector(".palette__column--right"))[0]).toBe("metatile 0xc");
+    expect(labels(container.querySelector(".palette__column--right"))[0]).toBe("metatile 0xC");
     act(() => {
       for (const img of container.querySelectorAll(".palette__scroll img")) fireEvent.load(img);
     });
     await waitFor(() => expect(labels(container.querySelector(".palette__column--right"))[0]).toBe("metatile 0x8"));
     rerender(<GbcMetatilePalette mapName="M" time="nite" tilesetName="T" metatileCount={24} thumbSignature={sig} />);
-    await waitFor(() => expect(labels(container.querySelector(".palette__column--right"))[0]).toBe("metatile 0xc"));
+    await waitFor(() => expect(labels(container.querySelector(".palette__column--right"))[0]).toBe("metatile 0xC"));
   });
 
   it("search filters by hex id into one column", () => {
     const { container } = render(<GbcMetatilePalette mapName="M" time="day" tilesetName="T" metatileCount={32} />);
     fireEvent.change(screen.getByPlaceholderText("Search by hex id…"), { target: { value: "1f" } });
-    expect(labels(container)).toEqual(["metatile 0x1f"]);
+    expect(labels(container)).toEqual(["metatile 0x1F"]);
     expect(container.querySelector(".palette__column--right")).toBeNull();
   });
 

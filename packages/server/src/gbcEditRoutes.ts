@@ -14,6 +14,7 @@ import { findGbcSign, insertGbcSign, nextGbcSignNumber, updateGbcSign } from "@p
 import { parseMapEvents } from "@pokemap/core/src/gbc/load/events.js";
 import { signHash, type SignMode } from "@pokemap/core/src/signs/marker.js";
 import { gbcSignLabels, gbcSignParagraphs, refreshGbcLinkedSigns } from "./signRefresh.js";
+import { errorMessage } from "@pokemap/core/src/errorMessage.js";
 /**
  * `/api/edit/:map/*` for GBC (pokecrystal-family) projects -- the GBC
  * counterpart of the edit routes in `index.ts`, with the same paths and the
@@ -147,7 +148,7 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
     const prev = gbcSnapshotOf(entry.session);
     let edit: GbcEventEdit;
     try { edit = op(prev.eventsText); }
-    catch (e) { return bad(e instanceof Error ? e.message : String(e)); }
+    catch (e) { return bad(errorMessage(e)); }
     if (edit.text === prev.eventsText) return;
     const next = { ...prev, eventsText: edit.text, events: edit.events };
     entry.stack.push(entry.session, snapshotCommand(label, prev, dropOwned ? dropOwned(prev, edit) : next));
@@ -225,14 +226,14 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
   const signFailure = (name: string, error: unknown): Result => ({ code: 400, body: { refusals: [{
     code: error instanceof Error && error.message === "hand-edited" ? "hand-edited" : "sign",
     fix: "Check the named source or sign text; refresh or unlink hand-edited signs explicitly.",
-    subject: `${proj.root}/maps/${name}.asm`, message: error instanceof Error ? error.message : String(error),
+    subject: `${proj.root}/maps/${name}.asm`, message: errorMessage(error),
   }] } });
 
   const indicatorCharmapPath = `${proj.root}/constants/charmap.asm`;
   const indicatorCharmapFix = "Restore a valid subject charmap and correct unsupported Indicator text before retrying.";
   const indicatorFailure = (name: string, error: unknown, line?: number,
     fix = "Check the named source, restore the generated Indicator shape, or correct the species and text before retrying."): Result => {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorMessage(error);
     const charmap = message.startsWith(`${indicatorCharmapPath}:`);
     const subject = charmap ? indicatorCharmapPath : `${proj.root}/maps/${name}.asm`;
     return { code: 400, body: { refusals: [{ code: "indicator", subject,
@@ -241,7 +242,7 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
   };
   function indicatorParagraphs(entry: GbcSessionEntry, text: string): string[][] {
     try { return gbcSignParagraphs(proj, entry, "free", text); }
-    catch (error) { throw new Error(`${indicatorCharmapPath}: ${error instanceof Error ? error.message : String(error)}. ${indicatorCharmapFix}`); }
+    catch (error) { throw new Error(`${indicatorCharmapPath}: ${errorMessage(error)}. ${indicatorCharmapFix}`); }
   }
 
   /** Plan-shaped refusal (same wire shape as GBA): 200 for a plan, 400 for a commit. */
@@ -464,7 +465,7 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
       try { fresh = signPlan(name); } catch (error) { return planFailure(name, error, 400); }
       const { plan, prepared, prepareError, body } = fresh;
       if (plan.refusals.length > 0) return { code: 400, body };
-      if (prepareError !== undefined) return { code: 500, body: { error: prepareError instanceof Error ? prepareError.message : String(prepareError) } };
+      if (prepareError !== undefined) return { code: 500, body: { error: errorMessage(prepareError) } };
       if (body.fingerprint !== posted.fingerprint) return { code: 409, body: { ...body, notice: {
         code: "PLAN_CHANGED", subject: name, message: "Changes were made since you opened Save",
         fix: "Review the updated changes and save again",
@@ -540,7 +541,7 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
         if (e instanceof BlockEditRefusal) return send(409, { error: `${name}: ${e.message}`, code: e.code });
         if (e instanceof BadRequest) return send(400, { error: e.message });
         console.error(e);
-        send(500, { error: e instanceof Error ? e.message : String(e) });
+        send(500, { error: errorMessage(e) });
       });
       return true;
     },

@@ -4,6 +4,7 @@ import type { GbcCoverage } from "@pokemap/core/src/gbc/analyse/atlas.js";
 import type { GbcWarpsPayload } from "./warps.js";
 import type { MapGroupsData } from "../components/MapTree.js";
 import { isWireConflict } from "../world/conflictAcceptance.js";
+import { isRecord } from "../shared/format.js";
 
 /**
  * Pure runtime type guards for the GBC UI's fetch responses (RESUME:
@@ -18,10 +19,6 @@ import { isWireConflict } from "../world/conflictAcceptance.js";
  *  `MapGroupsData`, or its nested `groups` map) is ever legitimately an
  *  array, and later guards (`isGbcMapPayload` etc., Task 4+) get the same
  *  exclusion for free rather than each re-deriving it. */
-export function isRecord(x: unknown): x is Record<string, unknown> {
-  return typeof x === "object" && x !== null && !Array.isArray(x);
-}
-
 function isWarpEvent(x: unknown): boolean {
   return isRecord(x) && Number.isFinite(x.x) && Number.isFinite(x.y)
     && typeof x.mapConst === "string" && Number.isInteger(x.destWarp)
